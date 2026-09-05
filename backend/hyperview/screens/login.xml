@@ -1,0 +1,30 @@
+{% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
+<doc xmlns="https://hyperview.org/hyperview">
+  <styles>
+    <style id="screen" backgroundColor="#F7F8FC" padding="28" />
+    <style id="brand" color="#161A35" fontSize="34" fontWeight="700" marginTop="64" />
+    <style id="subtitle" color="#6D728A" fontSize="16" marginTop="8" marginBottom="32" />
+    <style id="card" backgroundColor="#FFFFFF" padding="24" borderRadius="28" />
+    <style id="field" backgroundColor="#F1F4FC" borderRadius="16" padding="14" marginBottom="14" />
+    <style id="button" backgroundColor="#278CFF" borderRadius="18" padding="16" marginTop="8" />
+    <style id="button-text" color="#FFFFFF" fontSize="17" fontWeight="700" textAlign="center" />
+    <style id="error" color="#B42318" marginBottom="12" />
+  </styles>
+  <screen id="login-screen">
+    <body style="screen">
+      <text style="brand">HyperTodo</text>
+      <text style="subtitle">A calmer way to plan what matters.</text>
+      <form id="login-form">
+        <view style="card">
+          {% if form.errors %}<text id="form-errors" style="error">The username or password is incorrect.</text>{% endif %}
+          <text-field id="username" name="username" value="{{ form.username.value|default:'' }}" placeholder="Username" style="field" />
+          <text-field id="password" name="password" placeholder="Password" secure-text-entry="true" style="field" />
+          {% hv_csrf_token %}
+          <view style="button" href="/hv/login/" verb="post" action="replace">
+            <text style="button-text">Sign in</text>
+          </view>
+        </view>
+      </form>
+    </body>
+  </screen>
+</doc>

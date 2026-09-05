@@ -1,0 +1,47 @@
+{% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
+<doc xmlns="https://hyperview.org/hyperview">
+  <styles>
+    <style id="screen" backgroundColor="#FFFFFF" padding="24" />
+    <style id="eyebrow" color="#6D728A" fontSize="14" />
+    <style id="title" color="#161A35" fontSize="28" fontWeight="700" marginBottom="22" />
+    <style id="row" flexDirection="row" marginBottom="12" />
+    <style id="tile" flex="1" borderRadius="20" padding="18" marginRight="10" />
+    <style id="lavender" backgroundColor="#AEBBFA" />
+    <style id="yellow" backgroundColor="#FFF27B" />
+    <style id="mint" backgroundColor="#C9F0E7" />
+    <style id="pink" backgroundColor="#F6B5E8" />
+    <style id="tile-label" color="#20243D" fontSize="16" />
+    <style id="tile-count" color="#161A35" fontSize="28" fontWeight="700" marginTop="12" />
+    <style id="section" color="#161A35" fontSize="18" fontWeight="700" marginTop="20" marginBottom="12" />
+    <style id="task" backgroundColor="#F3F6FD" borderRadius="22" padding="16" marginBottom="10" />
+    <style id="task-title" color="#20243D" fontSize="16" fontWeight="600" />
+    <style id="meta" color="#7B8097" fontSize="13" marginTop="5" />
+    <style id="primary" backgroundColor="#278CFF" borderRadius="24" padding="16" marginTop="18" />
+    <style id="primary-text" color="#FFFFFF" textAlign="center" fontWeight="700" />
+    <style id="link" color="#278CFF" fontWeight="600" marginTop="16" />
+  </styles>
+  <screen id="dashboard-screen">
+    <body style="screen">
+      <text style="eyebrow">Hello {{ request.user.first_name|default:request.user.username }},</text>
+      <text style="title">You have work today</text>
+      <view style="row">
+        <view style="tile lavender" href="/hv/tasks/?status=today" action="new"><text style="tile-label">Today</text><text style="tile-count">{{ counts.today }}</text></view>
+        <view style="tile yellow" href="/hv/tasks/?status=scheduled" action="new"><text style="tile-label">Scheduled</text><text style="tile-count">{{ counts.scheduled }}</text></view>
+      </view>
+      <view style="row">
+        <view style="tile mint" href="/hv/tasks/" action="new"><text style="tile-label">All</text><text style="tile-count">{{ counts.all }}</text></view>
+        <view style="tile pink" href="/hv/tasks/?status=overdue" action="new"><text style="tile-label">Overdue</text><text style="tile-count">{{ counts.overdue }}</text></view>
+      </view>
+      <text style="section">Today's tasks</text>
+      {% for task in tasks %}
+      <view style="task" href="/hv/tasks/{{ task.id }}/edit/" action="new">
+        <text style="task-title">{{ task.title }}</text>
+        {% if task.due_at %}<text style="meta">{{ task.due_at|date:'D, M j · H:i' }}</text>{% endif %}
+      </view>
+      {% empty %}<text style="meta">Nothing due today. Enjoy the breathing room.</text>{% endfor %}
+      <view style="primary" href="/hv/tasks/new/" action="new"><text style="primary-text">+ Add task</text></view>
+      <view href="/hv/categories/" action="new"><text style="link">Manage categories</text></view>
+      <form id="logout-form">{% hv_csrf_token %}<view href="/hv/logout/" verb="post" action="replace"><text style="link">Sign out</text></view></form>
+    </body>
+  </screen>
+</doc>

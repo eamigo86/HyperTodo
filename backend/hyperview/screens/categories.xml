@@ -1,0 +1,20 @@
+{% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
+<doc xmlns="https://hyperview.org/hyperview">
+  <styles>
+    <style id="screen" backgroundColor="#FFFFFF" padding="24" />
+    <style id="title" color="#161A35" fontSize="27" fontWeight="700" marginBottom="20" />
+    <style id="card" borderRadius="24" padding="20" marginBottom="12" />
+    <style id="lavender" backgroundColor="#AEBBFA" /><style id="yellow" backgroundColor="#FFF27B" /><style id="mint" backgroundColor="#C9F0E7" /><style id="pink" backgroundColor="#F6B5E8" /><style id="green" backgroundColor="#3B9B70" />
+    <style id="name" color="#161A35" fontSize="20" fontWeight="700" />
+    <style id="meta" color="#4C526B" marginTop="7" />
+    <style id="actions" flexDirection="row" marginTop="14" />
+    <style id="action" color="#161A35" fontWeight="600" marginRight="20" />
+    <style id="primary" backgroundColor="#278CFF" borderRadius="24" padding="16" marginTop="12" />
+    <style id="primary-text" color="#FFFFFF" textAlign="center" fontWeight="700" />
+  </styles>
+  <screen id="categories-screen"><body style="screen">
+    <text style="title">Categories</text>
+    {% for category in categories %}<view style="card {{ category.color }}"><text style="name">{{ category.name }}</text><text style="meta">{{ category.tasks.count }} tasks</text><view style="actions"><view href="/hv/categories/{{ category.id }}/edit/" action="new"><text style="action">Edit</text></view><form>{% hv_csrf_token %}<view href="/hv/categories/{{ category.id }}/delete/" verb="post" action="replace"><text style="action">Delete</text></view></form></view></view>{% empty %}<text style="meta">Create a category to organize your tasks.</text>{% endfor %}
+    <view style="primary" href="/hv/categories/new/" action="new"><text style="primary-text">+ Add category</text></view>
+  </body></screen>
+</doc>

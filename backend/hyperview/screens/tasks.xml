@@ -1,0 +1,45 @@
+{% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
+<doc xmlns="https://hyperview.org/hyperview">
+  <styles>
+    <style id="screen" backgroundColor="#FFFFFF" padding="24" />
+    <style id="header" flexDirection="row" alignItems="center" marginBottom="20" />
+    <style id="back" color="#278CFF" fontSize="17" marginRight="16" />
+    <style id="title" color="#161A35" fontSize="26" fontWeight="700" />
+    <style id="filters" flexDirection="row" marginBottom="16" />
+    <style id="chip" backgroundColor="#EEF2FC" borderRadius="16" padding="10" marginRight="8" />
+    <style id="chip-text" color="#4C526B" fontSize="13" />
+    <style id="task" backgroundColor="#F3F6FD" borderRadius="22" padding="16" marginBottom="12" />
+    <style id="done" opacity="0.55" />
+    <style id="task-title" color="#20243D" fontSize="17" fontWeight="600" />
+    <style id="meta" color="#7B8097" fontSize="13" marginTop="5" />
+    <style id="actions" flexDirection="row" marginTop="12" />
+    <style id="action" color="#278CFF" marginRight="18" fontWeight="600" />
+    <style id="danger" color="#B42318" fontWeight="600" />
+    <style id="primary" backgroundColor="#278CFF" borderRadius="24" padding="16" marginTop="12" />
+    <style id="primary-text" color="#FFFFFF" textAlign="center" fontWeight="700" />
+  </styles>
+  <screen id="tasks-screen">
+    <body style="screen">
+      <view style="header"><view href="/hv/dashboard/" action="back"><text style="back">‹ Home</text></view><text style="title">Tasks</text></view>
+      <view style="filters">
+        <view style="chip" href="/hv/tasks/?status=all" action="replace"><text style="chip-text">All</text></view>
+        <view style="chip" href="/hv/tasks/?status=active" action="replace"><text style="chip-text">Active</text></view>
+        <view style="chip" href="/hv/tasks/?status=completed" action="replace"><text style="chip-text">Done</text></view>
+      </view>
+      {% if categories %}<view style="filters">{% for category in categories %}<view style="chip" href="/hv/tasks/?status={{ status_filter }}&amp;category={{ category.id }}" action="replace"><text style="chip-text">{{ category.name }}</text></view>{% endfor %}</view>{% endif %}
+      {% for task in tasks %}
+      <view style="task{% if task.is_completed %} done{% endif %}">
+        <text style="task-title">{% if task.is_completed %}✓ {% endif %}{{ task.title }}</text>
+        {% if task.category %}<text style="meta">{{ task.category.name }}</text>{% endif %}
+        {% if task.due_at %}<text style="meta">Due {{ task.due_at|date:'M j · H:i' }}</text>{% endif %}
+        <view style="actions">
+          <view href="/hv/tasks/{{ task.id }}/edit/" action="new"><text style="action">Edit</text></view>
+          <form>{% hv_csrf_token %}<view href="/hv/tasks/{{ task.id }}/toggle/" verb="post" action="replace"><text style="action">{% if task.is_completed %}Reopen{% else %}Complete{% endif %}</text></view></form>
+          <form>{% hv_csrf_token %}<view href="/hv/tasks/{{ task.id }}/delete/" verb="post" action="replace"><text style="danger">Delete</text></view></form>
+        </view>
+      </view>
+      {% empty %}<text style="meta">No tasks match these filters.</text>{% endfor %}
+      <view style="primary" href="/hv/tasks/new/" action="new"><text style="primary-text">+ Add task</text></view>
+    </body>
+  </screen>
+</doc>

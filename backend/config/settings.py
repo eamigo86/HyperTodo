@@ -1,0 +1,106 @@
+"""Django settings for the HyperTodo backend."""
+
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "development-only-secret-key")
+DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", "10.0.2.2"]
+
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "dj_hyperview",
+    "dj_hyperview.contrib.database",
+    "todo",
+]
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+ROOT_URLCONF = "config.urls"
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ]
+        },
+    }
+]
+WSGI_APPLICATION = "config.wsgi.application"
+DATABASES = {
+    "default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}
+}
+AUTH_PASSWORD_VALIDATORS: list[dict[str, str]] = []
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = os.environ.get("TIME_ZONE", "America/New_York")
+USE_I18N = True
+USE_TZ = True
+STATIC_URL = "static/"
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+CSRF_TRUSTED_ORIGINS = [
+    origin
+    for origin in os.environ.get(
+        "CSRF_TRUSTED_ORIGINS", "http://127.0.0.1:8000,http://10.0.2.2:8000"
+    ).split(",")
+    if origin
+]
+CSRF_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SAMESITE = "Lax"
+
+REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/15")
+ENABLE_REDIS_CACHE = os.environ.get("ENABLE_REDIS_CACHE", "0") == "1"
+if ENABLE_REDIS_CACHE:
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": REDIS_URL,
+            "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+            "KEY_PREFIX": "dj-hyperview-test-dev",
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "hypertodo",
+        }
+    }
+
+HYPERVIEW = {
+    "TEMPLATE_DIRS": [BASE_DIR / "hyperview"],
+    "SOURCES": [
+        {
+            "BACKEND": "dj_hyperview.contrib.database.sources.DatabaseSource",
+            "OPTIONS": {"using": "default"},
+        },
+        {"BACKEND": "dj_hyperview.sources.FileSystemSource"},
+    ],
+    "VALIDATION": {"MODE": "publish_and_render"},
+}
+if ENABLE_REDIS_CACHE:
+    HYPERVIEW["CACHE"] = {
+        "ALIAS": "default",
+        "NAMESPACE": "dj-hyperview-test-dev",
+        "TTL": 300,
+        "NEGATIVE_TTL": 5,
+        "FAILURE_MODE": "bypass",
+    }
+CSRF_FAILURE_VIEW = "todo.views.csrf_failure"

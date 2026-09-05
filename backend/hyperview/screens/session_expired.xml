@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<doc xmlns="https://hyperview.org/hyperview">
+  <styles>
+    <style id="screen" backgroundColor="#F7F8FC" padding="28" justifyContent="center" />
+    <style id="card" backgroundColor="#FFFFFF" borderRadius="28" padding="24" />
+    <style id="title" color="#161A35" fontSize="24" fontWeight="700" />
+    <style id="copy" color="#6D728A" fontSize="16" marginTop="8" />
+    <style id="button" backgroundColor="#278CFF" borderRadius="18" padding="16" marginTop="24" />
+    <style id="button-text" color="#FFFFFF" fontWeight="700" textAlign="center" />
+  </styles>
+  <screen id="session-expired-screen">
+    <body style="screen">
+      <view style="card">
+        <text style="title">Your session expired</text>
+        <text style="copy">Sign in again to keep your tasks private.</text>
+        <view style="button" href="/hv/" action="replace"><text style="button-text">Return to sign in</text></view>
+      </view>
+    </body>
+  </screen>
+</doc>
