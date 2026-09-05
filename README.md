@@ -8,6 +8,9 @@ The project intentionally keeps both sides visible:
 - `mobile/`: Expo 57, React Native 0.86, and Hyperview 0.110.0.
 - `doc/`: architecture, setup, testing, and acceptance records.
 
+Run `make help` from the repository root to list the setup, test, quality,
+development-server, and native acceptance commands.
+
 ## Quick start
 
 ```console
