@@ -12,6 +12,133 @@ This guide starts from clean Django and Expo projects. You do not need to clone 
 
 Expo Go is not sufficient because Hyperview uses native dependencies. Use an Expo development build.
 
+## Recommended Make workflow
+
+Run these commands from the repository root. The first five prepare and verify
+the complete project:
+
+1. List every available command:
+
+   ```console
+   make help
+   ```
+
+   This prints each Make target and its description without changing the
+   project.
+
+2. Install the locked backend and mobile dependencies:
+
+   ```console
+   make setup
+   ```
+
+   This runs uv for Python and the project-pinned Yarn version through
+   Corepack. A global Yarn installation is not required.
+
+3. Create or update the database schema:
+
+   ```console
+   make backend-migrate
+   ```
+
+4. Create the idempotent local demo accounts and their private sample data:
+
+   ```console
+   make backend-seed
+   ```
+
+   The default credentials are `admin`/`admin123` and `demo`/`demo123` while
+   Django debug mode is enabled.
+
+5. Run all automated quality gates:
+
+   ```console
+   make check
+   ```
+
+   This runs backend linting, tests with branch-aware coverage, Django system
+   and migration checks, mobile type checking, Jest, and Expo Doctor.
+
+Then use the workflow for the target device.
+
+### iOS Simulator
+
+Start the Redis-backed backend in one terminal:
+
+```console
+make backend-run-redis
+```
+
+Create and install the development build the first time, or after a native
+dependency or configuration change:
+
+```console
+make mobile-ios
+```
+
+For normal JavaScript, TypeScript, or HXML development, reuse that installed
+build and start Metro with:
+
+```console
+make mobile-start
+```
+
+### Physical iPhone or Android device
+
+Display the Mac address reachable from the local network:
+
+```console
+make lan-ip
+```
+
+Use that value in both terminals. For example:
+
+```console
+# Terminal 1
+LAN_IP=192.168.1.20 make backend-run-device
+
+# Terminal 2, first installation on iPhone
+LAN_IP=192.168.1.20 make mobile-ios-device
+
+# Terminal 2, first installation on Android
+LAN_IP=192.168.1.20 make mobile-android-device
+```
+
+Only one mobile installation command is needed for the selected platform. On
+later development sessions, keep Terminal 1 running and replace the installation
+command in Terminal 2 with:
+
+```console
+LAN_IP=192.168.1.20 make mobile-start-device
+```
+
+Metro prints a QR code. Scan it with the phone camera, or select the server from
+the HyperTodo development client's launcher. The familiar QR workflow remains;
+the only difference is that the link must open the installed **HyperTodo**
+development build instead of Expo Go.
+
+### Android Emulator
+
+Start the backend in one terminal:
+
+```console
+make backend-run-redis
+```
+
+Install the development build the first time with `make mobile-android`. On
+later sessions, run `make mobile-start-android`. Both commands use the Android
+Emulator address `10.0.2.2` to reach Django on the Mac.
+
+### Supporting commands
+
+| Command | Purpose |
+| --- | --- |
+| `make test` | Run backend pytest and mobile Jest tests. |
+| `make backend-quality` | Run every backend lint, test, Django, and migration check. |
+| `make backend-test-redis` | Run the isolated Redis integration tests against logical database 14. |
+| `make mobile-check` | Run TypeScript, Jest, and Expo Doctor. |
+| `make acceptance` | Print the manual iOS and Android acceptance checklist. |
+
 ## 1. Start the Django backend
 
 ```console
@@ -203,9 +330,11 @@ After HyperTodo is installed, later Metro sessions use:
 LAN_IP=192.168.1.20 make mobile-start-device
 ```
 
-Open **HyperTodo** from the iPhone home screen. Do not scan the QR with Expo Go.
-The Mac and iPhone must share a reachable network, and macOS must allow incoming
-connections to the Django and Metro processes. Test
+Scan Metro's QR code with the iPhone camera so that it opens the installed
+**HyperTodo** development build, or open HyperTodo and select the server from
+its launcher. Do not open the QR link in Expo Go. The Mac and iPhone must share
+a reachable network, and macOS must allow incoming connections to the Django
+and Metro processes. Test
 `http://LAN_IP:8000/hv/` from Safari on the iPhone if the app cannot reach the
 backend.
 
@@ -220,8 +349,10 @@ and [local app development guide](https://docs.expo.dev/guides/local-app-develop
 Enable USB debugging, connect the device, and run:
 
 ```console
-make mobile-android-device
+make lan-ip
+LAN_IP=192.168.1.20 make mobile-android-device
 ```
 
-Use `LAN_IP=... make backend-run-device` when the Android device connects over
-Wi-Fi. The `10.0.2.2` address applies only to the Android Emulator.
+Use the same address with `LAN_IP=... make backend-run-device` when the Android
+device connects over Wi-Fi. The `10.0.2.2` address applies only to the Android
+Emulator.

@@ -114,8 +114,9 @@ mobile-ios-device: ## Build and install HyperTodo on an iPhone; requires LAN_IP.
 mobile-android: ## Create or launch the Android development build for manual acceptance.
 	@$(call run_mobile,$(YARN) android)
 
-mobile-android-device: ## Build and install HyperTodo on an Android device.
-	@$(call run_mobile,$(YARN) expo run:android --device)
+mobile-android-device: ## Build and install HyperTodo on Android; requires LAN_IP.
+	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
+	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) expo run:android --device)
 
 lan-ip: ## Display the Mac LAN address used by physical devices.
 	@ifconfig | awk '/inet / && $$2 != "127.0.0.1" { print $$2; found=1; exit } END { if (!found) exit 1 }' \
