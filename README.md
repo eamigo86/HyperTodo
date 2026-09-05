@@ -17,7 +17,7 @@ development-server, and native acceptance commands.
 cd backend
 uv sync
 uv run python manage.py migrate
-HYPERTODO_DEMO_PASSWORD=local-password uv run python manage.py seed_demo
+uv run python manage.py seed_demo
 uv run python manage.py runserver
 ```
 
@@ -31,3 +31,7 @@ make mobile-start
 Hyperview uses native modules, so this app requires a development build rather than Expo Go. Native build commands are documented but were deliberately not run as part of this implementation.
 
 Read the complete [Getting Started guide](doc/getting-started.md).
+
+The local seed command creates `admin`/`admin123` and `demo`/`demo123` when
+debug mode is enabled. Override both password environment variables before
+using non-local settings.

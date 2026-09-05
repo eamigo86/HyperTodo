@@ -7,6 +7,7 @@ NVM_DIR ?= $(HOME)/.nvm
 NVM_SH := $(NVM_DIR)/nvm.sh
 YARN := COREPACK_HOME="$(CURDIR)/$(MOBILE_DIR)/.corepack" corepack yarn
 REDIS_URL ?= redis://127.0.0.1:6379/15
+DJANGO_DEBUG ?= 1
 EXPO_PUBLIC_API_URL ?= http://127.0.0.1:8000/hv/
 
 define run_mobile
@@ -39,12 +40,10 @@ backend-install: ## Install locked Python dependencies with uv.
 backend-migrate: ## Apply Django and dj-hyperview database migrations.
 	@cd "$(BACKEND_DIR)" && uv run python manage.py migrate
 
-backend-seed: ## Create idempotent demo data; requires HYPERTODO_DEMO_PASSWORD.
-	@if [[ -z "$(HYPERTODO_DEMO_PASSWORD)" ]]; then \
-		echo "HYPERTODO_DEMO_PASSWORD is required."; \
-		exit 1; \
-	fi
+backend-seed: ## Create idempotent admin and user demo data.
 	@cd "$(BACKEND_DIR)" && \
+		DJANGO_DEBUG="$(DJANGO_DEBUG)" \
+		HYPERTODO_ADMIN_PASSWORD="$(HYPERTODO_ADMIN_PASSWORD)" \
 		HYPERTODO_DEMO_PASSWORD="$(HYPERTODO_DEMO_PASSWORD)" \
 		uv run python manage.py seed_demo
 

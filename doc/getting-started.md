@@ -45,14 +45,17 @@ HYPERVIEW = {
 }
 ```
 
-Create a local demo account without committing a password:
+Create isolated local admin and demo accounts with representative data:
 
 ```console
-HYPERTODO_DEMO_PASSWORD=local-password uv run python manage.py seed_demo
+make backend-seed
 uv run python manage.py runserver
 ```
 
-The seed command is idempotent. Sign in as `demo` using the password you supplied.
+The seed command is idempotent. In debug mode it creates `admin`/`admin123` and
+`demo`/`demo123`. Each account owns different categories and tasks. Set both
+`HYPERTODO_ADMIN_PASSWORD` and `HYPERTODO_DEMO_PASSWORD` to override the local
+defaults. Explicit passwords are mandatory when debug mode is disabled.
 
 ### Optional Redis cache
 
