@@ -3,10 +3,15 @@
 import os
 from pathlib import Path
 
+from .environment import csv_setting
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "development-only-secret-key")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
-ALLOWED_HOSTS = ["127.0.0.1", "localhost", "10.0.2.2"]
+ALLOWED_HOSTS = csv_setting(
+    "DJANGO_ALLOWED_HOSTS",
+    "127.0.0.1,localhost,10.0.2.2",
+)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -55,13 +60,10 @@ USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-CSRF_TRUSTED_ORIGINS = [
-    origin
-    for origin in os.environ.get(
-        "CSRF_TRUSTED_ORIGINS", "http://127.0.0.1:8000,http://10.0.2.2:8000"
-    ).split(",")
-    if origin
-]
+CSRF_TRUSTED_ORIGINS = csv_setting(
+    "CSRF_TRUSTED_ORIGINS",
+    "http://127.0.0.1:8000,http://10.0.2.2:8000",
+)
 CSRF_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_SAMESITE = "Lax"
 

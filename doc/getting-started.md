@@ -150,3 +150,78 @@ corepack yarn start
 ```
 
 Open the development build, sign in, and follow the acceptance checklist. Rebuild only after changing native dependencies or native configuration.
+
+## Troubleshooting: Expo Go asks you to sign in
+
+If Expo Go displays “You need to be signed in to Expo Go and Expo CLI,” it has
+opened a development-client URL with the wrong application. Signing in may
+remove that Expo Go message, but it does not turn Expo Go into this project's
+native runtime.
+
+HyperTodo includes `expo-dev-client` and starts Metro with `--dev-client`.
+Therefore, open the installed **HyperTodo** development build, not Expo Go.
+Expo describes a development build as a project-specific version of Expo Go
+that can include arbitrary native libraries and configuration.
+
+### iOS Simulator
+
+Close Expo Go and create the development build once:
+
+```console
+make mobile-ios
+```
+
+Then launch the **HyperTodo** icon. For later JavaScript or HXML changes, the
+existing build can reconnect to Metro without recompiling:
+
+```console
+make mobile-start
+```
+
+### Physical iPhone
+
+Connect the iPhone to the Mac, trust the computer, enable Developer Mode, and
+make sure Xcode has a signing team available. Find the Mac's Wi-Fi address:
+
+```console
+make lan-ip
+```
+
+Use the resulting address in both terminals. For example:
+
+```console
+# Terminal 1
+LAN_IP=192.168.1.20 make backend-run-device
+
+# Terminal 2: first installation
+LAN_IP=192.168.1.20 make mobile-ios-device
+```
+
+After HyperTodo is installed, later Metro sessions use:
+
+```console
+LAN_IP=192.168.1.20 make mobile-start-device
+```
+
+Open **HyperTodo** from the iPhone home screen. Do not scan the QR with Expo Go.
+The Mac and iPhone must share a reachable network, and macOS must allow incoming
+connections to the Django and Metro processes. Test
+`http://LAN_IP:8000/hv/` from Safari on the iPhone if the app cannot reach the
+backend.
+
+Expo's official local-build flow uses `expo run:ios --device` for a connected
+iPhone and does not require an Expo account. EAS cloud builds are a separate
+option and do require Expo authentication. See the official
+[development-build introduction](https://docs.expo.dev/develop/development-builds/introduction/)
+and [local app development guide](https://docs.expo.dev/guides/local-app-development/).
+
+### Physical Android device
+
+Enable USB debugging, connect the device, and run:
+
+```console
+make mobile-android-device
+```
+
+Use `LAN_IP=... make backend-run-device` when the Android device connects over
+Wi-Fi. The `10.0.2.2` address applies only to the Android Emulator.

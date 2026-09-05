@@ -20,9 +20,11 @@ endef
 
 .PHONY: help setup test check \
 	backend-install backend-migrate backend-seed backend-run backend-run-redis \
+	backend-run-device \
 	backend-test backend-test-redis backend-lint backend-check backend-quality \
 	mobile-install mobile-start mobile-start-android mobile-test mobile-typecheck \
-	mobile-doctor mobile-check mobile-ios mobile-android acceptance
+	mobile-start-device mobile-doctor mobile-check mobile-ios mobile-ios-device \
+	mobile-android mobile-android-device lan-ip acceptance
 
 help: ## List available commands and their descriptions.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<command>\033[0m\n\nCommands:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -55,6 +57,14 @@ backend-run-redis: ## Start Django using the existing Redis development database
 		ENABLE_REDIS_CACHE=1 REDIS_URL="$(REDIS_URL)" \
 		uv run python manage.py runserver 0.0.0.0:8000
 
+backend-run-device: ## Start Redis-backed Django for a device; requires LAN_IP.
+	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
+	@cd "$(BACKEND_DIR)" && \
+		ENABLE_REDIS_CACHE=1 REDIS_URL="$(REDIS_URL)" \
+		DJANGO_ALLOWED_HOSTS="127.0.0.1,localhost,$(LAN_IP)" \
+		CSRF_TRUSTED_ORIGINS="http://127.0.0.1:8000,http://$(LAN_IP):8000" \
+		uv run python manage.py runserver 0.0.0.0:8000
+
 backend-test: ## Run backend tests with branch-aware coverage enforcement.
 	@cd "$(BACKEND_DIR)" && uv run pytest
 
@@ -79,6 +89,10 @@ mobile-start: ## Start Metro for iOS or a physical device using EXPO_PUBLIC_API_
 mobile-start-android: ## Start Metro with the Android Emulator backend address.
 	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://10.0.2.2:8000/hv/" $(YARN) start)
 
+mobile-start-device: ## Start Metro for a physical device; requires LAN_IP.
+	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
+	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) start)
+
 mobile-test: ## Run focused Jest tests for the owned mobile shell.
 	@$(call run_mobile,$(YARN) test)
 
@@ -93,8 +107,19 @@ mobile-check: mobile-typecheck mobile-test mobile-doctor ## Run every automated 
 mobile-ios: ## Create or launch the iOS development build for manual acceptance.
 	@$(call run_mobile,$(YARN) ios)
 
+mobile-ios-device: ## Build and install HyperTodo on an iPhone; requires LAN_IP.
+	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
+	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) expo run:ios --device)
+
 mobile-android: ## Create or launch the Android development build for manual acceptance.
 	@$(call run_mobile,$(YARN) android)
+
+mobile-android-device: ## Build and install HyperTodo on an Android device.
+	@$(call run_mobile,$(YARN) expo run:android --device)
+
+lan-ip: ## Display the Mac LAN address used by physical devices.
+	@ifconfig | awk '/inet / && $$2 != "127.0.0.1" { print $$2; found=1; exit } END { if (!found) exit 1 }' \
+		|| (echo "No LAN address found; inspect network settings." && exit 1)
 
 acceptance: ## Display the manual iOS and Android acceptance checklist.
 	@cat doc/acceptance.md
