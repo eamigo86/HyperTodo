@@ -6,6 +6,7 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start --dev-client",
+    "start:go": "expo start --go",
     "ios": "expo run:ios",
     "android": "expo run:android",
     "typecheck": "tsc --noEmit",

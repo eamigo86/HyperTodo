@@ -23,7 +23,7 @@ endef
 	backend-run-device \
 	backend-test backend-test-redis backend-lint backend-check backend-quality \
 	mobile-install mobile-start mobile-start-android mobile-test mobile-typecheck \
-	mobile-start-device mobile-doctor mobile-check mobile-ios mobile-ios-device \
+	mobile-start-device mobile-start-go mobile-doctor mobile-check mobile-ios mobile-ios-device \
 	mobile-android mobile-android-device lan-ip acceptance
 
 help: ## List available commands and their descriptions.
@@ -92,6 +92,10 @@ mobile-start-android: ## Start Metro with the Android Emulator backend address.
 mobile-start-device: ## Start Metro for a physical device; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
 	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) start)
+
+mobile-start-go: ## Start local Expo Go QR workflow; requires LAN_IP.
+	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
+	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) start:go)
 
 mobile-test: ## Run focused Jest tests for the owned mobile shell.
 	@$(call run_mobile,$(YARN) test)

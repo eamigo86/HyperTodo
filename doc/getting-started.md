@@ -10,7 +10,10 @@ This guide starts from clean Django and Expo projects. You do not need to clone 
 - Xcode and CocoaPods for iOS, or Android Studio and ADB for Android
 - A running Redis service only when testing cache behavior
 
-Expo Go is not sufficient because Hyperview uses native dependencies. Use an Expo development build.
+Expo Go supports the native libraries required by the tested Expo 57 and
+Hyperview 0.110.0 matrix. It is the quickest option for local QR-based testing.
+A development build remains available for validating project-specific native
+configuration and production-like behavior.
 
 ## Recommended Make workflow
 
@@ -91,31 +94,24 @@ Display the Mac address reachable from the local network:
 make lan-ip
 ```
 
-Use that value in both terminals. For example:
+Use that value in both terminals. The normal Expo Go workflow is:
 
 ```console
 # Terminal 1
 LAN_IP=192.168.1.20 make backend-run-device
 
-# Terminal 2, first installation on iPhone
-LAN_IP=192.168.1.20 make mobile-ios-device
-
-# Terminal 2, first installation on Android
-LAN_IP=192.168.1.20 make mobile-android-device
+# Terminal 2
+LAN_IP=192.168.1.20 make mobile-start-go
 ```
 
-Only one mobile installation command is needed for the selected platform. On
-later development sessions, keep Terminal 1 running and replace the installation
-command in Terminal 2 with:
+Metro prints a QR code. Scan it with the phone camera and open the link in Expo
+Go. Both devices must be on the same reachable local network. This command does
+not expose Metro or Django on the public internet.
 
-```console
-LAN_IP=192.168.1.20 make mobile-start-device
-```
-
-Metro prints a QR code. Scan it with the phone camera, or select the server from
-the HyperTodo development client's launcher. The familiar QR workflow remains;
-the only difference is that the link must open the installed **HyperTodo**
-development build instead of Expo Go.
+No custom mobile installation is required for this flow. If a development build
+is needed later, install it once with `LAN_IP=... make mobile-ios-device` or
+`LAN_IP=... make mobile-android-device`. Start its later Metro sessions with
+`LAN_IP=... make mobile-start-device`.
 
 ### Android Emulator
 
@@ -136,6 +132,8 @@ Emulator address `10.0.2.2` to reach Django on the Mac.
 | `make test` | Run backend pytest and mobile Jest tests. |
 | `make backend-quality` | Run every backend lint, test, Django, and migration check. |
 | `make backend-test-redis` | Run the isolated Redis integration tests against logical database 14. |
+| `make mobile-start-go` | Start Metro on the LAN and generate a QR code for Expo Go. |
+| `make mobile-start-device` | Start Metro for an already installed custom development build. |
 | `make mobile-check` | Run TypeScript, Jest, and Expo Doctor. |
 | `make acceptance` | Print the manual iOS and Android acceptance checklist. |
 
@@ -280,15 +278,21 @@ Open the development build, sign in, and follow the acceptance checklist. Rebuil
 
 ## Troubleshooting: Expo Go asks you to sign in
 
-If Expo Go displays “You need to be signed in to Expo Go and Expo CLI,” it has
-opened a development-client URL with the wrong application. Signing in may
-remove that Expo Go message, but it does not turn Expo Go into this project's
-native runtime.
+If Expo Go displays “You need to be signed in to Expo Go and Expo CLI,” Metro
+was started in development-client mode. That QR targets the installed
+**HyperTodo** development build rather than Expo Go.
 
-HyperTodo includes `expo-dev-client` and starts Metro with `--dev-client`.
-Therefore, open the installed **HyperTodo** development build, not Expo Go.
-Expo describes a development build as a project-specific version of Expo Go
-that can include arbitrary native libraries and configuration.
+For normal local testing in Expo Go, restart Metro explicitly in Expo Go mode:
+
+```console
+make lan-ip
+LAN_IP=192.168.1.20 make mobile-start-go
+```
+
+Scan the new QR code with the phone camera and open it in Expo Go. Signing in is
+not the fix for a QR generated for the wrong launch target.
+
+Use the remaining sections only when testing a custom development build.
 
 ### iOS Simulator
 
@@ -324,7 +328,7 @@ LAN_IP=192.168.1.20 make backend-run-device
 LAN_IP=192.168.1.20 make mobile-ios-device
 ```
 
-After HyperTodo is installed, later Metro sessions use:
+After HyperTodo is installed, later custom development-build sessions use:
 
 ```console
 LAN_IP=192.168.1.20 make mobile-start-device
@@ -332,9 +336,9 @@ LAN_IP=192.168.1.20 make mobile-start-device
 
 Scan Metro's QR code with the iPhone camera so that it opens the installed
 **HyperTodo** development build, or open HyperTodo and select the server from
-its launcher. Do not open the QR link in Expo Go. The Mac and iPhone must share
-a reachable network, and macOS must allow incoming connections to the Django
-and Metro processes. Test
+its launcher. This particular QR is for the custom client, not Expo Go. The Mac
+and iPhone must share a reachable network, and macOS must allow incoming
+connections to the Django and Metro processes. Test
 `http://LAN_IP:8000/hv/` from Safari on the iPhone if the app cannot reach the
 backend.
 
