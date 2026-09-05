@@ -113,6 +113,10 @@ is needed later, install it once with `LAN_IP=... make mobile-ios-device` or
 `LAN_IP=... make mobile-android-device`. Start its later Metro sessions with
 `LAN_IP=... make mobile-start-device`.
 
+Expo Go requires Expo CLI and the mobile app to be signed in with the same Expo
+account. Confirm the CLI account with `make mobile-whoami`. If it reports
+`Not logged in`, run `make mobile-login` and use the same account in Expo Go.
+
 ### Android Emulator
 
 Start the backend in one terminal:
@@ -132,6 +136,8 @@ Emulator address `10.0.2.2` to reach Django on the Mac.
 | `make test` | Run backend pytest and mobile Jest tests. |
 | `make backend-quality` | Run every backend lint, test, Django, and migration check. |
 | `make backend-test-redis` | Run the isolated Redis integration tests against logical database 14. |
+| `make mobile-login` | Sign in to Expo CLI so it can sign Expo Go manifests. |
+| `make mobile-whoami` | Display the Expo account currently used by the CLI. |
 | `make mobile-start-go` | Start Metro on the LAN and generate a QR code for Expo Go. |
 | `make mobile-start-device` | Start Metro for an already installed custom development build. |
 | `make mobile-check` | Run TypeScript, Jest, and Expo Doctor. |
@@ -279,18 +285,29 @@ Open the development build, sign in, and follow the acceptance checklist. Rebuil
 ## Troubleshooting: Expo Go asks you to sign in
 
 If Expo Go displays “You need to be signed in to Expo Go and Expo CLI,” Metro
-was started in development-client mode. That QR targets the installed
-**HyperTodo** development build rather than Expo Go.
+cannot verify the development manifest. Check the CLI session:
 
-For normal local testing in Expo Go, restart Metro explicitly in Expo Go mode:
+```console
+make mobile-whoami
+```
+
+If it reports `Not logged in`, sign in:
+
+```console
+make mobile-login
+```
+
+Sign in to Expo Go on the phone with the same Expo account. Stop the existing
+Metro process with Control-C and start a fresh Expo Go session:
 
 ```console
 make lan-ip
 LAN_IP=192.168.1.20 make mobile-start-go
 ```
 
-Scan the new QR code with the phone camera and open it in Expo Go. Signing in is
-not the fix for a QR generated for the wrong launch target.
+Scan the new QR code with the phone camera and open it in Expo Go. Authentication
+signs and authorizes the local manifest; it does not publish the application or
+expose Metro or Django on the public internet.
 
 Use the remaining sections only when testing a custom development build.
 
