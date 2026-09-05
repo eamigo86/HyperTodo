@@ -115,7 +115,9 @@ is needed later, install it once with `LAN_IP=... make mobile-ios-device` or
 
 Expo Go requires Expo CLI and the mobile app to be signed in with the same Expo
 account. Confirm the CLI account with `make mobile-whoami`. If it reports
-`Not logged in`, run `make mobile-login` and use the same account in Expo Go.
+`Not logged in`, run `make mobile-login`. The browser opens Expo.dev, where
+Google-based accounts can select **Continue with Google** without entering a
+Google password in the terminal. Use the same account in Expo Go.
 
 ### Android Emulator
 
@@ -136,7 +138,7 @@ Emulator address `10.0.2.2` to reach Django on the Mac.
 | `make test` | Run backend pytest and mobile Jest tests. |
 | `make backend-quality` | Run every backend lint, test, Django, and migration check. |
 | `make backend-test-redis` | Run the isolated Redis integration tests against logical database 14. |
-| `make mobile-login` | Sign in to Expo CLI so it can sign Expo Go manifests. |
+| `make mobile-login` | Open browser authentication for Expo CLI manifest signing. |
 | `make mobile-whoami` | Display the Expo account currently used by the CLI. |
 | `make mobile-start-go` | Start Metro on the LAN and generate a QR code for Expo Go. |
 | `make mobile-start-device` | Start Metro for an already installed custom development build. |
@@ -297,8 +299,10 @@ If it reports `Not logged in`, sign in:
 make mobile-login
 ```
 
-Sign in to Expo Go on the phone with the same Expo account. Stop the existing
-Metro process with Control-C and start a fresh Expo Go session:
+Complete authentication in the browser. A Google-based Expo account should use
+**Continue with Google**; never enter the Google password directly in the
+terminal. Sign in to Expo Go on the phone with the same Expo account. Stop the
+existing Metro process with Control-C and start a fresh Expo Go session:
 
 ```console
 make lan-ip

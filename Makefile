@@ -98,8 +98,8 @@ mobile-start-go: ## Start local Expo Go QR workflow; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
 	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) start:go)
 
-mobile-login: ## Sign in to Expo CLI for Expo Go manifest signing.
-	@$(call run_mobile,$(YARN) expo login)
+mobile-login: ## Sign in to Expo CLI through the browser.
+	@$(call run_mobile,$(YARN) expo login --browser)
 
 mobile-whoami: ## Display the Expo account used by the CLI.
 	@$(call run_mobile,$(YARN) expo whoami)
