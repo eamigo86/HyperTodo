@@ -24,11 +24,8 @@ uv run python manage.py runserver
 In another terminal:
 
 ```console
-cd mobile
-nvm use
-cp .env.example .env
-YARN_NODE_LINKER=node-modules yarn install
-yarn start
+cp mobile/.env.example mobile/.env
+make mobile-start
 ```
 
 Hyperview uses native modules, so this app requires a development build rather than Expo Go. Native build commands are documented but were deliberately not run as part of this implementation.

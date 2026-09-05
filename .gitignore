@@ -10,6 +10,7 @@ coverage.xml
 htmlcov/
 db.sqlite3
 node_modules/
+.corepack/
 .expo/
 ios/
 android/

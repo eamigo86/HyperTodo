@@ -5,6 +5,7 @@ BACKEND_DIR := backend
 MOBILE_DIR := mobile
 NVM_DIR ?= $(HOME)/.nvm
 NVM_SH := $(NVM_DIR)/nvm.sh
+YARN := COREPACK_HOME="$(CURDIR)/$(MOBILE_DIR)/.corepack" corepack yarn
 REDIS_URL ?= redis://127.0.0.1:6379/15
 EXPO_PUBLIC_API_URL ?= http://127.0.0.1:8000/hv/
 
@@ -70,31 +71,31 @@ backend-check: ## Run Django checks and verify that migrations are current.
 
 backend-quality: backend-lint backend-test backend-check ## Run every backend quality gate.
 
-mobile-install: ## Install locked mobile dependencies with Node from .nvmrc.
-	@$(call run_mobile,yarn install --frozen-lockfile)
+mobile-install: ## Install locked mobile dependencies with Node and Corepack.
+	@$(call run_mobile,$(YARN) install --frozen-lockfile)
 
 mobile-start: ## Start Metro for iOS or a physical device using EXPO_PUBLIC_API_URL.
-	@$(call run_mobile,EXPO_PUBLIC_API_URL="$(EXPO_PUBLIC_API_URL)" yarn start)
+	@$(call run_mobile,EXPO_PUBLIC_API_URL="$(EXPO_PUBLIC_API_URL)" $(YARN) start)
 
 mobile-start-android: ## Start Metro with the Android Emulator backend address.
-	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://10.0.2.2:8000/hv/" yarn start)
+	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://10.0.2.2:8000/hv/" $(YARN) start)
 
 mobile-test: ## Run focused Jest tests for the owned mobile shell.
-	@$(call run_mobile,yarn test)
+	@$(call run_mobile,$(YARN) test)
 
 mobile-typecheck: ## Run strict TypeScript validation without producing a build.
-	@$(call run_mobile,yarn typecheck)
+	@$(call run_mobile,$(YARN) typecheck)
 
 mobile-doctor: ## Validate the Expo dependency and configuration matrix.
-	@$(call run_mobile,yarn doctor)
+	@$(call run_mobile,$(YARN) doctor)
 
 mobile-check: mobile-typecheck mobile-test mobile-doctor ## Run every automated mobile quality gate.
 
 mobile-ios: ## Create or launch the iOS development build for manual acceptance.
-	@$(call run_mobile,yarn ios)
+	@$(call run_mobile,$(YARN) ios)
 
 mobile-android: ## Create or launch the Android development build for manual acceptance.
-	@$(call run_mobile,yarn android)
+	@$(call run_mobile,$(YARN) android)
 
 acceptance: ## Display the manual iOS and Android acceptance checklist.
 	@cat doc/acceptance.md

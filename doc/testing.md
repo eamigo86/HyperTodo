@@ -22,10 +22,10 @@ Redis tests use logical database 14 and a random namespace. They never call FLUS
 ```console
 cd mobile
 nvm use
-yarn install
-yarn typecheck
-yarn test
-npx expo-doctor@latest
+corepack yarn install
+corepack yarn typecheck
+corepack yarn test
+corepack yarn doctor
 ```
 
 The focused suite checks URL normalization, relative request resolution, cookie credentials, HXML headers, preservation of Hyperview headers, and branded loading/error states. There is no arbitrary numeric mobile coverage target because this project does not extend Hyperview internals.

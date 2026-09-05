@@ -6,7 +6,7 @@ This guide starts from clean Django and Expo projects. You do not need to clone 
 
 - Python 3.14 and uv
 - Node 22.19.0 through nvm
-- Yarn 1.22
+- Corepack, which installs the project-pinned Yarn 1.22.22
 - Xcode and CocoaPods for iOS, or Android Studio and ADB for Android
 - A running Redis service only when testing cache behavior
 
@@ -71,13 +71,13 @@ A fresh client needs an Expo app, the released Hyperview package, its native pee
 ```console
 nvm install 22.19.0
 nvm use 22.19.0
-yarn add expo@~57.0.20 expo-dev-client@~57.0.16 hyperview@0.110.0
+corepack yarn add expo@~57.0.20 expo-dev-client@~57.0.16 hyperview@0.110.0
 ```
 
 Install the native peers:
 
 ```console
-yarn add @react-native-community/datetimepicker@9.1.0 \
+corepack yarn add @react-native-community/datetimepicker@9.1.0 \
   @react-native-picker/picker@2.11.4 \
   @react-navigation/bottom-tabs@6.5.7 \
   @react-navigation/native@6.1.6 \
@@ -124,10 +124,10 @@ A physical device must use the development machine's reachable LAN address. Add 
 
 ```console
 nvm use
-yarn install
-yarn typecheck
-yarn test
-npx expo-doctor@latest
+corepack yarn install
+corepack yarn typecheck
+corepack yarn test
+corepack yarn doctor
 ```
 
 ## 5. Create the development client
@@ -135,15 +135,15 @@ npx expo-doctor@latest
 These commands generate native projects and are intentionally manual:
 
 ```console
-yarn ios
+corepack yarn ios
 # or
-yarn android
+corepack yarn android
 ```
 
 After the development client exists, start Metro with:
 
 ```console
-yarn start
+corepack yarn start
 ```
 
 Open the development build, sign in, and follow the acceptance checklist. Rebuild only after changing native dependencies or native configuration.
