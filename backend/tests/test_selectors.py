@@ -11,8 +11,13 @@ from todo.selectors import dashboard_counts, tasks_for_user
 pytestmark = pytest.mark.django_db
 
 
-def test_task_filters_are_composable_and_user_isolated(user, other_user):
-    now = timezone.now()
+def test_task_filters_are_composable_and_user_isolated(
+    user, other_user, monkeypatch
+):
+    now = timezone.localtime().replace(
+        hour=12, minute=0, second=0, microsecond=0
+    )
+    monkeypatch.setattr("todo.selectors.timezone.now", lambda: now)
     today_due = timezone.localtime(now).replace(
         hour=23, minute=59, second=59, microsecond=0
     )
@@ -47,8 +52,11 @@ def test_task_filters_are_composable_and_user_isolated(user, other_user):
     assert set(tasks_for_user(user, category=category)) == {active, completed}
 
 
-def test_dashboard_counts_describe_private_work(user, other_user):
-    now = timezone.now()
+def test_dashboard_counts_describe_private_work(user, other_user, monkeypatch):
+    now = timezone.localtime().replace(
+        hour=12, minute=0, second=0, microsecond=0
+    )
+    monkeypatch.setattr("todo.selectors.timezone.now", lambda: now)
     today_due = timezone.localtime(now).replace(
         hour=23, minute=59, second=59, microsecond=0
     )

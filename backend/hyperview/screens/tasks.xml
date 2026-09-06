@@ -15,13 +15,11 @@
     <style id="task-list" flex="1" />
     <style id="empty-item" paddingVertical="24" />
     <style id="list-spinner" alignItems="center" height="28" justifyContent="center" />
-    <style id="task" backgroundColor="#FFFFFF" borderRadius="22" padding="16" marginBottom="12" />
+    <style id="swipe-row" borderRadius="22" marginBottom="12" overflow="hidden" />
+    <style id="task" backgroundColor="#FFFFFF" borderRadius="22" padding="16" />
     <style id="done" opacity="0.55" />
     <style id="task-title" color="#20243D" fontSize="17" fontWeight="600" />
     <style id="meta" color="#7B8097" fontSize="13" marginTop="5" />
-    <style id="actions" flexDirection="row" marginTop="12" />
-    <style id="action" color="#278CFF" marginRight="18" fontWeight="600" />
-    <style id="danger" color="#B42318" fontWeight="600" />
     <style id="bottom-navigation" alignItems="center" backgroundColor="#FFFFFF" borderTopColor="#E7EAF3" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
     <style id="nav-hit-area" alignItems="center" flex="1" justifyContent="center" />
     <style id="nav-item" alignItems="center" height="52" justifyContent="center" width="64" />

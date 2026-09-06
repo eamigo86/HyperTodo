@@ -264,8 +264,11 @@ def test_secondary_screens_use_centered_blue_destination_headers(user):
         assert heading is not None
         assert heading.text == title
 
-def test_task_screen_scrolls_and_makes_dashboard_filter_visible(user):
-    now = timezone.now()
+def test_task_screen_scrolls_and_makes_dashboard_filter_visible(user, monkeypatch):
+    now = timezone.localtime().replace(
+        hour=12, minute=0, second=0, microsecond=0
+    )
+    monkeypatch.setattr("todo.selectors.timezone.now", lambda: now)
     today_due = timezone.localtime(now).replace(
         hour=23, minute=59, second=59, microsecond=0
     )
@@ -573,6 +576,32 @@ def test_side_menu_is_loaded_and_closed_through_hxml_requests(user):
     assert closed.attrib == {"id": "side-menu-host"}
     assert len(closed) == 0
 
+
+
+def test_task_cards_expose_swipe_actions_instead_of_tiny_links(user):
+    task = Task.objects.create(user=user, title="Swipe me")
+    client = Client()
+    client.force_login(user)
+
+    root = assert_hxml(client.get(reverse("todo:tasks")))
+    row = root.find(".//app:swipe-row", NS)
+
+    assert row is not None
+    assert row.attrib == {
+        "id": f"task-swipe-{task.pk}",
+        "style": "swipe-row",
+        "edit-href": f"/hv/tasks/{task.pk}/edit/",
+        "toggle-href": f"/hv/tasks/{task.pk}/toggle/",
+        "delete-href": f"/hv/tasks/{task.pk}/delete/",
+        "completed": "false",
+    }
+    assert root.find(".//hv:view[@style='actions']", NS) is None
+    assert (
+        root.find(
+            ".//hv:form//hv:text-field[@name='csrfmiddlewaretoken']", NS
+        )
+        is not None
+    )
 
 def test_task_list_supports_refresh_and_infinite_scroll(user):
     for index in range(21):
