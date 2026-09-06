@@ -293,7 +293,14 @@ def _task_form_response(
         else "screens/task_form.xml"
     )
     return HyperviewTemplateResponse(
-        request, template_name, {"form": form, "task": task}, status=status
+        request,
+        template_name,
+        {
+            "form": form,
+            "task": task,
+            "header_title": "Edit task" if task else "New task",
+        },
+        status=status
     )
 
 
@@ -457,7 +464,11 @@ def _category_form_response(
     return HyperviewTemplateResponse(
         request,
         template_name,
-        {"form": form, "category": category},
+        {
+            "form": form,
+            "category": category,
+            "header_title": "Edit category" if category else "New category",
+        },
         status=status,
     )
 

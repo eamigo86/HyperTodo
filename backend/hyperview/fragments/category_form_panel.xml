@@ -1,8 +1,4 @@
 {% load dj_hyperview %}<view xmlns="https://hyperview.org/hyperview" id="category-form-panel">
-  <view style="header">
-    <view id="category-back" style="back-button" action="back"><text style="back">&lt;</text></view>
-    <text style="title">{% if category %}Edit category{% else %}New category{% endif %}</text>
-  </view>
   <form id="category-form">
     <view style="card">
       {% if form.errors %}<text id="form-errors" style="error">Please correct the highlighted category details.</text>{% endif %}

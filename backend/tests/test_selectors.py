@@ -13,6 +13,9 @@ pytestmark = pytest.mark.django_db
 
 def test_task_filters_are_composable_and_user_isolated(user, other_user):
     now = timezone.now()
+    today_due = timezone.localtime(now).replace(
+        hour=23, minute=59, second=59, microsecond=0
+    )
     category = Category.objects.create(
         user=user, name="Work", color=Category.Color.LAVENDER
     )
@@ -21,7 +24,7 @@ def test_task_filters_are_composable_and_user_isolated(user, other_user):
         user=user, category=category, title="Done", completed_at=now
     )
     today = Task.objects.create(
-        user=user, title="Today", due_at=now + timedelta(hours=1)
+        user=user, title="Today", due_at=today_due
     )
     scheduled = Task.objects.create(
         user=user, title="Later", due_at=now + timedelta(days=3)
@@ -46,7 +49,10 @@ def test_task_filters_are_composable_and_user_isolated(user, other_user):
 
 def test_dashboard_counts_describe_private_work(user, other_user):
     now = timezone.now()
-    Task.objects.create(user=user, title="Today", due_at=now + timedelta(hours=1))
+    today_due = timezone.localtime(now).replace(
+        hour=23, minute=59, second=59, microsecond=0
+    )
+    Task.objects.create(user=user, title="Today", due_at=today_due)
     Task.objects.create(user=user, title="Later", due_at=now + timedelta(days=2))
     Task.objects.create(user=user, title="Late", due_at=now - timedelta(hours=1))
     Task.objects.create(user=user, title="Done", completed_at=now)

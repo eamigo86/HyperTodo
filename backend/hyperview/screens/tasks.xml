@@ -3,10 +3,10 @@
   <styles>
     <style id="screen" backgroundColor="#F7F8FC" flex="1" />
     <style id="screen-content" flex="1" padding="24" />
-    <style id="header" alignItems="center" flexDirection="row" marginBottom="18" />
-    <style id="back-button" alignItems="center" backgroundColor="#FFFFFF" borderColor="#E1E6F0" borderRadius="20" borderWidth="1" height="40" justifyContent="center" marginRight="12" width="40" />
-    <style id="back" color="#4C526B" fontSize="22" fontWeight="500" lineHeight="24" />
-    <style id="title" color="#161A35" fontSize="26" fontWeight="700" />
+    <style id="screen-header" alignItems="center" backgroundColor="#278CFF" flexDirection="row" height="58" justifyContent="center" paddingHorizontal="20" />
+    <style id="back-button" alignItems="center" height="44" justifyContent="center" left="8" position="absolute" width="44" />
+    <style id="back" color="#FFFFFF" fontSize="28" fontWeight="400" lineHeight="30" />
+    <style id="screen-header-title" color="#FFFFFF" fontSize="19" fontWeight="700" />
     <style id="filter-summary" color="#6D728A" fontSize="13" marginBottom="10" />
     <style id="filters" flexDirection="row" flexWrap="wrap" marginBottom="10" />
     <style id="chip" backgroundColor="#EEF2FC" borderRadius="16" marginBottom="8" marginRight="8" paddingHorizontal="12" paddingVertical="9" />
@@ -47,11 +47,8 @@
   </styles>
   <screen id="tasks-screen">
     <body style="screen">
+      {% include "partials/screen_header.xml" with header_title="Tasks" back_id="task-list-back" %}
       <view id="screen-content" style="screen-content">
-        <view style="header">
-          <view id="task-list-back" style="back-button" action="back"><text style="back">&lt;</text></view>
-          <text style="title">Tasks</text>
-        </view>
         <text id="filter-summary" style="filter-summary">{{ status_filter|title }} tasks{% if selected_category %} · {{ selected_category.name }}{% endif %}</text>
         <view style="filters">
           <view id="filter-all" style="chip{% if status_filter == 'all' %} chip-active{% endif %}" href="/hv/tasks/?status=all" action="reload"><text style="chip-text">All</text></view>

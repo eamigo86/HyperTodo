@@ -212,9 +212,64 @@ def test_dashboard_tiles_render_labels_and_filtered_destinations(user):
         assert label in "".join(tile.itertext())
 
 
+
+def test_dashboard_counters_share_one_ordered_row(user):
+    client = Client()
+    client.force_login(user)
+
+    root = assert_hxml(client.get(reverse("todo:dashboard")))
+    row = root.find(".//hv:view[@id='dashboard-counters']", NS)
+
+    assert row is not None
+    assert [child.attrib["id"] for child in row.findall("./hv:view", NS)] == [
+        "dashboard-today",
+        "dashboard-all",
+        "dashboard-scheduled",
+        "dashboard-overdue",
+    ]
+    row_style = root.find(".//hv:style[@id='counter-row']", NS)
+    tile_style = root.find(".//hv:style[@id='tile']", NS)
+    assert row_style is not None
+    assert row_style.attrib["flexDirection"] == "row"
+    assert row_style.attrib["gap"] == "7"
+    assert tile_style is not None
+    assert tile_style.attrib["flex"] == "1"
+
+
+def test_secondary_screens_use_centered_blue_destination_headers(user):
+    client = Client()
+    client.force_login(user)
+
+    routes = {
+        reverse("todo:tasks"): ("task-list-back", "Tasks"),
+        reverse("todo:categories"): ("category-list-back", "Categories"),
+        reverse("todo:task-new"): ("task-back", "New task"),
+        reverse("todo:category-new"): ("category-back", "New category"),
+    }
+    for route, (back_id, title) in routes.items():
+        root = assert_hxml(client.get(route))
+        header = root.find(".//hv:view[@id='screen-header']", NS)
+        header_style = root.find(".//hv:style[@id='screen-header']", NS)
+        back = root.find(f".//hv:view[@id='{back_id}']", NS)
+        heading = root.find(".//hv:text[@style='screen-header-title']", NS)
+
+        assert header is not None
+        assert header_style is not None
+        assert header_style.attrib["backgroundColor"] == "#278CFF"
+        assert header_style.attrib["height"] == "58"
+        assert header_style.attrib["justifyContent"] == "center"
+        assert back is not None
+        assert back.attrib["action"] == "back"
+        assert "".join(back.itertext()).strip() == "<"
+        assert heading is not None
+        assert heading.text == title
+
 def test_task_screen_scrolls_and_makes_dashboard_filter_visible(user):
     now = timezone.now()
-    Task.objects.create(user=user, title="Due today", due_at=now + timedelta(hours=1))
+    today_due = timezone.localtime(now).replace(
+        hour=23, minute=59, second=59, microsecond=0
+    )
+    Task.objects.create(user=user, title="Due today", due_at=today_due)
     Task.objects.create(user=user, title="Due later", due_at=now + timedelta(days=3))
     Task.objects.create(user=user, title="Past due", due_at=now - timedelta(days=1))
     client = Client()
@@ -266,20 +321,6 @@ def test_category_form_has_back_navigation_and_selectable_color_options(user):
     assert submit.attrib["action"] == "replace"
     assert submit.attrib["target"] == "category-form-panel"
 
-
-def test_back_control_uses_quiet_bordered_surface(user):
-    client = Client()
-    client.force_login(user)
-
-    for route in (reverse("todo:tasks"), reverse("todo:category-new")):
-        root = assert_hxml(client.get(route))
-        style = root.find(".//hv:style[@id='back-button']", NS)
-        assert style is not None
-        assert style.attrib["backgroundColor"] == "#FFFFFF"
-        assert style.attrib["borderColor"] == "#E1E6F0"
-        assert style.attrib["borderWidth"] == "1"
-        assert style.attrib["height"] == "40"
-        assert style.attrib["width"] == "40"
 
 
 def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):

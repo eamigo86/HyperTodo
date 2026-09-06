@@ -1,11 +1,12 @@
 {% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
-    <style id="screen" backgroundColor="#F7F8FC" flex="1" padding="24" />
-    <style id="header" alignItems="center" flexDirection="row" marginBottom="20" />
-    <style id="back-button" alignItems="center" backgroundColor="#FFFFFF" borderColor="#E1E6F0" borderRadius="20" borderWidth="1" height="40" justifyContent="center" marginRight="12" width="40" />
-    <style id="back" color="#4C526B" fontSize="22" fontWeight="500" lineHeight="24" />
-    <style id="title" color="#161A35" fontSize="27" fontWeight="700" />
+    <style id="screen" backgroundColor="#F7F8FC" flex="1" />
+    <style id="screen-content" flex="1" padding="24" />
+    <style id="screen-header" alignItems="center" backgroundColor="#278CFF" flexDirection="row" height="58" justifyContent="center" paddingHorizontal="20" />
+    <style id="back-button" alignItems="center" height="44" justifyContent="center" left="8" position="absolute" width="44" />
+    <style id="back" color="#FFFFFF" fontSize="28" fontWeight="400" lineHeight="30" />
+    <style id="screen-header-title" color="#FFFFFF" fontSize="19" fontWeight="700" />
     <style id="card" backgroundColor="#FFFFFF" borderRadius="28" padding="20" />
     <style id="label" color="#4C526B" fontSize="13" fontWeight="600" marginTop="12" marginBottom="6" />
     <style id="field" backgroundColor="#F1F4FC" borderRadius="16" padding="13" />
@@ -27,8 +28,11 @@
     <style id="date-modal-action" color="#278CFF" fontSize="16" fontWeight="700" padding="18" />
   </styles>
   <screen id="task-form-screen">
-    <body style="screen" scroll="true" shows-scroll-indicator="false">
-      {% include "fragments/task_form_panel.xml" %}
+    <body style="screen">
+      {% include "partials/screen_header.xml" with header_title=header_title back_id="task-back" %}
+      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false">
+        {% include "fragments/task_form_panel.xml" %}
+      </view>
     </body>
   </screen>
 </doc>

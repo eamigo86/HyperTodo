@@ -5,14 +5,14 @@
     <style id="screen-content" flex="1" padding="24" />
     <style id="eyebrow" color="#6D728A" fontSize="14" />
     <style id="title" color="#161A35" fontSize="28" fontWeight="700" marginBottom="22" />
-    <style id="row" flexDirection="row" marginBottom="12" />
-    <style id="tile" flex="1" borderRadius="20" justifyContent="space-between" minHeight="104" padding="18" marginRight="10" />
+    <style id="counter-row" flexDirection="row" gap="7" marginBottom="12" />
+    <style id="tile" flex="1" borderRadius="17" justifyContent="space-between" minHeight="82" padding="10" />
     <style id="lavender" backgroundColor="#AEBBFA" />
     <style id="yellow" backgroundColor="#FFF27B" />
     <style id="mint" backgroundColor="#C9F0E7" />
     <style id="pink" backgroundColor="#F6B5E8" />
-    <style id="tile-label" color="#20243D" fontSize="16" />
-    <style id="tile-count" color="#161A35" fontSize="28" fontWeight="700" marginTop="12" />
+    <style id="tile-label" color="#20243D" fontSize="11" fontWeight="600" />
+    <style id="tile-count" color="#161A35" fontSize="22" fontWeight="700" marginTop="9" />
     <style id="section" color="#161A35" fontSize="18" fontWeight="700" marginTop="20" marginBottom="12" />
     <style id="task" backgroundColor="#FFFFFF" borderRadius="22" padding="16" marginBottom="10" />
     <style id="task-title" color="#20243D" fontSize="16" fontWeight="600" />
@@ -47,12 +47,10 @@
       <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false">
         <text style="eyebrow">Hello {{ request.user.first_name|default:request.user.username }},</text>
         <text style="title">You have work today</text>
-        <view style="row">
+        <view id="dashboard-counters" style="counter-row">
           <view id="dashboard-today" style="tile lavender" href="/hv/tasks/?status=today" action="navigate"><text style="tile-label">Today</text><text style="tile-count">{{ counts.today }}</text></view>
-          <view id="dashboard-scheduled" style="tile yellow" href="/hv/tasks/?status=scheduled" action="navigate"><text style="tile-label">Scheduled</text><text style="tile-count">{{ counts.scheduled }}</text></view>
-        </view>
-        <view style="row">
           <view id="dashboard-all" style="tile mint" href="/hv/tasks/?status=all" action="navigate"><text style="tile-label">All</text><text style="tile-count">{{ counts.all }}</text></view>
+          <view id="dashboard-scheduled" style="tile yellow" href="/hv/tasks/?status=scheduled" action="navigate"><text style="tile-label">Scheduled</text><text style="tile-count">{{ counts.scheduled }}</text></view>
           <view id="dashboard-overdue" style="tile pink" href="/hv/tasks/?status=overdue" action="navigate"><text style="tile-label">Overdue</text><text style="tile-count">{{ counts.overdue }}</text></view>
         </view>
         <text style="section">Today's tasks</text>
