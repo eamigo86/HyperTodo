@@ -45,6 +45,24 @@ def test_root_serves_login_without_redirect_and_dashboard_after_login(user):
     assert dashboard_root.find(".//hv:screen[@id='dashboard-screen']", NS) is not None
 
 
+def test_login_screen_uses_secure_credentials_and_document_navigation():
+    response = Client().get(reverse("todo:login"))
+    root = assert_hxml(response)
+
+    username = root.find(".//hv:text-field[@name='username']", NS)
+    password = root.find(".//hv:text-field[@name='password']", NS)
+    submit = root.find(".//hv:view[@id='login-submit']", NS)
+
+    assert username is not None
+    assert username.attrib["text-content-type"] == "username"
+    assert password is not None
+    assert password.attrib["secure-text"] == "true"
+    assert password.attrib["text-content-type"] == "password"
+    assert "secure-text-entry" not in password.attrib
+    assert submit is not None
+    assert submit.attrib["action"] == "reload"
+
+
 def test_login_requires_csrf_and_returns_direct_hxml(user):
     client = csrf_client()
     response = client.get(reverse("todo:login"))
