@@ -80,6 +80,17 @@ function AnimatedSideMenuComponent({
 
   return (
     <View style={rootStyle} testID={element.getAttribute("id") ?? undefined}>
+      <Animated.View
+        style={[styles.scrim, { opacity: scrimOpacity }]}
+        testID="side-menu-backdrop"
+      >
+        <Pressable
+          accessibilityLabel="Close menu overlay"
+          onPress={dismiss}
+          style={styles.scrimPressable}
+          testID="side-menu-scrim"
+        />
+      </Animated.View>
       <Animated.View style={[styles.panel, { transform: [{ translateX }] }]}>
         {children}
         <Pressable
@@ -90,14 +101,6 @@ function AnimatedSideMenuComponent({
         >
           <Text style={styles.closeText}>×</Text>
         </Pressable>
-      </Animated.View>
-      <Animated.View style={[styles.scrim, { opacity: scrimOpacity }]}>
-        <Pressable
-          accessibilityLabel="Close menu overlay"
-          onPress={dismiss}
-          style={styles.scrimPressable}
-          testID="side-menu-scrim"
-        />
       </Animated.View>
     </View>
   );
@@ -132,8 +135,11 @@ const styles = StyleSheet.create({
   },
   scrim: {
     backgroundColor: "#161A35",
-    flex: 1,
-    height: "100%",
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
   scrimPressable: {
     flex: 1,

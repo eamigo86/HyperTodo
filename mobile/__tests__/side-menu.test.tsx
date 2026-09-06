@@ -1,6 +1,6 @@
 import React from "react";
 import { act, fireEvent, render } from "@testing-library/react-native";
-import { Animated } from "react-native";
+import { Animated, StyleSheet } from "react-native";
 
 jest.mock("hyperview", () => ({
   createStyleProp: jest.fn(() => []),
@@ -47,6 +47,22 @@ describe("AnimatedSideMenu", () => {
     expect(timing).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ duration: 220, toValue: 0.22 }),
+    );
+  });
+
+  it("dims the entire screen behind the moving panel", () => {
+    const screen = render(<AnimatedSideMenu {...props} />);
+    const backdrop = screen.getByTestId("side-menu-backdrop");
+    const style = StyleSheet.flatten(backdrop.props.style);
+
+    expect(style).toEqual(
+      expect.objectContaining({
+        bottom: 0,
+        left: 0,
+        position: "absolute",
+        right: 0,
+        top: 0,
+      }),
     );
   });
 
