@@ -37,11 +37,42 @@ with `XMLRestrictedElementFound: Restricted <doc> tag found in the response`.
 
 Practical rules:
 
+- Send `application/vnd.hyperview_fragment+xml` for replacement, append, and
+  prepend responses. The response root must be the bare element being inserted;
+  `doc`, `navigator`, `screen`, and `body` are restricted in fragment mode.
 - Use stable element IDs for every replacement target.
 - Make the response shape part of each endpoint test.
 - Validate the media type and XML structure, not only the HTTP status.
 - For a custom component calling `onUpdate` with `replace`, pass its `targetId`
   explicitly when no Hyperview behavior element exists.
+
+Hyperview does not rebuild the stylesheet after a partial replacement. Every style
+ID used by a returned fragment must already exist in the screen document. HyperTodo
+keeps one shared dashboard-content template for the initial screen and the bare
+replacement, and a regression test rejects fragment style IDs not declared by that
+screen.
+
+## Hyperview 0.110.0 client constraints
+
+Several HXML constructs look more flexible than their runtime behavior:
+
+- Width, height, percentage dimensions, and negative margins belong in `style`
+  declarations. Attributes with those names on content elements are ignored.
+- Dynamic progress and activity dimensions need a finite set of declared bucket
+  styles selected by the Django template. Calculated inline styles do not exist.
+- A `header` element is a `view` alias. When the default host header is disabled,
+  build the 44-point destination header as a normal view and give both side slots
+  equal fixed widths so the title remains centered.
+- Hyperview's `safe-area` uses React Native's older iOS-only safe-area component.
+  The Expo host should own device insets instead.
+- Hyperview's `avoid-keyboard` is iOS-only and wraps children in a position-mode
+  keyboard-avoiding view. It can collapse flex layouts; prefer a scrolling body,
+  a `flexGrow` content container, and a bounded hero.
+- An `option` label must be a child `text` element. A bare text node does not render.
+- On a scrolling view, `style` decorates the viewport. Child direction, gap,
+  padding, and justification belong in `content-container-style`.
+- `href-style` decorates the native touch wrapper. Use it to provide a 44-point
+  hit area without enlarging a small visual icon.
 
 ## Sessions work when redirects are avoided
 
@@ -77,6 +108,11 @@ Links can introduce native wrapper views. Width and flex rules sometimes need to
 applied to the clickable wrapper as well as the visible child. This is why equal
 dashboard cards must be verified on the actual renderer, not inferred from the inner
 HXML styles.
+
+HyperTodo uses separate top and bottom host safe-area views: the top inset matches
+the blue screen chrome and the bottom inset matches the light canvas and tab bar.
+The application status bar is light over the blue header, while temporary light
+overlays such as the animated splash own a dark status-bar override.
 
 ## Lists require stable refresh behavior
 
