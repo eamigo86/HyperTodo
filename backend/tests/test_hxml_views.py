@@ -243,12 +243,23 @@ def test_dashboard_counters_share_one_ordered_row(user):
     ]
     row_style = root.find(".//hv:style[@id='counter-row']", NS)
     tile_style = root.find(".//hv:style[@id='tile']", NS)
+    hit_area_style = root.find(".//hv:style[@id='tile-hit-area']", NS)
     assert row_style is not None
     assert row_style.attrib["flexDirection"] == "row"
     assert row_style.attrib["gap"] == "7"
     assert tile_style is not None
-    assert tile_style.attrib["flex"] == "1"
-    assert "width" not in tile_style.attrib
+    assert tile_style.attrib["width"] == "100%"
+    assert hit_area_style is not None
+    assert hit_area_style.attrib == {
+        "id": "tile-hit-area",
+        "flexBasis": "0",
+        "flexGrow": "1",
+        "flexShrink": "1",
+    }
+    assert all(
+        child.attrib["href-style"] == "tile-hit-area"
+        for child in row.findall("./hv:view", NS)
+    )
     labels = row.findall("./hv:view/hv:text[@style='tile-label']", NS)
     assert len(labels) == 4
     assert all(label.attrib["adjustsFontSizeToFit"] == "true" for label in labels)

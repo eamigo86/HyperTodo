@@ -6,7 +6,8 @@
     <style id="eyebrow" color="#6D728A" fontSize="14" />
     <style id="title" color="#161A35" fontSize="28" fontWeight="700" marginBottom="22" />
     <style id="counter-row" flexDirection="row" gap="7" marginBottom="12" />
-    <style id="tile" flex="1" borderRadius="17" justifyContent="space-between" minHeight="82" paddingHorizontal="7" paddingVertical="10" />
+    <style id="tile-hit-area" flexBasis="0" flexGrow="1" flexShrink="1" />
+    <style id="tile" width="100%" borderRadius="17" justifyContent="space-between" minHeight="82" paddingHorizontal="7" paddingVertical="10" />
     <style id="lavender" backgroundColor="#AEBBFA" />
     <style id="yellow" backgroundColor="#FFF27B" />
     <style id="mint" backgroundColor="#C9F0E7" />
@@ -48,10 +49,10 @@
         <text style="eyebrow">Hello {{ request.user.first_name|default:request.user.username }},</text>
         <text style="title">You have work today</text>
         <view id="dashboard-counters" style="counter-row">
-          <view id="dashboard-all" style="tile mint" href="/hv/tasks/?status=all" action="navigate"><text style="tile-label" adjustsFontSizeToFit="true" minimumFontScale="0.72" numberOfLines="1">All</text><text style="tile-count">{{ counts.all }}</text></view>
-          <view id="dashboard-today" style="tile lavender" href="/hv/tasks/?status=today" action="navigate"><text style="tile-label" adjustsFontSizeToFit="true" minimumFontScale="0.72" numberOfLines="1">Today</text><text style="tile-count">{{ counts.today }}</text></view>
-          <view id="dashboard-scheduled" style="tile yellow" href="/hv/tasks/?status=scheduled" action="navigate"><text style="tile-label" adjustsFontSizeToFit="true" minimumFontScale="0.72" numberOfLines="1">Scheduled</text><text style="tile-count">{{ counts.scheduled }}</text></view>
-          <view id="dashboard-overdue" style="tile pink" href="/hv/tasks/?status=overdue" action="navigate"><text style="tile-label" adjustsFontSizeToFit="true" minimumFontScale="0.72" numberOfLines="1">Overdue</text><text style="tile-count">{{ counts.overdue }}</text></view>
+          <view id="dashboard-all" style="tile mint" href-style="tile-hit-area" href="/hv/tasks/?status=all" action="navigate"><text style="tile-label" adjustsFontSizeToFit="true" minimumFontScale="0.72" numberOfLines="1">All</text><text style="tile-count">{{ counts.all }}</text></view>
+          <view id="dashboard-today" style="tile lavender" href-style="tile-hit-area" href="/hv/tasks/?status=today" action="navigate"><text style="tile-label" adjustsFontSizeToFit="true" minimumFontScale="0.72" numberOfLines="1">Today</text><text style="tile-count">{{ counts.today }}</text></view>
+          <view id="dashboard-scheduled" style="tile yellow" href-style="tile-hit-area" href="/hv/tasks/?status=scheduled" action="navigate"><text style="tile-label" adjustsFontSizeToFit="true" minimumFontScale="0.72" numberOfLines="1">Scheduled</text><text style="tile-count">{{ counts.scheduled }}</text></view>
+          <view id="dashboard-overdue" style="tile pink" href-style="tile-hit-area" href="/hv/tasks/?status=overdue" action="navigate"><text style="tile-label" adjustsFontSizeToFit="true" minimumFontScale="0.72" numberOfLines="1">Overdue</text><text style="tile-count">{{ counts.overdue }}</text></view>
         </view>
         <text style="section">Today's tasks</text>
         {% for task in tasks %}
