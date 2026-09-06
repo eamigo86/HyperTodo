@@ -22,11 +22,11 @@
     <body style="screen">
       <view style="header"><view href="/hv/dashboard/" action="back"><text style="back">‹ Home</text></view><text style="title">Tasks</text></view>
       <view style="filters">
-        <view style="chip" href="/hv/tasks/?status=all" action="replace"><text style="chip-text">All</text></view>
-        <view style="chip" href="/hv/tasks/?status=active" action="replace"><text style="chip-text">Active</text></view>
-        <view style="chip" href="/hv/tasks/?status=completed" action="replace"><text style="chip-text">Done</text></view>
+        <view style="chip" href="/hv/tasks/?status=all" action="reload"><text style="chip-text">All</text></view>
+        <view style="chip" href="/hv/tasks/?status=active" action="reload"><text style="chip-text">Active</text></view>
+        <view style="chip" href="/hv/tasks/?status=completed" action="reload"><text style="chip-text">Done</text></view>
       </view>
-      {% if categories %}<view style="filters">{% for category in categories %}<view style="chip" href="/hv/tasks/?status={{ status_filter }}&amp;category={{ category.id }}" action="replace"><text style="chip-text">{{ category.name }}</text></view>{% endfor %}</view>{% endif %}
+      {% if categories %}<view style="filters">{% for category in categories %}<view style="chip" href="/hv/tasks/?status={{ status_filter }}&amp;category={{ category.id }}" action="reload"><text style="chip-text">{{ category.name }}</text></view>{% endfor %}</view>{% endif %}
       {% for task in tasks %}
       <view style="task{% if task.is_completed %} done{% endif %}">
         <text style="task-title">{% if task.is_completed %}✓ {% endif %}{{ task.title }}</text>

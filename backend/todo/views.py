@@ -214,8 +214,13 @@ def task_list(request: HttpRequest) -> HttpResponse:
 def _task_form_response(
     request: HttpRequest, form: TaskForm, *, task: Task | None = None, status: int = 200
 ) -> HyperviewTemplateResponse:
+    template_name = (
+        "fragments/task_form_panel.xml"
+        if request.method == "POST"
+        else "screens/task_form.xml"
+    )
     return HyperviewTemplateResponse(
-        request, "screens/task_form.xml", {"form": form, "task": task}, status=status
+        request, template_name, {"form": form, "task": task}, status=status
     )
 
 
@@ -227,7 +232,7 @@ def task_new(request: HttpRequest) -> HttpResponse:
         request: Incoming task form request.
 
     Returns:
-        Task form or refreshed task list HXML.
+        Task form document, form fragment, or list transition HXML.
     """
     if denied := _require_user(request):
         return denied
@@ -243,14 +248,7 @@ def task_new(request: HttpRequest) -> HttpResponse:
             due_at=form.cleaned_data["due_at"],
         )
         return HyperviewTemplateResponse(
-            request,
-            "screens/tasks.xml",
-            {
-                "tasks": tasks_for_user(request.user),
-                "categories": Category.objects.filter(user=request.user),
-                "status_filter": "all",
-            },
-            status=201,
+            request, "fragments/task_transition.xml", status=201
         )
     return _task_form_response(
         request, form, status=422 if request.method == "POST" else 200
@@ -266,7 +264,7 @@ def task_edit(request: HttpRequest, task_id: UUID) -> HttpResponse:
         task_id: Task identifier from the route.
 
     Returns:
-        Task form or refreshed task list HXML.
+        Task form document, form fragment, or list transition HXML.
     """
     if denied := _require_user(request):
         return denied
@@ -284,13 +282,7 @@ def task_edit(request: HttpRequest, task_id: UUID) -> HttpResponse:
             due_at=form.cleaned_data["due_at"],
         )
         return HyperviewTemplateResponse(
-            request,
-            "screens/tasks.xml",
-            {
-                "tasks": tasks_for_user(request.user),
-                "categories": Category.objects.filter(user=request.user),
-                "status_filter": "all",
-            },
+            request, "fragments/task_transition.xml"
         )
     return _task_form_response(
         request, form, task=task, status=422 if request.method == "POST" else 200
@@ -306,7 +298,7 @@ def task_toggle(request: HttpRequest, task_id: UUID) -> HttpResponse:
         task_id: Task identifier from the route.
 
     Returns:
-        Refreshed task list HXML.
+        Task-list reload transition fragment.
     """
     if denied := _require_user(request):
         return denied
@@ -314,13 +306,7 @@ def task_toggle(request: HttpRequest, task_id: UUID) -> HttpResponse:
         return invalid
     toggle_task(user=request.user, task_id=task_id)
     return HyperviewTemplateResponse(
-        request,
-        "screens/tasks.xml",
-        {
-            "tasks": tasks_for_user(request.user),
-            "categories": Category.objects.filter(user=request.user),
-            "status_filter": "all",
-        },
+        request, "fragments/task_list_transition.xml"
     )
 
 
@@ -333,7 +319,7 @@ def task_delete(request: HttpRequest, task_id: UUID) -> HttpResponse:
         task_id: Task identifier from the route.
 
     Returns:
-        Refreshed task list HXML.
+        Task-list reload transition fragment.
     """
     if denied := _require_user(request):
         return denied
@@ -341,13 +327,7 @@ def task_delete(request: HttpRequest, task_id: UUID) -> HttpResponse:
         return invalid
     delete_task(user=request.user, task_id=task_id)
     return HyperviewTemplateResponse(
-        request,
-        "screens/tasks.xml",
-        {
-            "tasks": tasks_for_user(request.user),
-            "categories": Category.objects.filter(user=request.user),
-            "status_filter": "all",
-        },
+        request, "fragments/task_list_transition.xml"
     )
 
 

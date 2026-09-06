@@ -33,6 +33,17 @@ def token_from(response):
     return field.attrib["value"]
 
 
+def assert_transition(response, transition_id, *, action, href, status=200):
+    """Assert an HXML fragment contains the expected load transition."""
+    root = assert_hxml(response, status=status)
+    assert root.tag == f"{{{NS['hv']}}}view"
+    assert root.attrib["id"] == transition_id
+    behavior = root.find("./hv:behavior", NS)
+    assert behavior is not None
+    assert behavior.attrib == {"trigger": "load", "href": href, "action": action}
+    return root
+
+
 def test_root_initializes_stack_navigator_for_guest_and_user(user):
     client = Client()
     login_response = client.get(reverse("todo:root"))
@@ -133,10 +144,39 @@ def test_anonymous_private_route_returns_session_expired_hxml():
     assert root.find(".//hv:screen[@id='session-expired-screen']", NS) is not None
 
 
+def test_task_form_has_back_action_visible_categories_and_time_keypad(user):
+    client = Client()
+    client.force_login(user)
+    Category.objects.create(user=user, name="Work", color=Category.Color.LAVENDER)
+
+    root = assert_hxml(client.get(reverse("todo:task-new")))
+    back = root.find(".//hv:view[@id='task-back']", NS)
+    due_date = root.find(".//hv:date-field[@name='due_date']", NS)
+    due_time = root.find(".//hv:text-field[@name='due_time']", NS)
+    category = root.find(".//hv:select-single[@name='category']", NS)
+
+    assert back is not None
+    assert back.attrib["action"] == "back"
+    assert due_date is not None
+    assert due_date.attrib["field-style"] == "field"
+    assert due_date.attrib["placeholder"] == "Select due date"
+    assert due_time is not None
+    assert due_time.attrib["keyboard-type"] == "number-pad"
+    assert due_time.attrib["mask"] == "99:99"
+    assert category is not None
+    labels = [node.text for node in category.findall("./hv:option/hv:text", NS)]
+    assert labels == ["No category", "Work"]
+
+
 def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
     client = csrf_client()
     client.force_login(user)
     form_response = client.get(reverse("todo:task-new"))
+    form_root = assert_hxml(form_response)
+    submit = form_root.find(".//hv:view[@id='task-submit']", NS)
+    assert submit is not None
+    assert submit.attrib["action"] == "replace"
+    assert submit.attrib["target"] == "task-form-panel"
     token = token_from(form_response)
     created = client.post(
         reverse("todo:task-new"),
@@ -149,7 +189,13 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
             "csrfmiddlewaretoken": token,
         },
     )
-    assert_hxml(created, status=201)
+    assert_transition(
+        created,
+        "task-transition",
+        action="navigate",
+        href="/hv/tasks/",
+        status=201,
+    )
     task = Task.objects.get(user=user)
 
     edit_response = client.get(reverse("todo:task-edit", args=(task.pk,)))
@@ -165,7 +211,9 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
             "csrfmiddlewaretoken": edit_token,
         },
     )
-    assert_hxml(updated)
+    assert_transition(
+        updated, "task-transition", action="navigate", href="/hv/tasks/"
+    )
     task.refresh_from_db()
     assert task.title == "Ship XML"
 
@@ -173,7 +221,9 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
         reverse("todo:task-toggle", args=(task.pk,)),
         {"csrfmiddlewaretoken": edit_token},
     )
-    assert_hxml(toggled)
+    assert_transition(
+        toggled, "task-list-transition", action="reload", href="/hv/tasks/"
+    )
     task.refresh_from_db()
     assert task.completed_at is not None
 
@@ -181,7 +231,9 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
         reverse("todo:task-delete", args=(task.pk,)),
         {"csrfmiddlewaretoken": edit_token},
     )
-    assert_hxml(deleted)
+    assert_transition(
+        deleted, "task-list-transition", action="reload", href="/hv/tasks/"
+    )
     assert not Task.objects.filter(pk=task.pk).exists()
 
 
@@ -194,6 +246,8 @@ def test_invalid_task_form_returns_422_hxml(user):
         {"title": "", "due_time": "09:00", "csrfmiddlewaretoken": token},
     )
     root = assert_hxml(response, status=422)
+    assert root.tag == f"{{{NS['hv']}}}view"
+    assert root.attrib["id"] == "task-form-panel"
     assert root.find(".//hv:text[@id='form-errors']", NS) is not None
 
 
@@ -232,6 +286,10 @@ def test_category_crud_and_cross_user_resources_are_hidden(user, other_user):
 def test_filters_reject_invalid_values_and_hide_foreign_categories(user, other_user):
     client = Client()
     client.force_login(user)
+    task_screen = assert_hxml(client.get(reverse("todo:tasks")))
+    filter_actions = task_screen.findall(".//hv:view[@style='chip']", NS)
+    assert filter_actions
+    assert all(item.attrib["action"] == "reload" for item in filter_actions)
     assert_hxml(client.get(reverse("todo:tasks"), {"status": "unknown"}), status=400)
     foreign = Category.objects.create(
         user=other_user, name="Secret", color=Category.Color.PINK
