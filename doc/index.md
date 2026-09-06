@@ -9,3 +9,5 @@ HyperTodo is a reference consumer for dj-hyperview. It demonstrates a server-dri
 - [Decisions](decisions.md)
 - [Status](status.md)
 - [Findings](findings.md)
+- [Lessons learned](lessons-learned.md)
+- [Package improvement candidates](package-improvements.md)

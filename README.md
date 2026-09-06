@@ -28,7 +28,7 @@ cp mobile/.env.example mobile/.env
 make mobile-start
 ```
 
-Hyperview uses native modules, so this app requires a development build rather than Expo Go. Native build commands are documented but were deliberately not run as part of this implementation.
+The tested dependency matrix runs in Expo Go for the fastest local QR workflow. A development build is required only when introducing native code that Expo Go does not contain or when validating native configuration such as launcher icons.
 
 Read the complete [Getting Started guide](doc/getting-started.md).
 

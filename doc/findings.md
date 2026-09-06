@@ -6,6 +6,9 @@
 - Hyperview 0.110.0 provides a native date field but not a time field; the consumer uses validated HH:MM text and combines it in Django.
 - Database publication invalidates warmed source cache entries after commit. Inactive rows correctly fall back to physical XML.
 - Shared Redis can be tested safely with logical database 14 and a unique namespace; no destructive cleanup is necessary.
+- Full `doc` responses are valid navigation results but invalid replacement fragments; mutation tests must assert response shape as well as XML validity.
+- Custom component `replace` updates need an explicit target ID when no Hyperview behavior element is available.
+- Native link wrappers can affect flex sizing, so equal-width HXML cards require physical-renderer verification.
 
 ## Tooling findings
 
@@ -16,4 +19,8 @@
 
 ## Package findings for a later dj-hyperview release
 
-No new confirmed dj-hyperview defect was found by the automated consumer suite. Any issue discovered during manual iOS or Android smoke testing must be recorded here before changing the package in a release after 0.1.0a7.
+No confirmed dj-hyperview defect has been isolated by the consumer suite. The trial
+has revealed several package-level opportunities, especially explicit fragment
+responses, public source cache capabilities, and operational diagnostics. They are
+tracked as hypotheses in [Package improvement candidates](package-improvements.md)
+and require package-level reproduction before implementation.

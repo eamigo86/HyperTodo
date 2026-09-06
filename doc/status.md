@@ -11,6 +11,10 @@
 - Automated backend, mobile, type, lint, and Expo compatibility checks.
 - Architecture, setup, testing, decision, acceptance, and findings documents.
 
-## Remaining consumer trial
+## Consumer trial in progress
 
-Only the manual iOS and Android development-build smoke checklist remains. Native builds were not run during implementation by design.
+Physical-iPhone testing through Expo Go is actively refining navigation, forms,
+dashboard layout, gestures, and feedback. These findings are tracked in
+[Lessons learned](lessons-learned.md). Android acceptance and final end-to-end
+regression remain pending. Native builds are still reserved for validating native
+configuration or dependencies that Expo Go cannot exercise.

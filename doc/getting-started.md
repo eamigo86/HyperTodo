@@ -1,13 +1,22 @@
 # Getting started
 
-This guide starts from clean Django and Expo projects. You do not need to clone the Hyperview repository or copy its demo application.
+This guide starts from clean Django and Expo projects. You do not need to clone
+the Hyperview repository or copy its demo application.
+
+Choose the path that matches your goal:
+
+- **Run HyperTodo:** follow the recommended Make workflow.
+- **Create a separate Hyperview client:** start at section 2.
+- **Use a native dependency not bundled in Expo Go:** continue through section 5
+  and create a development build.
 
 ## Prerequisites
 
 - Python 3.14 and uv
 - Node 22.19.0 through nvm
 - Corepack, which installs the project-pinned Yarn 1.22.22
-- Xcode and CocoaPods for iOS, or Android Studio and ADB for Android
+- Expo Go on a physical device for the shortest local feedback loop
+- Xcode and CocoaPods, or Android Studio and ADB, only for development builds
 - A running Redis service only when testing cache behavior
 
 Expo Go supports the native libraries required by the tested Expo 57 and
@@ -200,14 +209,28 @@ ENABLE_REDIS_CACHE=1 REDIS_URL=redis://127.0.0.1:6379/15 uv run python manage.py
 
 Do not flush the shared Redis instance. HyperTodo isolates its keys by namespace and logical database.
 
-## 2. Understand a minimal standalone mobile setup
+## 2. Create a standalone mobile client
 
-A fresh client needs an Expo app, the released Hyperview package, its native peers, and a development client. The versions below are the tested Expo 57 matrix derived from the upstream Expo integration work while keeping Hyperview itself on npm release 0.110.0.
+Create a blank TypeScript Expo project. The `--no-install` option lets the project
+use the chosen package manager from the first lockfile:
 
 ```console
 nvm install 22.19.0
 nvm use 22.19.0
-corepack yarn add expo@~57.0.20 expo-dev-client@~57.0.16 hyperview@0.110.0
+corepack enable
+npx create-expo-app@latest hyperview-mobile --template blank-typescript --no-install
+cd hyperview-mobile
+corepack yarn set version classic
+```
+
+The `blank-typescript` and `--no-install` options are documented by
+[create-expo-app](https://docs.expo.dev/more/create-expo/). This creates an
+ordinary Expo application rather than copying Hyperview's example project.
+
+Install the released Hyperview package and the tested Expo 57 dependency matrix:
+
+```console
+corepack yarn add expo@~57.0.20 hyperview@0.110.0
 ```
 
 Install the native peers:
@@ -226,14 +249,42 @@ corepack yarn add @react-native-community/datetimepicker@9.1.0 \
 
 Hyperview 0.110.0 advertises peer ranges from its older demo stack, so Yarn prints expected peer warnings for React, React Native, the date picker, and safe-area context. Expo Doctor is the compatibility gate for the selected Expo matrix.
 
-The app entry point must import gesture-handler before other UI modules, register the root component, wrap Hyperview in `SafeAreaProvider` and `NavigationContainer`, and provide:
+Create `index.ts` and point the `main` field in `package.json` to it:
+
+```typescript
+import "react-native-gesture-handler";
+import { registerRootComponent } from "expo";
+
+import App from "./App";
+
+registerRootComponent(App);
+```
+
+The application shell must import gesture-handler before other UI modules, wrap
+Hyperview in `SafeAreaProvider` and `NavigationContainer`, and provide:
 
 - an absolute `entrypointUrl`
 - a fetch implementation that retains cookies and existing headers
 - a date formatter
 - optional owned loading and error screens
 
-The complete working implementation is in `mobile/App.tsx`, `mobile/index.ts`, `mobile/src/config.ts`, and `mobile/src/network.ts`.
+Start with no custom components or behaviors. Add them only after a verified native
+interaction cannot be expressed in HXML. The complete working implementation is in
+`mobile/App.tsx`, `mobile/index.ts`, `mobile/src/config.ts`, and
+`mobile/src/network.ts`.
+
+### Expo Go or development build?
+
+| Situation | Use |
+| --- | --- |
+| All required native modules are already bundled by Expo Go | `expo start --go` |
+| JavaScript, TypeScript, or server-rendered HXML changed | Reuse the current client; do not rebuild |
+| A native dependency or native configuration changed | Development build |
+| Launcher icon, bundle metadata, or production-like native behavior must be verified | Development or release build |
+
+Expo describes a development build as a custom version of Expo Go that includes
+project-selected native code. See the official
+[development-build introduction](https://docs.expo.dev/develop/development-builds/introduction/).
 
 ## 3. Configure the backend URL
 
@@ -266,7 +317,15 @@ corepack yarn test
 corepack yarn doctor
 ```
 
-## 5. Create the development client
+## 5. Optionally create a development client
+
+Skip this section while Expo Go satisfies the dependency matrix. Install
+`expo-dev-client` only when the application needs native code or configuration
+that Expo Go cannot provide:
+
+```console
+corepack yarn add expo-dev-client@~57.0.16
+```
 
 These commands generate native projects and are intentionally manual:
 
@@ -283,6 +342,24 @@ corepack yarn start
 ```
 
 Open the development build, sign in, and follow the acceptance checklist. Rebuild only after changing native dependencies or native configuration.
+
+## Troubleshooting: a replace action rejects the `doc` element
+
+The message `XMLRestrictedElementFound: Restricted <doc> tag found in the
+response` means the request reached Django, but the response shape does not match
+the action. A `new` navigation action can load a complete HXML document. A
+`replace` action must receive a fragment or transition compatible with its target.
+
+Check these items in order:
+
+1. Confirm whether the originating action is `new`, `replace`, or `append`.
+2. Inspect the Django response body and media type.
+3. Return only the expected target fragment for an in-place mutation.
+4. Give the target a stable ID and assert it in the endpoint test.
+5. If a custom component calls Hyperview's `onUpdate`, pass `targetId` explicitly
+   for a replacement without a behavior element.
+
+Do not hide this error in the mobile shell. Correct the server response contract.
 
 ## Troubleshooting: Expo Go asks you to sign in
 
