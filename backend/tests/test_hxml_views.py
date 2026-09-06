@@ -33,16 +33,27 @@ def token_from(response):
     return field.attrib["value"]
 
 
-def test_root_serves_login_without_redirect_and_dashboard_after_login(user):
+def test_root_initializes_stack_navigator_for_guest_and_user(user):
     client = Client()
     login_response = client.get(reverse("todo:root"))
     login_root = assert_hxml(login_response)
-    assert login_root.find(".//hv:form[@id='login-form']", NS) is not None
+    navigator = login_root.find(".//hv:navigator[@id='root-navigator']", NS)
+    assert navigator is not None
+    assert navigator.attrib["type"] == "stack"
+    login_route = navigator.find("./hv:nav-route[@id='login-route']", NS)
+    assert login_route is not None
+    assert login_route.attrib["href"] == "/hv/login/"
+    assert login_route.attrib["selected"] == "true"
 
     client.force_login(user)
     dashboard_response = client.get(reverse("todo:root"))
     dashboard_root = assert_hxml(dashboard_response)
-    assert dashboard_root.find(".//hv:screen[@id='dashboard-screen']", NS) is not None
+    dashboard_route = dashboard_root.find(
+        ".//hv:nav-route[@id='dashboard-route']", NS
+    )
+    assert dashboard_route is not None
+    assert dashboard_route.attrib["href"] == "/hv/dashboard/"
+    assert dashboard_route.attrib["selected"] == "true"
 
 
 def test_login_screen_uses_secure_credentials_and_fragment_submission():
@@ -102,8 +113,8 @@ def test_login_requires_csrf_and_returns_direct_hxml(user):
     assert transition is not None
     assert transition.attrib == {
         "trigger": "load",
-        "href": "/hv/",
-        "action": "reload",
+        "href": "/hv/dashboard/",
+        "action": "navigate",
     }
     assert accepted.status_code != 302
     assert client.session["_auth_user_id"] == str(user.pk)

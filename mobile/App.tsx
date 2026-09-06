@@ -9,7 +9,7 @@ import type { Props as LoadingProps } from "hyperview/src/components/loading/typ
 import moment from "moment";
 import React from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { getApiUrl } from "./src/config";
 import { createHyperviewFetch } from "./src/network";
@@ -47,20 +47,27 @@ export default function App(): React.JSX.Element {
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
-      <NavigationContainer onReady={() => void SplashScreen.hideAsync()}>
-        <Hyperview
-          entrypointUrl={entrypointUrl}
-          fetch={hyperviewFetch}
-          formatDate={(date, format) => date && format ? moment(date).format(format) : undefined}
-          loadingScreen={LoadingScreen}
-          errorScreen={ErrorScreen}
-        />
-      </NavigationContainer>
+      <SafeAreaView
+        accessibilityLabel="HyperTodo safe area"
+        edges={["top", "bottom"]}
+        style={styles.safeArea}
+      >
+        <NavigationContainer onReady={() => void SplashScreen.hideAsync()}>
+          <Hyperview
+            entrypointUrl={entrypointUrl}
+            fetch={hyperviewFetch}
+            formatDate={(date, format) => date && format ? moment(date).format(format) : undefined}
+            loadingScreen={LoadingScreen}
+            errorScreen={ErrorScreen}
+          />
+        </NavigationContainer>
+      </SafeAreaView>
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F7F8FC", padding: 28 },
   mark: { width: 72, height: 72, borderRadius: 24, alignItems: "center", justifyContent: "center", backgroundColor: "#AEBBFA" },
   markText: { color: "#161A35", fontSize: 38, fontWeight: "700" },

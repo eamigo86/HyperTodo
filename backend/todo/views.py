@@ -98,12 +98,18 @@ def root(request: HttpRequest) -> HttpResponse:
         request: Incoming Hyperview request.
 
     Returns:
-        Login screen for guests or dashboard for authenticated users.
+        Stack navigator targeting login or dashboard for the current session.
     """
     if request.user.is_authenticated:
-        return _dashboard_response(request)
+        route_id = "dashboard-route"
+        route_href = "/hv/dashboard/"
+    else:
+        route_id = "login-route"
+        route_href = "/hv/login/"
     return HyperviewTemplateResponse(
-        request, "screens/login.xml", {"form": LoginForm()}
+        request,
+        "screens/root.xml",
+        {"route_id": route_id, "route_href": route_href},
     )
 
 
