@@ -12,6 +12,9 @@
     <style id="chip" backgroundColor="#EEF2FC" borderRadius="16" marginBottom="8" marginRight="8" paddingHorizontal="12" paddingVertical="9" />
     <style id="chip-active" backgroundColor="#DDE7FF" />
     <style id="chip-text" color="#4C526B" fontSize="13" />
+    <style id="task-list" flex="1" />
+    <style id="empty-item" paddingVertical="24" />
+    <style id="list-spinner" alignItems="center" height="28" justifyContent="center" />
     <style id="task" backgroundColor="#FFFFFF" borderRadius="22" padding="16" marginBottom="12" />
     <style id="done" opacity="0.55" />
     <style id="task-title" color="#20243D" fontSize="17" fontWeight="600" />
@@ -19,15 +22,15 @@
     <style id="actions" flexDirection="row" marginTop="12" />
     <style id="action" color="#278CFF" marginRight="18" fontWeight="600" />
     <style id="danger" color="#B42318" fontWeight="600" />
-    <style id="primary" backgroundColor="#278CFF" borderRadius="24" padding="16" marginTop="12" />
-    <style id="primary-text" color="#FFFFFF" textAlign="center" fontWeight="700" />
     <style id="bottom-navigation" alignItems="center" backgroundColor="#FFFFFF" borderTopColor="#E7EAF3" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
-    <style id="nav-item" alignItems="center" borderRadius="16" flex="1" justifyContent="center" paddingVertical="7" />
-    <style id="nav-active" backgroundColor="#EEF3FF" />
-    <style id="nav-symbol" color="#68708B" fontSize="21" lineHeight="23" />
-    <style id="nav-label" color="#68708B" fontSize="10" fontWeight="600" marginTop="2" />
-    <style id="nav-add" alignItems="center" backgroundColor="#278CFF" borderRadius="26" height="52" justifyContent="center" marginHorizontal="5" marginTop="-18" width="52" />
-    <style id="nav-add-symbol" color="#FFFFFF" fontSize="30" fontWeight="400" lineHeight="32" />
+    <style id="nav-hit-area" alignItems="center" flex="1" justifyContent="center" />
+    <style id="nav-item" alignItems="center" height="52" justifyContent="center" width="64" />
+    <style id="nav-active" opacity="1" />
+    <style id="nav-icon" height="24" width="24" />
+    <style id="nav-label" color="#68708B" fontSize="10" fontWeight="600" marginTop="3" />
+    <style id="nav-label-active" color="#278CFF" fontWeight="700" />
+    <style id="nav-add" alignItems="center" backgroundColor="#278CFF" borderRadius="24" height="48" justifyContent="center" width="48" />
+    <style id="nav-add-symbol" color="#FFFFFF" fontSize="29" fontWeight="400" lineHeight="31" />
     <style id="side-menu" bottom="0" flexDirection="row" left="0" position="absolute" right="0" top="0" zIndex="50" />
     <style id="side-menu-panel" backgroundColor="#FFFFFF" padding="24" width="286" />
     <style id="side-menu-header" alignItems="center" flexDirection="row" justifyContent="space-between" marginBottom="16" />
@@ -47,7 +50,7 @@
   </styles>
   <screen id="tasks-screen">
     <body style="screen">
-      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false">
+      <view id="screen-content" style="screen-content">
         <view style="header">
           <view id="task-list-back" style="back-button" action="back"><text style="back">&lt;</text></view>
           <text style="title">Tasks</text>
@@ -66,19 +69,8 @@
           {% for category in categories %}<view style="chip{% if selected_category.id == category.id %} chip-active{% endif %}" href="/hv/tasks/?status={{ status_filter }}&amp;category={{ category.id }}" action="reload"><text style="chip-text">{{ category.name }}</text></view>{% endfor %}
         </view>
         {% endif %}
-        {% for task in tasks %}
-        <view style="task{% if task.is_completed %} done{% endif %}">
-          <text style="task-title">{% if task.is_completed %}✓ {% endif %}{{ task.title }}</text>
-          {% if task.category %}<text style="meta">{{ task.category.name }}</text>{% endif %}
-          {% if task.due_at %}<text style="meta">Due {{ task.due_at|date:'M j · H:i' }}</text>{% endif %}
-          <view style="actions">
-            <view href="/hv/tasks/{{ task.id }}/edit/" action="new"><text style="action">Edit</text></view>
-            <form>{% hv_csrf_token %}<view href="/hv/tasks/{{ task.id }}/toggle/" verb="post" action="replace"><text style="action">{% if task.is_completed %}Reopen{% else %}Complete{% endif %}</text></view></form>
-            <form>{% hv_csrf_token %}<view href="/hv/tasks/{{ task.id }}/delete/" verb="post" action="replace"><text style="danger">Delete</text></view></form>
-          </view>
-        </view>
-        {% empty %}<text style="meta">No tasks match these filters.</text>{% endfor %}
-        <view style="primary" href="/hv/tasks/new/" action="new"><text style="primary-text">+ Add task</text></view>
+        {% include "fragments/task_list.xml" %}
+        <view id="task-list-spinner" style="list-spinner" hide="true"><spinner /></view>
       </view>
       {% include "fragments/bottom_navigation.xml" with active_nav="tasks" %}
       {% include "fragments/side_menu.xml" with active_nav="tasks" %}

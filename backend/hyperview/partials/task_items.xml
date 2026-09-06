@@ -1,0 +1,17 @@
+{% for task in tasks %}
+<item key="task-{{ task.id }}" style="task{% if task.is_completed %} done{% endif %}">
+  <text style="task-title">{% if task.is_completed %}✓ {% endif %}{{ task.title }}</text>
+  {% if task.category %}<text style="meta">{{ task.category.name }}</text>{% endif %}
+  {% if task.due_at %}<text style="meta">Due {{ task.due_at|date:'M j · H:i' }}</text>{% endif %}
+  <view style="actions">
+    <view href="/hv/tasks/{{ task.id }}/edit/" action="new"><text style="action">Edit</text></view>
+    <form>{% load dj_hyperview %}{% hv_csrf_token %}<view href="/hv/tasks/{{ task.id }}/toggle/" verb="post" action="replace"><text style="action">{% if task.is_completed %}Reopen{% else %}Complete{% endif %}</text></view></form>
+    <form>{% hv_csrf_token %}<view href="/hv/tasks/{{ task.id }}/delete/" verb="post" action="replace"><text style="danger">Delete</text></view></form>
+  </view>
+  {% if forloop.last and page_obj.has_next %}
+  <behavior trigger="visible" href="/hv/tasks/?status={{ status_filter }}{% if selected_category %}&amp;category={{ selected_category.id }}{% endif %}&amp;page={{ page_obj.next_page_number }}&amp;fragment=items" action="append" target="task-list" once="true" show-during-load="task-list-spinner" />
+  {% endif %}
+</item>
+{% empty %}
+{% if page_obj.number == 1 %}<item key="task-empty" style="empty-item"><text style="meta">No tasks match these filters.</text></item>{% endif %}
+{% endfor %}

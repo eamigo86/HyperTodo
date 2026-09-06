@@ -6,6 +6,8 @@ from uuid import UUID
 
 from dj_hyperview import HyperviewResponse, HyperviewTemplateResponse
 from django.contrib.auth import authenticate, login, logout
+from django.core.paginator import EmptyPage, Page, PageNotAnInteger, Paginator
+from django.db.models import Count, QuerySet
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 
@@ -23,6 +25,24 @@ from .services import (
 )
 
 View = Callable[..., HttpResponse]
+PAGE_SIZE = 20
+
+
+def _paginate(queryset: QuerySet, raw_page: str) -> Page:
+    """Return one strictly validated page of results.
+
+    Args:
+        queryset: Ordered records to paginate.
+        raw_page: Page value supplied by the client.
+
+    Returns:
+        Requested page containing at most PAGE_SIZE records.
+
+    Raises:
+        EmptyPage: If the requested page has no results.
+        PageNotAnInteger: If the page value is not an integer.
+    """
+    return Paginator(queryset, PAGE_SIZE).page(raw_page)
 
 
 def _error_response(message: str, status: int) -> HyperviewResponse:
@@ -200,13 +220,29 @@ def task_list(request: HttpRequest) -> HttpResponse:
     category_id = request.GET.get("category")
     if category_id:
         category = get_object_or_404(Category, pk=category_id, user=request.user)
+    fragment = request.GET.get("fragment")
+    templates = {
+        None: "screens/tasks.xml",
+        "list": "fragments/task_list.xml",
+        "items": "fragments/task_items.xml",
+    }
+    if fragment not in templates:
+        return _error_response("Unknown task-list fragment.", 400)
+    try:
+        page_obj = _paginate(
+            tasks_for_user(request.user, status=status_filter, category=category),
+            request.GET.get("page", "1"),
+        )
+    except (EmptyPage, PageNotAnInteger):
+        return _error_response("Unknown task-list page.", 400)
     context = {
-        "tasks": tasks_for_user(request.user, status=status_filter, category=category),
+        "tasks": page_obj.object_list,
         "categories": Category.objects.filter(user=request.user),
         "status_filter": status_filter,
         "selected_category": category,
+        "page_obj": page_obj,
     }
-    return HyperviewTemplateResponse(request, "screens/tasks.xml", context)
+    return HyperviewTemplateResponse(request, templates[fragment], context)
 
 
 def _task_form_response(
@@ -343,10 +379,27 @@ def category_list(request: HttpRequest) -> HttpResponse:
         return denied
     if invalid := _method(request, "GET"):
         return invalid
+    fragment = request.GET.get("fragment")
+    templates = {
+        None: "screens/categories.xml",
+        "list": "fragments/category_list.xml",
+        "items": "fragments/category_items.xml",
+    }
+    if fragment not in templates:
+        return _error_response("Unknown category-list fragment.", 400)
+    try:
+        page_obj = _paginate(
+            Category.objects.filter(user=request.user).annotate(
+                task_count=Count("tasks")
+            ).order_by("name"),
+            request.GET.get("page", "1"),
+        )
+    except (EmptyPage, PageNotAnInteger):
+        return _error_response("Unknown category-list page.", 400)
     return HyperviewTemplateResponse(
         request,
-        "screens/categories.xml",
-        {"categories": Category.objects.filter(user=request.user)},
+        templates[fragment],
+        {"categories": page_obj.object_list, "page_obj": page_obj},
     )
 
 

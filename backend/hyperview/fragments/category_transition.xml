@@ -1,3 +1,4 @@
 <view xmlns="https://hyperview.org/hyperview" id="category-transition">
-  <behavior trigger="load" href="/hv/categories/" action="navigate" />
+  <behavior trigger="load" action="dispatch-event" event-name="categories-changed" once="true" />
+  <behavior trigger="load" action="close" delay="350" />
 </view>

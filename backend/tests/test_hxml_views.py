@@ -227,12 +227,15 @@ def test_task_screen_scrolls_and_makes_dashboard_filter_visible(user):
             client.get(reverse("todo:tasks"), {"status": status_filter})
         )
         content = root.find(".//hv:view[@id='screen-content']", NS)
+        task_list = root.find(".//hv:list[@id='task-list']", NS)
         selected = root.find(f".//hv:view[@id='filter-{status_filter}']", NS)
         summary = root.find(".//hv:text[@id='filter-summary']", NS)
         visible_text = "".join(root.itertext())
 
         assert content is not None
-        assert content.attrib["scroll"] == "true"
+        assert "scroll" not in content.attrib
+        assert task_list is not None
+        assert task_list.attrib["style"] == "task-list"
         assert selected is not None
         assert "chip-active" in selected.attrib["style"]
         assert summary is not None
@@ -382,22 +385,27 @@ def test_category_crud_and_cross_user_resources_are_hidden(user, other_user):
         reverse("todo:category-new"),
         {"name": "Work", "color": "lavender", "csrfmiddlewaretoken": token},
     )
-    assert_transition(
-        created,
-        "category-transition",
-        action="navigate",
-        href="/hv/categories/",
-        status=201,
-    )
+    created_root = assert_hxml(created, status=201)
+    assert created_root.tag == f"{{{NS['hv']}}}view"
+    assert created_root.attrib["id"] == "category-transition"
+    behaviors = created_root.findall("./hv:behavior", NS)
+    assert [behavior.attrib for behavior in behaviors] == [
+        {
+            "trigger": "load",
+            "action": "dispatch-event",
+            "event-name": "categories-changed",
+            "once": "true",
+        },
+        {"trigger": "load", "action": "close", "delay": "350"},
+    ]
     category = Category.objects.get(user=user)
 
     edit = client.post(
         reverse("todo:category-edit", args=(category.pk,)),
         {"name": "Focus", "color": "green", "csrfmiddlewaretoken": token},
     )
-    assert_transition(
-        edit, "category-transition", action="navigate", href="/hv/categories/"
-    )
+    edit_root = assert_hxml(edit)
+    assert edit_root.attrib["id"] == "category-transition"
     category.refresh_from_db()
     assert category.name == "Focus"
 
@@ -446,16 +454,30 @@ def test_primary_screens_share_server_driven_navigation(user):
         close_menu = root.find(".//hv:view[@id='close-side-menu']", NS)
 
         assert content is not None
-        assert content.attrib["scroll"] == "true"
+        if route == reverse("todo:dashboard"):
+            assert content.attrib["scroll"] == "true"
+        else:
+            assert "scroll" not in content.attrib
+            assert root.find(".//hv:list", NS) is not None
         assert bottom is not None
         assert drawer is not None
         assert drawer.attrib["hide"] == "true"
         assert open_menu is not None
-        assert open_menu.attrib["action"] == "show"
-        assert open_menu.attrib["target"] == "side-menu"
+        open_behavior = open_menu.find("./hv:behavior", NS)
+        assert open_behavior is not None
+        assert open_behavior.attrib == {
+            "trigger": "press",
+            "action": "show",
+            "target": "side-menu",
+        }
         assert close_menu is not None
-        assert close_menu.attrib["action"] == "hide"
-        assert close_menu.attrib["target"] == "side-menu"
+        close_behavior = close_menu.find("./hv:behavior", NS)
+        assert close_behavior is not None
+        assert close_behavior.attrib == {
+            "trigger": "press",
+            "action": "hide",
+            "target": "side-menu",
+        }
 
         destinations = {
             item.attrib["id"]: (item.attrib["href"], item.attrib["action"])
@@ -471,11 +493,105 @@ def test_primary_screens_share_server_driven_navigation(user):
         active = root.find(f".//hv:view[@id='{active_id}']", NS)
         assert active is not None
         assert "nav-active" in active.attrib["style"]
+        assert active.attrib["href-style"] == "nav-hit-area"
+        active_icon = active.find("./hv:image", NS)
+        active_label = active.find("./hv:text", NS)
+        assert active_icon is not None
+        assert active_icon.attrib["source"].endswith("-active.png")
+        assert active_label is not None
+        assert "nav-label-active" in active_label.attrib["style"]
+
+        nav_style = root.find(".//hv:style[@id='nav-item']", NS)
+        active_style = root.find(".//hv:style[@id='nav-active']", NS)
+        add_style = root.find(".//hv:style[@id='nav-add']", NS)
+        assert nav_style is not None
+        assert nav_style.attrib["height"] == "52"
+        assert nav_style.attrib["width"] == "64"
+        assert active_style is not None
+        assert "backgroundColor" not in active_style.attrib
+        assert add_style is not None
+        assert add_style.attrib["height"] == "48"
+        assert "marginTop" not in add_style.attrib
 
         logout_action = root.find(".//hv:view[@id='side-menu-logout']", NS)
         assert logout_action is not None
         assert logout_action.attrib["action"] == "replace"
         assert logout_action.attrib["target"] == "logout-panel"
+
+
+def test_task_list_supports_refresh_and_infinite_scroll(user):
+    for index in range(21):
+        Task.objects.create(user=user, title=f"Task {index:02d}")
+    client = Client()
+    client.force_login(user)
+
+    root = assert_hxml(client.get(reverse("todo:tasks")))
+    task_list = root.find(".//hv:list[@id='task-list']", NS)
+    assert task_list is not None
+    assert task_list.attrib["trigger"] == "refresh"
+    assert len(task_list.findall("./hv:item", NS)) == 20
+    refresh = task_list.find("./hv:behavior[@trigger='refresh']", NS)
+    assert refresh is not None
+    assert refresh.attrib["action"] == "replace"
+    assert refresh.attrib["target"] == "task-list"
+    load_more = task_list.find(".//hv:behavior[@trigger='visible']", NS)
+    assert load_more is not None
+    assert load_more.attrib["action"] == "append"
+    assert load_more.attrib["target"] == "task-list"
+
+    next_page = assert_hxml(
+        client.get(reverse("todo:tasks"), {"page": 2, "fragment": "items"})
+    )
+    assert next_page.tag == f"{{{NS['hv']}}}items"
+    assert len(next_page.findall("./hv:item", NS)) == 1
+
+    refreshed = assert_hxml(
+        client.get(reverse("todo:tasks"), {"fragment": "list"})
+    )
+    assert refreshed.tag == f"{{{NS['hv']}}}list"
+    assert refreshed.attrib["id"] == "task-list"
+
+
+def test_category_list_refreshes_after_mutation_and_paginates(user):
+    for index in range(21):
+        Category.objects.create(
+            user=user, name=f"Category {index:02d}", color=Category.Color.MINT
+        )
+    client = Client()
+    client.force_login(user)
+
+    root = assert_hxml(client.get(reverse("todo:categories")))
+    category_list = root.find(".//hv:list[@id='category-list']", NS)
+    assert category_list is not None
+    assert category_list.attrib["trigger"] == "refresh"
+    assert len(category_list.findall("./hv:item", NS)) == 20
+    refresh = category_list.find("./hv:behavior[@trigger='refresh']", NS)
+    changed = category_list.find("./hv:behavior[@trigger='on-event']", NS)
+    load_more = category_list.find(".//hv:behavior[@trigger='visible']", NS)
+    assert refresh is not None
+    assert refresh.attrib["action"] == "replace"
+    assert refresh.attrib["target"] == "category-list"
+    assert changed is not None
+    assert changed.attrib["event-name"] == "categories-changed"
+    assert changed.attrib["action"] == "replace"
+    assert load_more is not None
+    assert load_more.attrib["action"] == "append"
+
+    next_page = assert_hxml(
+        client.get(reverse("todo:categories"), {"page": 2, "fragment": "items"})
+    )
+    assert next_page.tag == f"{{{NS['hv']}}}items"
+    assert len(next_page.findall("./hv:item", NS)) == 1
+
+
+def test_list_pagination_rejects_invalid_page_and_fragment(user):
+    client = Client()
+    client.force_login(user)
+
+    for route in (reverse("todo:tasks"), reverse("todo:categories")):
+        assert_hxml(client.get(route, {"page": "nope"}), status=400)
+        assert_hxml(client.get(route, {"page": 2}), status=400)
+        assert_hxml(client.get(route, {"fragment": "unknown"}), status=400)
 
 
 def test_logout_is_post_only_csrf_protected_and_direct_hxml(user):

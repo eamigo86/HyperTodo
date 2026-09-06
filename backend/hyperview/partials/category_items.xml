@@ -1,0 +1,15 @@
+{% load dj_hyperview %}{% for category in categories %}
+<item key="category-{{ category.id }}" style="card {{ category.color }}">
+  <text style="name">{{ category.name }}</text>
+  <text style="meta">{{ category.task_count }} tasks</text>
+  <view style="actions">
+    <view href="/hv/categories/{{ category.id }}/edit/" action="new"><text style="action">Edit</text></view>
+    <form>{% hv_csrf_token %}<view href="/hv/categories/{{ category.id }}/delete/" verb="post" action="replace"><text style="danger">Delete</text></view></form>
+  </view>
+  {% if forloop.last and page_obj.has_next %}
+  <behavior trigger="visible" href="/hv/categories/?page={{ page_obj.next_page_number }}&amp;fragment=items" action="append" target="category-list" once="true" show-during-load="category-list-spinner" />
+  {% endif %}
+</item>
+{% empty %}
+{% if page_obj.number == 1 %}<item key="category-empty" style="empty-item"><text style="meta">Create a category to organize your tasks.</text></item>{% endif %}
+{% endfor %}

@@ -1,0 +1,3 @@
+<items xmlns="https://hyperview.org/hyperview">
+  {% include "partials/category_items.xml" %}
+</items>

@@ -20,12 +20,14 @@
     <style id="primary" backgroundColor="#278CFF" borderRadius="24" padding="16" marginTop="18" />
     <style id="primary-text" color="#FFFFFF" textAlign="center" fontWeight="700" />
     <style id="bottom-navigation" alignItems="center" backgroundColor="#FFFFFF" borderTopColor="#E7EAF3" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
-    <style id="nav-item" alignItems="center" borderRadius="16" flex="1" justifyContent="center" paddingVertical="7" />
-    <style id="nav-active" backgroundColor="#EEF3FF" />
-    <style id="nav-symbol" color="#68708B" fontSize="21" lineHeight="23" />
-    <style id="nav-label" color="#68708B" fontSize="10" fontWeight="600" marginTop="2" />
-    <style id="nav-add" alignItems="center" backgroundColor="#278CFF" borderRadius="26" height="52" justifyContent="center" marginHorizontal="5" marginTop="-18" width="52" />
-    <style id="nav-add-symbol" color="#FFFFFF" fontSize="30" fontWeight="400" lineHeight="32" />
+    <style id="nav-hit-area" alignItems="center" flex="1" justifyContent="center" />
+    <style id="nav-item" alignItems="center" height="52" justifyContent="center" width="64" />
+    <style id="nav-active" opacity="1" />
+    <style id="nav-icon" height="24" width="24" />
+    <style id="nav-label" color="#68708B" fontSize="10" fontWeight="600" marginTop="3" />
+    <style id="nav-label-active" color="#278CFF" fontWeight="700" />
+    <style id="nav-add" alignItems="center" backgroundColor="#278CFF" borderRadius="24" height="48" justifyContent="center" width="48" />
+    <style id="nav-add-symbol" color="#FFFFFF" fontSize="29" fontWeight="400" lineHeight="31" />
     <style id="side-menu" bottom="0" flexDirection="row" left="0" position="absolute" right="0" top="0" zIndex="50" />
     <style id="side-menu-panel" backgroundColor="#FFFFFF" padding="24" width="286" />
     <style id="side-menu-header" alignItems="center" flexDirection="row" justifyContent="space-between" marginBottom="16" />
