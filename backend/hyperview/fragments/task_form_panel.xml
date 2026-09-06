@@ -1,4 +1,5 @@
 {% load dj_hyperview %}<view xmlns="https://hyperview.org/hyperview" id="task-form-panel">
+  {% if form.errors %}<behavior trigger="load" action="show-snackbar" message="Please review the highlighted task details." tone="error" once="true" />{% endif %}
   <form id="task-form">
     <view style="card">
       {% if form.errors %}<text id="form-errors" style="error-summary">Review the fields marked in red.</text>{% endif %}

@@ -1,3 +1,4 @@
 <view xmlns="https://hyperview.org/hyperview" id="task-list-transition">
+  <behavior trigger="load" action="show-snackbar" message="{{ notice_message }}" tone="success" once="true" />
   <behavior trigger="load" href="/hv/tasks/" action="reload" />
 </view>

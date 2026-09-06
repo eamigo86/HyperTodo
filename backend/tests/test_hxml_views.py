@@ -43,10 +43,24 @@ def assert_transition(response, transition_id, *, action, href, status=200):
     root = assert_hxml(response, status=status)
     assert root.tag == f"{{{NS['hv']}}}view"
     assert root.attrib["id"] == transition_id
-    behavior = root.find("./hv:behavior", NS)
+    behavior = root.find(f"./hv:behavior[@action='{action}']", NS)
     assert behavior is not None
-    assert behavior.attrib == {"trigger": "load", "href": href, "action": action}
+    assert behavior.attrib["trigger"] == "load"
+    assert behavior.attrib["href"] == href
     return root
+
+
+def assert_snackbar(root, message, *, tone="success"):
+    """Assert an HXML response publishes one global snackbar notice."""
+    behavior = root.find("./hv:behavior[@action='show-snackbar']", NS)
+    assert behavior is not None
+    assert behavior.attrib == {
+        "trigger": "load",
+        "action": "show-snackbar",
+        "message": message,
+        "tone": tone,
+        "once": "true",
+    }
 
 
 def test_root_initializes_stack_navigator_for_guest_and_user(user):
@@ -347,13 +361,14 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
             "csrfmiddlewaretoken": token,
         },
     )
-    assert_transition(
+    created_root = assert_transition(
         created,
         "task-transition",
         action="navigate",
         href="/hv/tasks/",
         status=201,
     )
+    assert_snackbar(created_root, "Task created.")
     task = Task.objects.get(user=user)
 
     edit_response = client.get(reverse("todo:task-edit", args=(task.pk,)))
@@ -369,9 +384,10 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
             "csrfmiddlewaretoken": edit_token,
         },
     )
-    assert_transition(
+    updated_root = assert_transition(
         updated, "task-transition", action="navigate", href="/hv/tasks/"
     )
+    assert_snackbar(updated_root, "Task updated.")
     task.refresh_from_db()
     assert task.title == "Ship XML"
 
@@ -379,9 +395,10 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
         reverse("todo:task-toggle", args=(task.pk,)),
         {"csrfmiddlewaretoken": edit_token},
     )
-    assert_transition(
+    toggled_root = assert_transition(
         toggled, "task-list-transition", action="reload", href="/hv/tasks/"
     )
+    assert_snackbar(toggled_root, "Task completed.")
     task.refresh_from_db()
     assert task.completed_at is not None
 
@@ -389,9 +406,10 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
         reverse("todo:task-delete", args=(task.pk,)),
         {"csrfmiddlewaretoken": edit_token},
     )
-    assert_transition(
+    deleted_root = assert_transition(
         deleted, "task-list-transition", action="reload", href="/hv/tasks/"
     )
+    assert_snackbar(deleted_root, "Task deleted.")
     assert not Task.objects.filter(pk=task.pk).exists()
 
 
@@ -422,6 +440,7 @@ def test_invalid_task_form_returns_422_hxml(user):
     assert "field-invalid" in title.attrib["style"]
     assert due_time is not None
     assert "field-invalid" in due_time.attrib["style"]
+    assert_snackbar(root, "Please review the highlighted task details.", tone="error")
 
 
 def test_category_crud_and_cross_user_resources_are_hidden(user, other_user):
@@ -439,6 +458,13 @@ def test_category_crud_and_cross_user_resources_are_hidden(user, other_user):
     assert [behavior.attrib for behavior in behaviors] == [
         {
             "trigger": "load",
+            "action": "show-snackbar",
+            "message": "Category created.",
+            "tone": "success",
+            "once": "true",
+        },
+        {
+            "trigger": "load",
             "action": "dispatch-event",
             "event-name": "categories-changed",
             "once": "true",
@@ -453,6 +479,7 @@ def test_category_crud_and_cross_user_resources_are_hidden(user, other_user):
     )
     edit_root = assert_hxml(edit)
     assert edit_root.attrib["id"] == "category-transition"
+    assert_snackbar(edit_root, "Category updated.")
     category.refresh_from_db()
     assert category.name == "Focus"
 
@@ -766,6 +793,11 @@ def test_task_and_category_get_screens_and_invalid_edits(user):
     invalid_root = assert_hxml(invalid_category, status=422)
     assert invalid_root.tag == f"{{{NS['hv']}}}view"
     assert invalid_root.attrib["id"] == "category-form-panel"
+    assert_snackbar(
+        invalid_root,
+        "Please review the highlighted category details.",
+        tone="error",
+    )
 
 
 def test_category_delete_succeeds_and_task_cross_user_is_hidden(user, other_user):
@@ -780,12 +812,13 @@ def test_category_delete_succeeds_and_task_cross_user_is_hidden(user, other_user
         reverse("todo:category-delete", args=(category.pk,)),
         {"csrfmiddlewaretoken": token},
     )
-    assert_transition(
+    deleted_root = assert_transition(
         deleted,
         "category-list-transition",
         action="reload",
         href="/hv/categories/",
     )
+    assert_snackbar(deleted_root, "Category deleted.")
     client.force_login(other_user)
     assert_hxml(client.get(reverse("todo:task-edit", args=(task.pk,))), status=404)
 

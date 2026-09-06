@@ -14,6 +14,8 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { getApiUrl } from "./src/config";
 import AnimatedSideMenu from "./src/components/AnimatedSideMenu";
 import SwipeTaskRow from "./src/components/SwipeTaskRow";
+import SnackbarHost from "./src/components/SnackbarHost";
+import ShowSnackbarBehavior from "./src/behaviors/ShowSnackbarBehavior";
 import { createHyperviewFetch } from "./src/network";
 
 void SplashScreen.preventAutoHideAsync();
@@ -56,6 +58,7 @@ export default function App(): React.JSX.Element {
       >
         <NavigationContainer onReady={() => void SplashScreen.hideAsync()}>
           <Hyperview
+            behaviors={[ShowSnackbarBehavior]}
             components={[AnimatedSideMenu, SwipeTaskRow]}
             entrypointUrl={entrypointUrl}
             fetch={hyperviewFetch}
@@ -64,6 +67,7 @@ export default function App(): React.JSX.Element {
             errorScreen={ErrorScreen}
           />
         </NavigationContainer>
+        <SnackbarHost />
       </SafeAreaView>
     </SafeAreaProvider>
   );

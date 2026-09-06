@@ -1,4 +1,5 @@
 {% load dj_hyperview %}<view xmlns="https://hyperview.org/hyperview" id="category-form-panel">
+  {% if form.errors %}<behavior trigger="load" action="show-snackbar" message="Please review the highlighted category details." tone="error" once="true" />{% endif %}
   <form id="category-form">
     <view style="card">
       {% if form.errors %}<text id="form-errors" style="error">Please correct the highlighted category details.</text>{% endif %}

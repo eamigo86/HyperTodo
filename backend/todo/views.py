@@ -328,7 +328,10 @@ def task_new(request: HttpRequest) -> HttpResponse:
             due_at=form.cleaned_data["due_at"],
         )
         return HyperviewTemplateResponse(
-            request, "fragments/task_transition.xml", status=201
+            request,
+            "fragments/task_transition.xml",
+            {"notice_message": "Task created."},
+            status=201
         )
     return _task_form_response(
         request, form, status=422 if request.method == "POST" else 200
@@ -362,7 +365,9 @@ def task_edit(request: HttpRequest, task_id: UUID) -> HttpResponse:
             due_at=form.cleaned_data["due_at"],
         )
         return HyperviewTemplateResponse(
-            request, "fragments/task_transition.xml"
+            request,
+            "fragments/task_transition.xml",
+            {"notice_message": "Task updated."},
         )
     return _task_form_response(
         request, form, task=task, status=422 if request.method == "POST" else 200
@@ -384,9 +389,12 @@ def task_toggle(request: HttpRequest, task_id: UUID) -> HttpResponse:
         return denied
     if invalid := _method(request, "POST"):
         return invalid
-    toggle_task(user=request.user, task_id=task_id)
+    task = toggle_task(user=request.user, task_id=task_id)
+    message = "Task completed." if task.is_completed else "Task reopened."
     return HyperviewTemplateResponse(
-        request, "fragments/task_list_transition.xml"
+        request,
+        "fragments/task_list_transition.xml",
+        {"notice_message": message},
     )
 
 
@@ -407,7 +415,9 @@ def task_delete(request: HttpRequest, task_id: UUID) -> HttpResponse:
         return invalid
     delete_task(user=request.user, task_id=task_id)
     return HyperviewTemplateResponse(
-        request, "fragments/task_list_transition.xml"
+        request,
+        "fragments/task_list_transition.xml",
+        {"notice_message": "Task deleted."},
     )
 
 
@@ -497,6 +507,7 @@ def category_new(request: HttpRequest) -> HttpResponse:
         return HyperviewTemplateResponse(
             request,
             "fragments/category_transition.xml",
+            {"notice_message": "Category created."},
             status=201,
         )
     return _category_form_response(
@@ -531,6 +542,7 @@ def category_edit(request: HttpRequest, category_id: UUID) -> HttpResponse:
         return HyperviewTemplateResponse(
             request,
             "fragments/category_transition.xml",
+            {"notice_message": "Category updated."},
         )
     return _category_form_response(
         request,
@@ -559,6 +571,7 @@ def category_delete(request: HttpRequest, category_id: UUID) -> HttpResponse:
     return HyperviewTemplateResponse(
         request,
         "fragments/category_list_transition.xml",
+        {"notice_message": "Category deleted."},
     )
 
 
