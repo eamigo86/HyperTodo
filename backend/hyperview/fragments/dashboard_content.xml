@@ -14,6 +14,12 @@
     <text style="hero-caption">{{ summary.today|date:'l, M j' }} · {% if summary.progress_percent >= 50 or not summary.total_today %}you're on track{% else %}let's get moving{% endif %}</text>
   </view>
   <view id="dashboard-stats" style="stat-row" scroll="true" scroll-orientation="horizontal" shows-scroll-indicator="false" content-container-style="stat-row-content">
+    <view id="dashboard-all" style="stat-card" href="/hv/tasks/?status=all" action="navigate">
+      <view style="stat-badge mint"><image style="stat-icon" source="{% static 'todo/icons/list.png' %}" /></view>
+      <text style="stat-label">All</text>
+      <text style="stat-count">{{ counts.all }}</text>
+      <text style="stat-note">{{ counts.all }} total</text>
+    </view>
     <view id="dashboard-today" style="stat-card" href="/hv/tasks/?status=today" action="navigate">
       <view style="stat-badge lavender"><image style="stat-icon" source="{% static 'todo/icons/sun.png' %}" /></view>
       <text style="stat-label">Today</text>
@@ -31,12 +37,6 @@
       <text style="stat-label">Scheduled</text>
       <text style="stat-count">{{ counts.scheduled }}</text>
       <text style="stat-note">{% if summary.next_scheduled_label %}next: {{ summary.next_scheduled_label }}{% else %}nothing planned{% endif %}</text>
-    </view>
-    <view id="dashboard-all" style="stat-card" href="/hv/tasks/?status=all" action="navigate">
-      <view style="stat-badge mint"><image style="stat-icon" source="{% static 'todo/icons/list.png' %}" /></view>
-      <text style="stat-label">All</text>
-      <text style="stat-count">{{ counts.all }}</text>
-      <text style="stat-note">{{ counts.all }} total</text>
     </view>
   </view>
   {% if counts.overdue %}

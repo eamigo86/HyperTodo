@@ -345,10 +345,10 @@ def test_dashboard_stat_cards_share_one_horizontal_row(user, monkeypatch):
     assert row.attrib["shows-scroll-indicator"] == "false"
     assert row.attrib["content-container-style"] == "stat-row-content"
     assert [child.attrib["id"] for child in row.findall("./hv:view", NS)] == [
+        "dashboard-all",
         "dashboard-today",
         "dashboard-overdue",
         "dashboard-scheduled",
-        "dashboard-all",
     ]
     row_style = root.find(".//hv:style[@id='stat-row']", NS)
     content_style = root.find(".//hv:style[@id='stat-row-content']", NS)
