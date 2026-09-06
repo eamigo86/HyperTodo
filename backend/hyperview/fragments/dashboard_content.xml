@@ -1,0 +1,86 @@
+{% load dj_hyperview static %}<view xmlns="https://hyperview.org/hyperview" id="dashboard-content">
+  <view id="dashboard-hero" style="hero">
+    <view style="hero-row">
+      <view style="hero-avatar"><text style="hero-initials">{{ initials }}</text></view>
+      <view style="hero-identity">
+        <text style="hero-greeting">{{ greeting }}</text>
+        <text style="hero-name" ellipsizeMode="tail" numberOfLines="1">{{ request.user.first_name|default:request.user.username }}</text>
+      </view>
+    </view>
+    <text id="dashboard-progress-label" style="hero-headline">{{ summary.done_today }} of {{ summary.total_today }} done today</text>
+    <view id="dashboard-progress" style="progress-track">
+      <view style="progress-fill progress-{% widthratio summary.progress_percent 100 10 %}" />
+    </view>
+    <text style="hero-caption">{{ summary.today|date:'l, M j' }} · {% if summary.progress_percent >= 50 or not summary.total_today %}you're on track{% else %}let's get moving{% endif %}</text>
+  </view>
+  <view id="dashboard-stats" style="stat-row" scroll="true" scroll-orientation="horizontal" shows-scroll-indicator="false" content-container-style="stat-row-content">
+    <view id="dashboard-today" style="stat-card" href="/hv/tasks/?status=today" action="navigate">
+      <view style="stat-badge lavender"><image style="stat-icon" source="{% static 'todo/icons/sun.png' %}" /></view>
+      <text style="stat-label">Today</text>
+      <text style="stat-count">{{ counts.today }}</text>
+      {% if summary.week_completed_total %}<text style="stat-note stat-note-good">+{{ summary.week_completed_total }} done last 7 days</text>{% else %}<text style="stat-note">nothing done yet</text>{% endif %}
+    </view>
+    <view id="dashboard-overdue" style="stat-card" href="/hv/tasks/?status=overdue" action="navigate">
+      <view style="stat-badge pink"><image style="stat-icon" source="{% static 'todo/icons/alert.png' %}" /></view>
+      <text style="stat-label">Overdue</text>
+      <text style="stat-count">{{ counts.overdue }}</text>
+      {% if counts.overdue %}<text style="stat-note stat-note-alert">needs attention</text>{% else %}<text style="stat-note">all clear</text>{% endif %}
+    </view>
+    <view id="dashboard-scheduled" style="stat-card" href="/hv/tasks/?status=scheduled" action="navigate">
+      <view style="stat-badge yellow"><image style="stat-icon" source="{% static 'todo/icons/calendar.png' %}" /></view>
+      <text style="stat-label">Scheduled</text>
+      <text style="stat-count">{{ counts.scheduled }}</text>
+      <text style="stat-note">{% if summary.next_scheduled_label %}next: {{ summary.next_scheduled_label }}{% else %}nothing planned{% endif %}</text>
+    </view>
+    <view id="dashboard-all" style="stat-card" href="/hv/tasks/?status=all" action="navigate">
+      <view style="stat-badge mint"><image style="stat-icon" source="{% static 'todo/icons/list.png' %}" /></view>
+      <text style="stat-label">All</text>
+      <text style="stat-count">{{ counts.all }}</text>
+      <text style="stat-note">{{ counts.all }} total</text>
+    </view>
+  </view>
+  {% if counts.overdue %}
+  <view id="dashboard-overdue-card" style="alert-card">
+    <text style="alert-title">{{ counts.overdue }} overdue</text>
+    <view style="alert-action" href="/hv/tasks/?status=overdue" action="navigate"><text style="alert-action-text">Review</text></view>
+  </view>
+  {% endif %}
+  <view id="dashboard-up-next" style="section-block">
+    <view style="section-head">
+      <text style="section">Up next</text>
+      <view style="section-link" href="/hv/tasks/?status=active" action="navigate"><text style="section-link-text">See all</text></view>
+    </view>
+    {% for task in summary.next_tasks %}
+    <view id="dashboard-task-{{ task.id }}" style="row" href="/hv/tasks/{{ task.id }}/edit/" action="navigate">
+      <form>
+        {% hv_csrf_token %}
+        <view id="dashboard-toggle-{{ task.id }}" href-style="toggle-hit-area" style="toggle" href="/hv/tasks/{{ task.id }}/toggle/?panel=dashboard" verb="post" action="replace" target="dashboard-content" />
+      </form>
+      <view style="row-body">
+        <text style="row-title" ellipsizeMode="tail" numberOfLines="1">{{ task.title }}</text>
+        <text style="row-meta{% if task.category %} {{ task.category.color }}-text{% endif %}">{% if task.due_at %}{{ task.due_at|time:'H:i' }}{% if task.category %} · {% endif %}{% endif %}{{ task.category.name }}</text>
+      </view>
+      <image style="row-chevron" source="{% static 'todo/icons/chevron-right.png' %}" />
+    </view>
+    {% empty %}
+    <text style="meta">Nothing due next. Plan your week from the Tasks tab.</text>
+    {% endfor %}
+  </view>
+  <view id="dashboard-week" style="section-block">
+    <view style="week-card">
+      <text style="section">Last 7 days</text>
+      <text style="meta">{{ summary.week_completed_total }} done · {{ summary.streak_days }}-day streak</text>
+      <view style="bar-track">
+        {% for day in summary.week %}<view id="dashboard-bar-{{ forloop.counter }}" style="bar bar-{% widthratio day.height 48 8 %}{% if not day.completed %} bar-idle{% endif %}{% if day.is_today %} bar-today{% endif %}" />{% endfor %}
+      </view>
+      <view style="bar-labels">
+        {% for day in summary.week %}<text style="bar-label{% if day.is_today %} bar-label-today{% endif %}">{{ day.label }}</text>{% endfor %}
+      </view>
+    </view>
+  </view>
+  {% if summary.category_counts %}
+  <view id="dashboard-categories" style="chip-row" scroll="true" scroll-orientation="horizontal" shows-scroll-indicator="false" content-container-style="chip-row-content">
+    {% for row in summary.category_counts %}<view style="chip {{ row.category.color }}" href="/hv/tasks/?category={{ row.category.id }}" action="navigate"><text style="chip-text">{{ row.category.name }} · {{ row.active }}</text></view>{% endfor %}
+  </view>
+  {% endif %}
+</view>

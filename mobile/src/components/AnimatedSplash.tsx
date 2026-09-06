@@ -1,4 +1,5 @@
 import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
 import LottieView from "lottie-react-native";
 import React, { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, StyleSheet, View } from "react-native";
@@ -70,6 +71,7 @@ export default function AnimatedSplash({ children }: Props): React.JSX.Element {
           style={styles.overlay}
           testID="animated-splash"
         >
+          <StatusBar style="dark" />
           <LottieView
             autoPlay={false}
             loop={false}

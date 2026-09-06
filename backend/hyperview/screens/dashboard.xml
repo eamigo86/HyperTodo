@@ -2,25 +2,89 @@
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
     <style id="screen" backgroundColor="#F7F8FC" flex="1" />
-    <style id="screen-content" flex="1" padding="24" />
-    <style id="eyebrow" color="#6D728A" fontSize="14" />
-    <style id="title" color="#161A35" fontSize="28" fontWeight="700" marginBottom="22" />
-    <style id="counter-row" flexDirection="row" gap="7" marginBottom="12" />
-    <style id="tile-hit-area" flexBasis="0" flexGrow="1" flexShrink="1" />
-    <style id="tile" width="100%" borderRadius="17" justifyContent="space-between" minHeight="82" paddingHorizontal="7" paddingVertical="10" />
+    <style id="screen-content" flex="1" />
+    <style id="hero" backgroundColor="#278CFF" paddingBottom="56" paddingHorizontal="24" paddingTop="18" />
+    <style id="hero-row" alignItems="center" flexDirection="row" marginBottom="18" />
+    <style id="hero-avatar" alignItems="center" backgroundColor="#FFFFFF" borderRadius="18" height="36" justifyContent="center" marginRight="12" width="36" />
+    <style id="hero-initials" color="#278CFF" fontSize="14" fontWeight="700" />
+    <style id="hero-identity" flex="1" />
+    <style id="hero-greeting" color="#D9EAFF" fontSize="13" />
+    <style id="hero-name" color="#FFFFFF" fontSize="16" fontWeight="600" marginTop="2" />
+    <style id="hero-headline" color="#FFFFFF" fontSize="26" fontWeight="700" marginBottom="14" />
+    <style id="hero-caption" color="#D9EAFF" fontSize="13" marginTop="10" />
+    <style id="progress-track" backgroundColor="#5FA8FF" borderRadius="4" flexDirection="row" height="8" overflow="hidden" />
+    <!-- Hyperview resolves styles from the screen document only, so dynamic
+         widths ship as a fixed vocabulary of tenths that fragments select. -->
+    <style id="progress-fill" backgroundColor="#FFFFFF" borderRadius="4" height="8" />
+    <style id="progress-0" width="0%" />
+    <style id="progress-1" width="10%" />
+    <style id="progress-2" width="20%" />
+    <style id="progress-3" width="30%" />
+    <style id="progress-4" width="40%" />
+    <style id="progress-5" width="50%" />
+    <style id="progress-6" width="60%" />
+    <style id="progress-7" width="70%" />
+    <style id="progress-8" width="80%" />
+    <style id="progress-9" width="90%" />
+    <style id="progress-10" width="100%" />
+    <style id="stat-row" marginTop="-34" paddingBottom="4" />
+    <style id="stat-row-content" flexDirection="row" gap="12" paddingHorizontal="24" />
+    <style id="stat-card" backgroundColor="#FFFFFF" borderColor="#E9ECF5" borderRadius="16" borderWidth="1" padding="14" width="132" />
+    <style id="stat-badge" alignItems="center" borderRadius="8" height="28" justifyContent="center" marginBottom="10" width="28" />
+    <style id="stat-icon" height="16" width="16" />
     <style id="lavender" backgroundColor="#AEBBFA" />
     <style id="yellow" backgroundColor="#FFF27B" />
     <style id="mint" backgroundColor="#C9F0E7" />
     <style id="pink" backgroundColor="#F6B5E8" />
-    <style id="tile-label" color="#20243D" fontSize="14" fontWeight="600" />
-    <style id="tile-count" color="#161A35" fontSize="22" fontWeight="700" marginTop="9" />
-    <style id="section" color="#161A35" fontSize="18" fontWeight="700" marginTop="20" marginBottom="12" />
-    <style id="task" backgroundColor="#FFFFFF" borderRadius="22" padding="16" marginBottom="10" />
-    <style id="task-title" color="#20243D" fontSize="16" fontWeight="600" />
+    <style id="green" backgroundColor="#3B9B70" />
+    <style id="stat-label" color="#6D728A" fontSize="13" fontWeight="600" />
+    <style id="stat-count" color="#161A35" fontSize="22" fontWeight="700" marginTop="2" />
+    <style id="stat-note" color="#7B8097" fontSize="12" marginTop="6" />
+    <style id="stat-note-good" color="#1D9E75" />
+    <style id="stat-note-alert" color="#B42318" />
+    <style id="alert-card" alignItems="center" backgroundColor="#FCE7F6" borderRadius="16" flexDirection="row" justifyContent="space-between" marginHorizontal="24" marginTop="16" padding="16" />
+    <style id="alert-title" color="#9F1239" fontSize="15" fontWeight="700" />
+    <style id="alert-action" backgroundColor="#FFFFFF" borderRadius="14" paddingHorizontal="14" paddingVertical="7" />
+    <style id="alert-action-text" color="#9F1239" fontSize="13" fontWeight="600" />
+    <style id="section-block" marginTop="24" paddingHorizontal="24" />
+    <style id="section-head" alignItems="center" flexDirection="row" justifyContent="space-between" />
+    <style id="section" color="#161A35" fontSize="18" fontWeight="700" marginBottom="12" />
+    <style id="section-link" marginBottom="12" />
+    <style id="section-link-text" color="#278CFF" fontSize="13" fontWeight="600" />
+    <style id="row" alignItems="center" backgroundColor="#FFFFFF" borderRadius="16" flexDirection="row" marginBottom="10" padding="14" />
+    <style id="toggle" alignItems="center" borderColor="#C4CBDC" borderRadius="11" borderWidth="2" height="22" justifyContent="center" width="22" />
+    <style id="toggle-hit-area" alignItems="center" height="44" justifyContent="center" marginRight="12" width="44" />
+    <style id="row-body" flex="1" />
+    <style id="row-title" color="#20243D" fontSize="15" fontWeight="600" />
+    <style id="row-meta" color="#7B8097" fontSize="12" marginTop="4" />
+    <style id="lavender-text" color="#5B6ACD" />
+    <style id="yellow-text" color="#9A7B0A" />
+    <style id="mint-text" color="#1D9E75" />
+    <style id="pink-text" color="#B4479E" />
+    <style id="green-text" color="#1D7A4E" />
+    <style id="row-chevron" height="14" marginLeft="10" width="14" />
     <style id="meta" color="#7B8097" fontSize="13" marginTop="5" />
-    <style id="primary" backgroundColor="#278CFF" borderRadius="24" padding="16" marginTop="18" />
-    <style id="primary-text" color="#FFFFFF" textAlign="center" fontWeight="700" />
-    <style id="bottom-navigation" alignItems="center" backgroundColor="#FFFFFF" borderTopColor="#E7EAF3" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
+    <style id="week-card" backgroundColor="#FFFFFF" borderColor="#E9ECF5" borderRadius="16" borderWidth="1" padding="16" />
+    <style id="bar-track" alignItems="flex-end" flexDirection="row" height="52" justifyContent="space-between" marginTop="16" />
+    <style id="bar" backgroundColor="#AEBBFA" borderRadius="5" width="26" />
+    <style id="bar-idle" backgroundColor="#E9ECF5" />
+    <style id="bar-today" backgroundColor="#278CFF" />
+    <style id="bar-1" height="6" />
+    <style id="bar-2" height="12" />
+    <style id="bar-3" height="18" />
+    <style id="bar-4" height="24" />
+    <style id="bar-5" height="30" />
+    <style id="bar-6" height="36" />
+    <style id="bar-7" height="42" />
+    <style id="bar-8" height="48" />
+    <style id="bar-labels" flexDirection="row" justifyContent="space-between" marginTop="8" />
+    <style id="bar-label" color="#7B8097" fontSize="11" textAlign="center" width="26" />
+    <style id="bar-label-today" color="#278CFF" fontWeight="700" />
+    <style id="chip-row" marginTop="20" paddingBottom="8" />
+    <style id="chip-row-content" flexDirection="row" gap="8" paddingHorizontal="24" />
+    <style id="chip" borderRadius="16" paddingHorizontal="14" paddingVertical="9" />
+    <style id="chip-text" color="#20243D" fontSize="13" fontWeight="600" />
+    <style id="bottom-navigation" alignItems="center" backgroundColor="#F7F8FC" borderTopColor="#E9ECF5" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
     <style id="nav-hit-area" alignItems="center" flex="1" justifyContent="center" />
     <style id="nav-item" alignItems="center" height="52" justifyContent="center" width="64" />
     <style id="nav-active" opacity="1" />
@@ -46,22 +110,7 @@
   <screen id="dashboard-screen">
     <body style="screen">
       <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false">
-        <text style="eyebrow">Hello {{ request.user.first_name|default:request.user.username }},</text>
-        <text style="title">You have work today</text>
-        <view id="dashboard-counters" style="counter-row">
-          <view id="dashboard-all" style="tile mint" href-style="tile-hit-area" href="/hv/tasks/?status=all" action="navigate"><text style="tile-label" adjustsFontSizeToFit="true" minimumFontScale="0.72" numberOfLines="1">All</text><text style="tile-count">{{ counts.all }}</text></view>
-          <view id="dashboard-today" style="tile lavender" href-style="tile-hit-area" href="/hv/tasks/?status=today" action="navigate"><text style="tile-label" adjustsFontSizeToFit="true" minimumFontScale="0.72" numberOfLines="1">Today</text><text style="tile-count">{{ counts.today }}</text></view>
-          <view id="dashboard-scheduled" style="tile yellow" href-style="tile-hit-area" href="/hv/tasks/?status=scheduled" action="navigate"><text style="tile-label" adjustsFontSizeToFit="true" minimumFontScale="0.72" numberOfLines="1">Scheduled</text><text style="tile-count">{{ counts.scheduled }}</text></view>
-          <view id="dashboard-overdue" style="tile pink" href-style="tile-hit-area" href="/hv/tasks/?status=overdue" action="navigate"><text style="tile-label" adjustsFontSizeToFit="true" minimumFontScale="0.72" numberOfLines="1">Overdue</text><text style="tile-count">{{ counts.overdue }}</text></view>
-        </view>
-        <text style="section">Today's tasks</text>
-        {% for task in tasks %}
-        <view style="task" href="/hv/tasks/{{ task.id }}/edit/" action="new">
-          <text style="task-title">{{ task.title }}</text>
-          {% if task.due_at %}<text style="meta">{{ task.due_at|date:'D, M j · H:i' }}</text>{% endif %}
-        </view>
-        {% empty %}<text style="meta">Nothing due today. Enjoy the breathing room.</text>{% endfor %}
-        <view style="primary" href="/hv/tasks/new/" action="new"><text style="primary-text">+ Add task</text></view>
+        {% include "fragments/dashboard_content.xml" %}
       </view>
       {% include "fragments/bottom_navigation.xml" with active_nav="dashboard" %}
       {% include "fragments/side_menu_host.xml" %}

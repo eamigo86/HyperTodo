@@ -6,14 +6,20 @@ from uuid import UUID
 
 from dj_hyperview import HyperviewResponse, HyperviewTemplateResponse
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import AbstractUser
 from django.core.paginator import EmptyPage, Page, PageNotAnInteger, Paginator
 from django.db.models import Count, QuerySet
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 
 from .forms import CategoryForm, LoginForm, TaskForm
 from .models import Category, Task
-from .selectors import VALID_STATUSES, dashboard_counts, tasks_for_user
+from .selectors import (
+    VALID_STATUSES,
+    dashboard_summary,
+    tasks_for_user,
+)
 from .services import (
     create_category,
     create_task,
@@ -23,6 +29,8 @@ from .services import (
     update_category,
     update_task,
 )
+
+HYPERVIEW_FRAGMENT_MEDIA_TYPE = "application/vnd.hyperview_fragment+xml"
 
 View = Callable[..., HttpResponse]
 PAGE_SIZE = 20
@@ -97,16 +105,59 @@ def _method(request: HttpRequest, *allowed: str) -> HttpResponse | None:
     return response
 
 
+def _greeting(hour: int) -> str:
+    """Pick the salutation matching a local hour of the day.
+
+    Args:
+        hour: Local hour in the 0-23 range.
+
+    Returns:
+        Morning, afternoon, or evening greeting.
+    """
+    if hour < 12:
+        return "Good morning"
+    if hour < 18:
+        return "Good afternoon"
+    return "Good evening"
+
+
+def _initials(user: AbstractUser) -> str:
+    """Build the avatar initials for one user.
+
+    Args:
+        user: Authenticated dashboard owner.
+
+    Returns:
+        Upper-cased initials from the full name, or from the username.
+    """
+    names = (user.first_name.strip(), user.last_name.strip())
+    letters = "".join(name[0] for name in names if name)
+    return (letters or user.get_username()[:2]).upper()
+
+
+def _dashboard_context(request: HttpRequest) -> dict[str, object]:
+    """Build the shared context for the dashboard screen and its fragment.
+
+    Args:
+        request: Incoming authenticated request.
+
+    Returns:
+        Counters, day summary, greeting, and avatar initials.
+    """
+    summary = dashboard_summary(request.user)
+    return {
+        "counts": summary["counts"],
+        "summary": summary,
+        "greeting": _greeting(timezone.localtime().hour),
+        "initials": _initials(request.user),
+    }
+
+
 def _dashboard_response(
     request: HttpRequest, *, status: int = 200
 ) -> HyperviewTemplateResponse:
-    context = {
-        "counts": dashboard_counts(request.user),
-        "tasks": tasks_for_user(request.user, status="today")[:6],
-        "categories": Category.objects.filter(user=request.user),
-    }
     return HyperviewTemplateResponse(
-        request, "screens/dashboard.xml", context, status=status
+        request, "screens/dashboard.xml", _dashboard_context(request), status=status
     )
 
 
@@ -154,16 +205,12 @@ def login_view(request: HttpRequest) -> HttpResponse:
         )
         if user is not None:
             login(request, user)
-            return HyperviewTemplateResponse(
-                request, "fragments/login_transition.xml"
-            )
+            return HyperviewTemplateResponse(request, "fragments/login_transition.xml")
         form.add_error(None, "The username or password is incorrect.")
         return HyperviewTemplateResponse(
             request, "fragments/login_panel.xml", {"form": form}, status=422
         )
-    return HyperviewTemplateResponse(
-        request, "screens/login.xml", {"form": form}
-    )
+    return HyperviewTemplateResponse(request, "screens/login.xml", {"form": form})
 
 
 @hxml_endpoint
@@ -272,7 +319,7 @@ def task_list(request: HttpRequest) -> HttpResponse:
             tasks_for_user(request.user, status=status_filter, category=category),
             request.GET.get("page", "1"),
         )
-    except (EmptyPage, PageNotAnInteger):
+    except EmptyPage, PageNotAnInteger:
         return _error_response("Unknown task-list page.", 400)
     context = {
         "tasks": page_obj.object_list,
@@ -300,7 +347,7 @@ def _task_form_response(
             "task": task,
             "header_title": "Edit task" if task else "New task",
         },
-        status=status
+        status=status,
     )
 
 
@@ -331,7 +378,7 @@ def task_new(request: HttpRequest) -> HttpResponse:
             request,
             "fragments/task_transition.xml",
             {"notice_message": "Task created."},
-            status=201
+            status=201,
         )
     return _task_form_response(
         request, form, status=422 if request.method == "POST" else 200
@@ -383,13 +430,21 @@ def task_toggle(request: HttpRequest, task_id: UUID) -> HttpResponse:
         task_id: Task identifier from the route.
 
     Returns:
-        Task-list reload transition fragment.
+        Dashboard content fragment when toggled from the dashboard panel,
+        otherwise the task-list reload transition fragment.
     """
     if denied := _require_user(request):
         return denied
     if invalid := _method(request, "POST"):
         return invalid
     task = toggle_task(user=request.user, task_id=task_id)
+    if request.GET.get("panel") == "dashboard":
+        return HyperviewTemplateResponse(
+            request,
+            "fragments/dashboard_content.xml",
+            _dashboard_context(request),
+            content_type=f"{HYPERVIEW_FRAGMENT_MEDIA_TYPE}; charset=utf-8",
+        )
     message = "Task completed." if task.is_completed else "Task reopened."
     return HyperviewTemplateResponse(
         request,
@@ -445,12 +500,12 @@ def category_list(request: HttpRequest) -> HttpResponse:
         return _error_response("Unknown category-list fragment.", 400)
     try:
         page_obj = _paginate(
-            Category.objects.filter(user=request.user).annotate(
-                task_count=Count("tasks")
-            ).order_by("name"),
+            Category.objects.filter(user=request.user)
+            .annotate(task_count=Count("tasks"))
+            .order_by("name"),
             request.GET.get("page", "1"),
         )
-    except (EmptyPage, PageNotAnInteger):
+    except EmptyPage, PageNotAnInteger:
         return _error_response("Unknown category-list page.", 400)
     return HyperviewTemplateResponse(
         request,

@@ -7,6 +7,8 @@ const mockPlay = jest.fn();
 const mockReset = jest.fn();
 
 jest.mock("expo-splash-screen", () => ({ preventAutoHideAsync: jest.fn(), hideAsync: jest.fn() }));
+// The overlay renders its own StatusBar; keep React Native's global StatusBar props stack out of these tests.
+jest.mock("expo-status-bar", () => ({ StatusBar: () => null }));
 jest.mock("lottie-react-native", () => {
   const { forwardRef, useImperativeHandle } = require("react");
   const { View } = require("react-native");
@@ -93,6 +95,9 @@ describe("AnimatedSplash", () => {
       expect(screen.queryByTestId("animated-splash")).toBeNull();
       expect(screen.getByText("App content")).toBeTruthy();
     } finally {
+      act(() => {
+        jest.runOnlyPendingTimers();
+      });
       jest.useRealTimers();
     }
   });

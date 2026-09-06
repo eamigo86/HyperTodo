@@ -1,28 +1,33 @@
 {% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
-    <style id="screen" backgroundColor="#F7F8FC" flex="1" padding="24" />
-    <style id="hero" marginTop="36" marginBottom="24" />
-    <style id="brand" color="#161A35" fontSize="34" fontWeight="700" />
-    <style id="subtitle" color="#6D728A" fontSize="16" lineHeight="23" marginTop="8" />
-    <style id="card" backgroundColor="#FFFFFF" borderColor="#E9ECF5" borderRadius="28" borderWidth="1" padding="24" />
-    <style id="card-title" color="#161A35" fontSize="22" fontWeight="700" marginBottom="6" />
-    <style id="card-copy" color="#7A7F95" fontSize="14" lineHeight="20" marginBottom="22" />
+    <style id="login-body" backgroundColor="#278CFF" flex="1" />
+    <style id="login-scroll" flexGrow="1" justifyContent="flex-end" />
+    <style id="login-hero" alignItems="center" flexGrow="1" justifyContent="center" minHeight="140" paddingHorizontal="24" paddingVertical="24" />
+    <style id="hero-mark" alignItems="center" backgroundColor="#FFFFFF" borderRadius="24" height="72" justifyContent="center" width="72" />
+    <style id="hero-mark-check" color="#278CFF" fontSize="38" fontWeight="700" />
+    <style id="login-brand" color="#FFFFFF" fontSize="30" fontWeight="700" marginTop="16" />
+    <style id="login-sheet" backgroundColor="#F7F8FC" borderTopLeftRadius="28" borderTopRightRadius="28" paddingHorizontal="24" paddingTop="28" paddingBottom="16" />
+    <style id="card" />
+    <style id="card-title" color="#161A35" fontSize="24" fontWeight="700" marginBottom="6" />
+    <style id="card-copy" color="#6A6F86" fontSize="14" lineHeight="20" marginBottom="22" />
     <style id="label" color="#343951" fontSize="13" fontWeight="600" marginBottom="8" />
-    <style id="field" backgroundColor="#F1F4FC" borderColor="#E2E7F3" borderRadius="16" borderWidth="1" color="#161A35" fontSize="16" marginBottom="16" padding="16" />
+    <style id="field" backgroundColor="#FFFFFF" borderColor="#C4CBDC" borderRadius="16" borderWidth="1" color="#161A35" fontSize="16" marginBottom="16" padding="16" />
     <style id="button" backgroundColor="#278CFF" borderRadius="18" padding="17" marginTop="6" />
     <style id="button-text" color="#FFFFFF" fontSize="17" fontWeight="700" textAlign="center" />
     <style id="error-card" backgroundColor="#FFF0EE" borderColor="#FFD5D0" borderRadius="12" borderWidth="1" marginBottom="18" padding="12" />
     <style id="error-text" color="#B42318" fontSize="14" fontWeight="600" lineHeight="20" />
-    <style id="hint" color="#8A8FA3" fontSize="13" lineHeight="19" marginTop="18" textAlign="center" />
+    <style id="hint" color="#6E738A" fontSize="13" lineHeight="19" marginTop="18" textAlign="center" />
   </styles>
   <screen id="login-screen">
-    <body style="screen" scroll="true" shows-scroll-indicator="false">
-      <view style="hero">
-        <text style="brand">HyperTodo</text>
-        <text style="subtitle">A calmer place for everything you need to do.</text>
+    <body style="login-body" scroll="true" shows-scroll-indicator="false" content-container-style="login-scroll">
+      <view style="login-hero">
+        <view style="hero-mark"><text style="hero-mark-check">✓</text></view>
+        <text style="login-brand">HyperTodo</text>
       </view>
-      {% include "fragments/login_panel.xml" %}
+      <view style="login-sheet">
+        {% include "fragments/login_panel.xml" %}
+      </view>
     </body>
   </screen>
 </doc>

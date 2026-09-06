@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
-    <style id="screen" backgroundColor="#F7F8FC" padding="28" justifyContent="center" />
+    <style id="screen" backgroundColor="#278CFF" padding="28" justifyContent="center" />
     <style id="card" backgroundColor="#FFFFFF" borderRadius="28" padding="24" />
     <style id="title" color="#161A35" fontSize="24" fontWeight="700" />
     <style id="copy" color="#6D728A" fontSize="16" marginTop="8" />

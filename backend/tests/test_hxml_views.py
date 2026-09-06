@@ -4,6 +4,8 @@ from datetime import timedelta
 from xml.etree import ElementTree
 
 import pytest
+from django.contrib.auth import get_user_model
+from django.template.defaultfilters import date as date_filter
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -12,16 +14,17 @@ from todo.models import Category, Task
 
 pytestmark = pytest.mark.django_db
 MEDIA_TYPE = "application/vnd.hyperview+xml"
+FRAGMENT_MEDIA_TYPE = "application/vnd.hyperview_fragment+xml"
 NS = {
     "hv": "https://hyperview.org/hyperview",
     "app": "https://hypertodo.app/components",
 }
 
 
-def assert_hxml(response, *, status=200):
+def assert_hxml(response, *, status=200, media_type=MEDIA_TYPE):
     """Assert a response is parseable UTF-8 Hyperview XML."""
     assert response.status_code == status
-    assert response.headers["Content-Type"] == f"{MEDIA_TYPE}; charset=utf-8"
+    assert response.headers["Content-Type"] == f"{media_type}; charset=utf-8"
     return ElementTree.fromstring(response.content)
 
 
@@ -78,9 +81,7 @@ def test_root_initializes_stack_navigator_for_guest_and_user(user):
     client.force_login(user)
     dashboard_response = client.get(reverse("todo:root"))
     dashboard_root = assert_hxml(dashboard_response)
-    dashboard_route = dashboard_root.find(
-        ".//hv:nav-route[@id='dashboard-route']", NS
-    )
+    dashboard_route = dashboard_root.find(".//hv:nav-route[@id='dashboard-route']", NS)
     assert dashboard_route is not None
     assert dashboard_route.attrib["href"] == "/hv/dashboard/"
     assert dashboard_route.attrib["selected"] == "true"
@@ -90,7 +91,7 @@ def test_login_screen_uses_secure_credentials_and_fragment_submission():
     response = Client().get(reverse("todo:login"))
     root = assert_hxml(response)
 
-    screen_style = root.find(".//hv:style[@id='screen']", NS)
+    screen_style = root.find(".//hv:style[@id='login-body']", NS)
     error_style = root.find(".//hv:style[@id='error-text']", NS)
     username = root.find(".//hv:text-field[@name='username']", NS)
     password = root.find(".//hv:text-field[@name='password']", NS)
@@ -111,7 +112,9 @@ def test_login_screen_uses_secure_credentials_and_fragment_submission():
     assert submit.attrib["target"] == "login-panel"
     visible_text = "".join(root.itertext())
     assert "PLAN WITH INTENTION" not in visible_text
-    assert "✓" not in visible_text
+    hero_mark = root.find(".//hv:text[@style='hero-mark-check']", NS)
+    assert hero_mark is not None
+    assert hero_mark.text == "✓"
 
 
 def test_login_requires_csrf_and_returns_direct_hxml(user):
@@ -204,7 +207,107 @@ def test_navigation_buttons_use_symbol_only(user):
         root = assert_hxml(client.get(route))
         back = root.find(".//hv:view[@action='back']", NS)
         assert back is not None
-        assert "".join(back.itertext()).strip() == "<"
+        chevron = back.find("./hv:text[@style='back-chevron']", NS)
+        label = back.find("./hv:text[@style='back-label']", NS)
+        assert chevron is not None
+        assert chevron.text == "‹"
+        assert label is not None
+        assert label.text == "Back"
+
+
+def freeze_local(monkeypatch, *, hour=12):
+    """Freeze timezone.now at a local hour of the current day.
+
+    Patching the shared django.utils.timezone.now freezes auto_now_add too.
+    """
+    now = timezone.localtime().replace(hour=hour, minute=0, second=0, microsecond=0)
+    monkeypatch.setattr("django.utils.timezone.now", lambda: now)
+    return now
+
+
+def dashboard_root(user):
+    """Render the dashboard screen for one user."""
+    client = Client()
+    client.force_login(user)
+    return assert_hxml(client.get(reverse("todo:dashboard")))
+
+
+def text_of(root, node_id):
+    """Return the concatenated text of one identified node."""
+    node = root.find(f".//hv:*[@id='{node_id}']", NS)
+    assert node is not None, node_id
+    return "".join(node.itertext())
+
+
+@pytest.mark.parametrize(
+    ("hour", "greeting"),
+    [
+        (8, "Good morning"),
+        (11, "Good morning"),
+        (12, "Good afternoon"),
+        (13, "Good afternoon"),
+        (17, "Good afternoon"),
+        (18, "Good evening"),
+        (20, "Good evening"),
+    ],
+)
+def test_dashboard_hero_greets_the_user_by_local_hour(
+    user, monkeypatch, hour, greeting
+):
+    freeze_local(monkeypatch, hour=hour)
+
+    assert greeting in text_of(dashboard_root(user), "dashboard-hero")
+
+
+def test_dashboard_hero_shows_initials_and_today_progress(user, monkeypatch):
+    now = freeze_local(monkeypatch)
+    user.first_name = "Ada"
+    user.last_name = "Lovelace"
+    user.save(update_fields=("first_name", "last_name"))
+    Task.objects.create(user=user, title="Open", due_at=now.replace(hour=23))
+    Task.objects.create(
+        user=user, title="Closed", due_at=now.replace(hour=9), completed_at=now
+    )
+
+    root = dashboard_root(user)
+    hero = root.find(".//hv:view[@id='dashboard-hero']", NS)
+    progress = root.find(".//hv:view[@id='dashboard-progress']", NS)
+
+    assert hero is not None
+    assert "AL" in "".join(hero.itertext())
+    assert "Ada" in "".join(hero.itertext())
+    assert text_of(root, "dashboard-progress-label") == "1 of 2 done today"
+    assert progress is not None
+    fill = progress.find("./hv:view", NS)
+    assert "progress-5" in fill.attrib["style"].split()
+    bucket = root.find(".//hv:style[@id='progress-5']", NS)
+    assert bucket is not None
+    assert bucket.attrib["width"] == "50%"
+    assert hero.find(".//hv:image", NS) is None
+    assert root.find(".//hv:style[@id='hero-icon']", NS) is None
+
+
+def test_dashboard_hero_falls_back_to_username_initials(user, monkeypatch):
+    freeze_local(monkeypatch)
+
+    hero_text = text_of(dashboard_root(user), "dashboard-hero")
+
+    assert "AD" in hero_text
+    assert "ada" in hero_text
+    assert "0 of 0 done today" in hero_text
+
+
+def test_dashboard_hero_caption_dates_the_day_and_rates_momentum(user, monkeypatch):
+    now = freeze_local(monkeypatch)
+    today_label = date_filter(timezone.localdate(now), "l, M j")
+
+    idle_caption = text_of(dashboard_root(user), "dashboard-hero")
+    Task.objects.create(user=user, title="Open", due_at=now.replace(hour=23))
+    Task.objects.create(user=user, title="Also open", due_at=now.replace(hour=22))
+    behind_caption = text_of(dashboard_root(user), "dashboard-hero")
+
+    assert f"{today_label} · you're on track" in idle_caption
+    assert f"{today_label} · let's get moving" in behind_caption
 
 
 def test_dashboard_tiles_render_labels_and_filtered_destinations(user):
@@ -226,47 +329,279 @@ def test_dashboard_tiles_render_labels_and_filtered_destinations(user):
         assert label in "".join(tile.itertext())
 
 
+def test_dashboard_stat_cards_share_one_horizontal_row(user, monkeypatch):
+    now = freeze_local(monkeypatch)
+    Task.objects.create(user=user, title="Due today", due_at=now.replace(hour=23))
+    Task.objects.create(user=user, title="Late", due_at=now - timedelta(days=1))
+    Task.objects.create(user=user, title="Later", due_at=now + timedelta(days=2))
+    Task.objects.create(user=user, title="Done", completed_at=now)
 
-def test_dashboard_counters_share_one_ordered_row(user):
+    root = dashboard_root(user)
+    row = root.find(".//hv:view[@id='dashboard-stats']", NS)
+
+    assert row is not None
+    assert row.attrib["scroll"] == "true"
+    assert row.attrib["scroll-orientation"] == "horizontal"
+    assert row.attrib["shows-scroll-indicator"] == "false"
+    assert row.attrib["content-container-style"] == "stat-row-content"
+    assert [child.attrib["id"] for child in row.findall("./hv:view", NS)] == [
+        "dashboard-today",
+        "dashboard-overdue",
+        "dashboard-scheduled",
+        "dashboard-all",
+    ]
+    row_style = root.find(".//hv:style[@id='stat-row']", NS)
+    content_style = root.find(".//hv:style[@id='stat-row-content']", NS)
+    card_style = root.find(".//hv:style[@id='stat-card']", NS)
+    icon_style = root.find(".//hv:style[@id='stat-icon']", NS)
+    assert row_style is not None
+    assert row_style.attrib["marginTop"] == "-34"
+    assert "flexDirection" not in row_style.attrib
+    assert content_style is not None
+    assert content_style.attrib["flexDirection"] == "row"
+    assert content_style.attrib["gap"] == "12"
+    assert content_style.attrib["paddingHorizontal"] == "24"
+    assert card_style is not None
+    assert card_style.attrib["width"] == "132"
+    assert card_style.attrib["borderRadius"] == "16"
+    assert card_style.attrib["borderColor"] == "#E9ECF5"
+    assert card_style.attrib["backgroundColor"] == "#FFFFFF"
+    assert icon_style is not None
+    assert icon_style.attrib == {"id": "stat-icon", "height": "16", "width": "16"}
+
+    icons = {
+        "dashboard-today": "sun.png",
+        "dashboard-overdue": "alert.png",
+        "dashboard-scheduled": "calendar.png",
+        "dashboard-all": "list.png",
+    }
+    for card_id, icon in icons.items():
+        card = row.find(f"./hv:view[@id='{card_id}']", NS)
+        image = card.find(f".//hv:image[@style='{icon_style.attrib['id']}']", NS)
+        assert image is not None, card_id
+        assert image.attrib["source"].endswith(f"/todo/icons/{icon}")
+
+    label = (now + timedelta(days=2)).strftime("%a")
+    assert "+1 done last 7 days" in text_of(root, "dashboard-today")
+    assert "needs attention" in text_of(root, "dashboard-overdue")
+    assert f"next: {label}" in text_of(root, "dashboard-scheduled")
+    assert "4 total" in text_of(root, "dashboard-all")
+
+
+def test_dashboard_overdue_card_appears_only_when_work_is_late(user, monkeypatch):
+    now = freeze_local(monkeypatch)
+
+    quiet = dashboard_root(user)
+    Task.objects.create(user=user, title="Late", due_at=now - timedelta(days=1))
+    Task.objects.create(user=user, title="Later", due_at=now - timedelta(days=2))
+    alerted = dashboard_root(user)
+    card = alerted.find(".//hv:view[@id='dashboard-overdue-card']", NS)
+
+    assert quiet.find(".//hv:view[@id='dashboard-overdue-card']", NS) is None
+    assert card is not None
+    assert "2 overdue" in "".join(card.itertext())
+    review = card.find(".//hv:view[@href='/hv/tasks/?status=overdue']", NS)
+    assert review is not None
+    assert review.attrib["action"] == "navigate"
+    assert "Review" in "".join(review.itertext())
+
+
+def test_dashboard_up_next_rows_open_edit_and_toggle_the_content_fragment(
+    user, monkeypatch
+):
+    now = freeze_local(monkeypatch)
+    work = Category.objects.create(
+        user=user, name="Work", color=Category.Color.LAVENDER
+    )
+    task = Task.objects.create(
+        user=user, category=work, title="Ship it", due_at=now.replace(hour=17)
+    )
+
+    root = dashboard_root(user)
+    section = root.find(".//hv:view[@id='dashboard-up-next']", NS)
+    see_all = section.find(".//hv:view[@href='/hv/tasks/?status=active']", NS)
+    row = section.find(f".//hv:view[@id='dashboard-task-{task.pk}']", NS)
+    toggle = section.find(f".//hv:view[@id='dashboard-toggle-{task.pk}']", NS)
+
+    assert "Up next" in "".join(section.itertext())
+    assert see_all is not None
+    assert see_all.attrib["action"] == "navigate"
+    assert "See all" in "".join(see_all.itertext())
+    assert row is not None
+    assert row.attrib["href"] == f"/hv/tasks/{task.pk}/edit/"
+    assert row.attrib["action"] == "navigate"
+    assert "Ship it" in "".join(row.itertext())
+    assert "17:00 · Work" in "".join(row.itertext())
+    assert row.find(".//hv:image[@style='row-chevron']", NS) is not None
+    assert toggle is not None
+    assert toggle.attrib["href"] == f"/hv/tasks/{task.pk}/toggle/?panel=dashboard"
+    assert toggle.attrib["verb"] == "post"
+    assert toggle.attrib["action"] == "replace"
+    assert toggle.attrib["target"] == "dashboard-content"
+    assert toggle.attrib["href-style"] == "toggle-hit-area"
+    hit_area = root.find(".//hv:style[@id='toggle-hit-area']", NS)
+    assert hit_area is not None
+    assert hit_area.attrib["height"] == "44"
+    assert hit_area.attrib["width"] == "44"
+    assert hit_area.attrib["marginRight"] == "12"
+    assert "marginRight" not in root.find(".//hv:style[@id='toggle']", NS).attrib
+    form = section.find(".//hv:form", NS)
+    assert form is not None
+    assert form.find("./hv:text-field[@name='csrfmiddlewaretoken']", NS) is not None
+
+
+def test_dashboard_up_next_lists_only_open_work(user, monkeypatch):
+    now = freeze_local(monkeypatch)
+    empty = dashboard_root(user)
+    done = Task.objects.create(
+        user=user, title="Archived", due_at=now.replace(hour=9), completed_at=now
+    )
+    open_task = Task.objects.create(
+        user=user, title="Still open", due_at=now.replace(hour=18)
+    )
+    filled = dashboard_root(user)
+    up_next = text_of(filled, "dashboard-up-next")
+
+    assert "Nothing due next" in text_of(empty, "dashboard-up-next")
+    assert "Still open" in up_next
+    assert "Archived" not in up_next
+    assert filled.find(f".//hv:view[@id='dashboard-task-{done.pk}']", NS) is None
+    assert (
+        filled.find(f".//hv:view[@id='dashboard-task-{open_task.pk}']", NS) is not None
+    )
+
+
+def test_dashboard_week_card_scales_bars_and_marks_today(user, monkeypatch):
+    now = freeze_local(monkeypatch)
+    for index in range(2):
+        Task.objects.create(user=user, title=f"Today {index}", completed_at=now)
+    Task.objects.create(
+        user=user, title="Yesterday", completed_at=now - timedelta(days=1)
+    )
+
+    root = dashboard_root(user)
+    week = root.find(".//hv:view[@id='dashboard-week']", NS)
+    bars = [week.find(f".//hv:view[@id='dashboard-bar-{i}']", NS) for i in range(1, 8)]
+
+    assert "Last 7 days" in "".join(week.itertext())
+    assert "3 done · 2-day streak" in "".join(week.itertext())
+    assert all(bar is not None for bar in bars)
+    assert "bar-8" in bars[6].attrib["style"].split()
+    assert "bar-today" in bars[6].attrib["style"].split()
+    assert "bar-4" in bars[5].attrib["style"].split()
+    assert "bar-idle" in bars[0].attrib["style"].split()
+    assert "bar-today" not in bars[0].attrib["style"].split()
+
+    track = root.find(".//hv:style[@id='bar-track']", NS)
+    assert track.attrib["alignItems"] == "flex-end"
+    assert track.attrib["height"] == "52"
+    assert root.find(".//hv:style[@id='bar-8']", NS).attrib["height"] == "48"
+    assert root.find(".//hv:style[@id='bar-4']", NS).attrib["height"] == "24"
+    assert root.find(".//hv:style[@id='bar-1']", NS).attrib["height"] == "6"
+    bar_style = root.find(".//hv:style[@id='bar']", NS)
+    assert bar_style.attrib["backgroundColor"] == "#AEBBFA"
+    assert (
+        root.find(".//hv:style[@id='bar-today']", NS).attrib["backgroundColor"]
+        == "#278CFF"
+    )
+    assert (
+        root.find(".//hv:style[@id='bar-idle']", NS).attrib["backgroundColor"]
+        == "#E9ECF5"
+    )
+
+    labels = week.findall(".//hv:text[@style='bar-label']", NS)
+    today_label = week.find(".//hv:text[@style='bar-label bar-label-today']", NS)
+    assert len(labels) == 6
+    assert today_label is not None
+    assert today_label.text == "MTWTFSS"[timezone.localdate(now).weekday()]
+
+
+def test_dashboard_category_chips_filter_the_task_list(user, monkeypatch):
+    freeze_local(monkeypatch)
+    work = Category.objects.create(
+        user=user, name="Work", color=Category.Color.LAVENDER
+    )
+    admin = Category.objects.create(user=user, name="Admin", color=Category.Color.MINT)
+    Task.objects.create(user=user, category=work, title="Open")
+
+    root = dashboard_root(user)
+    section = root.find(".//hv:view[@id='dashboard-categories']", NS)
+    chips = section.findall("./hv:view", NS)
+
+    assert section.attrib["scroll"] == "true"
+    assert section.attrib["scroll-orientation"] == "horizontal"
+    assert section.attrib["content-container-style"] == "chip-row-content"
+    chip_content = root.find(".//hv:style[@id='chip-row-content']", NS)
+    assert chip_content is not None
+    assert chip_content.attrib["flexDirection"] == "row"
+    assert chip_content.attrib["gap"] == "8"
+    assert chip_content.attrib["paddingHorizontal"] == "24"
+    assert "flexDirection" not in root.find(".//hv:style[@id='chip-row']", NS).attrib
+    assert [chip.attrib["href"] for chip in chips] == [
+        f"/hv/tasks/?category={admin.pk}",
+        f"/hv/tasks/?category={work.pk}",
+    ]
+    assert all(chip.attrib["action"] == "navigate" for chip in chips)
+    assert "Admin · 0" in "".join(chips[0].itertext())
+    assert "Work · 1" in "".join(chips[1].itertext())
+    assert "mint" in chips[0].attrib["style"]
+    assert "lavender" in chips[1].attrib["style"]
+
+
+def test_dashboard_hides_the_category_strip_without_categories(user, monkeypatch):
+    freeze_local(monkeypatch)
+
+    root = dashboard_root(user)
+
+    assert root.find(".//hv:view[@id='dashboard-categories']", NS) is None
+
+
+def test_bottom_navigation_sits_on_the_canvas_colour(user):
     client = Client()
     client.force_login(user)
 
-    root = assert_hxml(client.get(reverse("todo:dashboard")))
-    row = root.find(".//hv:view[@id='dashboard-counters']", NS)
+    for route in ("todo:dashboard", "todo:tasks", "todo:categories"):
+        root = assert_hxml(client.get(reverse(route)))
+        style = root.find(".//hv:style[@id='bottom-navigation']", NS)
+        assert style is not None, route
+        assert style.attrib["backgroundColor"] == "#F7F8FC"
+        assert style.attrib["borderTopWidth"] == "1"
+        assert style.attrib["borderTopColor"] == "#E9ECF5"
 
-    assert row is not None
-    assert [child.attrib["id"] for child in row.findall("./hv:view", NS)] == [
-        "dashboard-all",
-        "dashboard-today",
-        "dashboard-scheduled",
-        "dashboard-overdue",
-    ]
-    row_style = root.find(".//hv:style[@id='counter-row']", NS)
-    tile_style = root.find(".//hv:style[@id='tile']", NS)
-    hit_area_style = root.find(".//hv:style[@id='tile-hit-area']", NS)
-    assert row_style is not None
-    assert row_style.attrib["flexDirection"] == "row"
-    assert row_style.attrib["gap"] == "7"
-    assert tile_style is not None
-    assert tile_style.attrib["width"] == "100%"
-    assert hit_area_style is not None
-    assert hit_area_style.attrib == {
-        "id": "tile-hit-area",
-        "flexBasis": "0",
-        "flexGrow": "1",
-        "flexShrink": "1",
-    }
-    assert all(
-        child.attrib["href-style"] == "tile-hit-area"
-        for child in row.findall("./hv:view", NS)
+
+def test_dashboard_delegates_task_creation_to_the_tab_bar(user, monkeypatch):
+    freeze_local(monkeypatch)
+
+    root = dashboard_root(user)
+
+    assert "+ Add task" not in "".join(root.itertext())
+    assert root.find(".//hv:style[@id='primary']", NS) is None
+    assert root.find(".//hv:view[@id='nav-add-task']", NS) is not None
+
+
+def test_dashboard_hero_escapes_user_supplied_names(db, monkeypatch):
+    freeze_local(monkeypatch)
+    hostile = get_user_model().objects.create_user(
+        username='<ada> & "co"', password="correct-horse"
     )
-    labels = row.findall("./hv:view/hv:text[@style='tile-label']", NS)
-    assert len(labels) == 4
-    assert all(label.attrib["adjustsFontSizeToFit"] == "true" for label in labels)
-    assert all(label.attrib["numberOfLines"] == "1" for label in labels)
-    label_style = root.find(".//hv:style[@id='tile-label']", NS)
-    assert label_style is not None
-    assert label_style.attrib["fontSize"] == "14"
+
+    hero = text_of(dashboard_root(hostile), "dashboard-hero")
+
+    assert '<ada> & "co"' in hero
+
+
+def test_dashboard_stat_cards_report_a_quiet_day(user, monkeypatch):
+    freeze_local(monkeypatch)
+
+    root = dashboard_root(user)
+    today_card = root.find(".//hv:view[@id='dashboard-today']", NS)
+
+    assert "all clear" in text_of(root, "dashboard-overdue")
+    assert "nothing planned" in text_of(root, "dashboard-scheduled")
+    assert today_card.find("./hv:text[@style='stat-note']", NS).text == (
+        "nothing done yet"
+    )
+    assert today_card.find("./hv:text[@style='stat-note stat-note-good']", NS) is None
 
 
 def test_secondary_screens_use_centered_blue_destination_headers(user):
@@ -289,17 +624,21 @@ def test_secondary_screens_use_centered_blue_destination_headers(user):
         assert header is not None
         assert header_style is not None
         assert header_style.attrib["backgroundColor"] == "#278CFF"
-        assert header_style.attrib["height"] == "58"
-        assert header_style.attrib["justifyContent"] == "center"
+        assert header_style.attrib["height"] == "44"
         assert back is not None
         assert back.attrib["action"] == "back"
-        assert "".join(back.itertext()).strip() == "<"
+        chevron = back.find("./hv:text[@style='back-chevron']", NS)
+        label = back.find("./hv:text[@style='back-label']", NS)
+        assert chevron is not None
+        assert chevron.text == "‹"
+        assert label is not None
+        assert label.text == "Back"
         back_style = root.find(".//hv:style[@id='back-button']", NS)
         title_slot = root.find(".//hv:view[@style='screen-header-title-slot']", NS)
         spacer = root.find(".//hv:view[@style='screen-header-spacer']", NS)
         spacer_style = root.find(".//hv:style[@id='screen-header-spacer']", NS)
         assert back_style is not None
-        assert back_style.attrib["width"] == "52"
+        assert back_style.attrib["width"] == "84"
         assert "position" not in back_style.attrib
         assert title_slot is not None
         assert spacer is not None
@@ -308,11 +647,9 @@ def test_secondary_screens_use_centered_blue_destination_headers(user):
         assert heading is not None
         assert heading.text == title
 
+
 def test_task_screen_scrolls_and_makes_dashboard_filter_visible(user, monkeypatch):
-    now = timezone.localtime().replace(
-        hour=12, minute=0, second=0, microsecond=0
-    )
-    monkeypatch.setattr("todo.selectors.timezone.now", lambda: now)
+    now = freeze_local(monkeypatch)
     today_due = timezone.localtime(now).replace(
         hour=23, minute=59, second=59, microsecond=0
     )
@@ -328,9 +665,7 @@ def test_task_screen_scrolls_and_makes_dashboard_filter_visible(user, monkeypatc
         "overdue": ("Past due", {"Due today", "Due later"}),
     }
     for status_filter, (included, excluded) in expected.items():
-        root = assert_hxml(
-            client.get(reverse("todo:tasks"), {"status": status_filter})
-        )
+        root = assert_hxml(client.get(reverse("todo:tasks"), {"status": status_filter}))
         content = root.find(".//hv:view[@id='screen-content']", NS)
         task_list = root.find(".//hv:list[@id='task-list']", NS)
         selected = root.find(f".//hv:view[@id='filter-{status_filter}']", NS)
@@ -360,7 +695,12 @@ def test_category_form_has_back_navigation_and_selectable_color_options(user):
 
     assert back is not None
     assert back.attrib["action"] == "back"
-    assert "".join(back.itertext()).strip() == "<"
+    chevron = back.find("./hv:text[@style='back-chevron']", NS)
+    label = back.find("./hv:text[@style='back-label']", NS)
+    assert chevron is not None
+    assert chevron.text == "‹"
+    assert label is not None
+    assert label.text == "Back"
     assert color is not None
     labels = [node.text for node in color.findall("./hv:option/hv:text", NS)]
     assert labels == ["Lavender", "Yellow", "Mint", "Pink", "Green"]
@@ -368,6 +708,48 @@ def test_category_form_has_back_navigation_and_selectable_color_options(user):
     assert submit.attrib["action"] == "replace"
     assert submit.attrib["target"] == "category-form-panel"
 
+
+def test_task_toggle_from_the_dashboard_returns_the_content_fragment(user, monkeypatch):
+    now = freeze_local(monkeypatch)
+    task = Task.objects.create(user=user, title="Ship it", due_at=now.replace(hour=17))
+    work = Category.objects.create(
+        user=user, name="Work", color=Category.Color.LAVENDER
+    )
+    Task.objects.create(
+        user=user, category=work, title="Next up", due_at=now + timedelta(days=3)
+    )
+    client = csrf_client()
+    client.force_login(user)
+    screen_response = client.get(reverse("todo:dashboard"))
+    screen = assert_hxml(screen_response)
+    token = token_from(screen_response)
+
+    response = client.post(
+        f"{reverse('todo:task-toggle', args=(task.pk,))}?panel=dashboard",
+        {"csrfmiddlewaretoken": token},
+    )
+    root = assert_hxml(response, media_type=FRAGMENT_MEDIA_TYPE)
+    task.refresh_from_db()
+
+    assert root.tag == f"{{{NS['hv']}}}view"
+    assert root.attrib["id"] == "dashboard-content"
+    assert root.find(".//hv:screen", NS) is None
+    assert response.headers["Content-Type"] == (f"{FRAGMENT_MEDIA_TYPE}; charset=utf-8")
+    assert task.is_completed
+    assert "1 of 1 done today" in "".join(root.itertext())
+    assert root.find(f".//hv:view[@id='dashboard-task-{task.pk}']", NS) is None
+    assert "1 done · 1-day streak" in "".join(root.itertext())
+
+    defined = {style.attrib["id"] for style in screen.findall(".//hv:style", NS)}
+    used = {
+        style_id
+        for node in root.iter()
+        for name, value in node.attrib.items()
+        if name.endswith("style")
+        for style_id in value.split()
+    }
+    assert used
+    assert used <= defined
 
 
 def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
@@ -609,6 +991,7 @@ def test_primary_screens_share_server_driven_navigation(user):
         assert add_style.attrib["height"] == "48"
         assert "marginTop" not in add_style.attrib
 
+
 def test_side_menu_is_loaded_and_closed_through_hxml_requests(user):
     client = Client()
     client.force_login(user)
@@ -632,7 +1015,6 @@ def test_side_menu_is_loaded_and_closed_through_hxml_requests(user):
     closed = assert_hxml(client.get(reverse("todo:menu-close")))
     assert closed.attrib == {"id": "side-menu-host"}
     assert len(closed) == 0
-
 
 
 def test_task_cards_expose_swipe_actions_instead_of_tiny_links(user):
@@ -661,11 +1043,10 @@ def test_task_cards_expose_swipe_actions_instead_of_tiny_links(user):
     assert title.attrib["numberOfLines"] == "1"
     assert title.attrib["ellipsizeMode"] == "tail"
     assert (
-        root.find(
-            ".//hv:form//hv:text-field[@name='csrfmiddlewaretoken']", NS
-        )
+        root.find(".//hv:form//hv:text-field[@name='csrfmiddlewaretoken']", NS)
         is not None
     )
+
 
 def test_task_list_supports_refresh_and_infinite_scroll(user):
     for index in range(21):
@@ -693,9 +1074,7 @@ def test_task_list_supports_refresh_and_infinite_scroll(user):
     assert next_page.tag == f"{{{NS['hv']}}}items"
     assert len(next_page.findall("./hv:item", NS)) == 1
 
-    refreshed = assert_hxml(
-        client.get(reverse("todo:tasks"), {"fragment": "list"})
-    )
+    refreshed = assert_hxml(client.get(reverse("todo:tasks"), {"fragment": "list"}))
     assert refreshed.tag == f"{{{NS['hv']}}}list"
     assert refreshed.attrib["id"] == "task-list"
 

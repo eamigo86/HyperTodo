@@ -52,24 +52,26 @@ export default function App(): React.JSX.Element {
   return (
     <SafeAreaProvider>
       <AnimatedSplash>
-        <StatusBar style="dark" />
-        <SafeAreaView
-          accessibilityLabel="HyperTodo safe area"
-          edges={["top", "bottom"]}
-          style={styles.safeArea}
-        >
-          <NavigationContainer>
-            <Hyperview
-              behaviors={[ShowSnackbarBehavior]}
-              components={[AnimatedSideMenu, SwipeTaskRow]}
-              entrypointUrl={entrypointUrl}
-              fetch={hyperviewFetch}
-              formatDate={(date, format) => date && format ? moment(date).format(format) : undefined}
-              loadingScreen={LoadingScreen}
-              errorScreen={ErrorScreen}
-            />
-          </NavigationContainer>
-          <SnackbarHost />
+        <StatusBar style="light" />
+        <SafeAreaView edges={["top"]} style={styles.topInset}>
+          <SafeAreaView
+            accessibilityLabel="HyperTodo safe area"
+            edges={["bottom"]}
+            style={styles.safeArea}
+          >
+            <NavigationContainer>
+              <Hyperview
+                behaviors={[ShowSnackbarBehavior]}
+                components={[AnimatedSideMenu, SwipeTaskRow]}
+                entrypointUrl={entrypointUrl}
+                fetch={hyperviewFetch}
+                formatDate={(date, format) => date && format ? moment(date).format(format) : undefined}
+                loadingScreen={LoadingScreen}
+                errorScreen={ErrorScreen}
+              />
+            </NavigationContainer>
+            <SnackbarHost />
+          </SafeAreaView>
         </SafeAreaView>
       </AnimatedSplash>
     </SafeAreaProvider>
@@ -77,7 +79,8 @@ export default function App(): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
+  topInset: { flex: 1, backgroundColor: "#278CFF" },
+  safeArea: { flex: 1, backgroundColor: "#F7F8FC" },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F7F8FC", padding: 28 },
   mark: { width: 72, height: 72, borderRadius: 24, alignItems: "center", justifyContent: "center", backgroundColor: "#AEBBFA" },
   markText: { color: "#161A35", fontSize: 38, fontWeight: "700" },
