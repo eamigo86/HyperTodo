@@ -9,6 +9,7 @@
     <style id="card" backgroundColor="#FFFFFF" borderRadius="28" padding="20" />
     <style id="label" color="#4C526B" fontSize="13" fontWeight="600" marginTop="12" marginBottom="6" />
     <style id="field" backgroundColor="#F1F4FC" borderRadius="16" padding="13" />
+    <style id="field-invalid" backgroundColor="#FFF7F6" borderColor="#D92D20" borderWidth="1" />
     <style id="field-text" color="#161A35" fontSize="16" />
     <style id="select" backgroundColor="#F1F4FC" borderRadius="16" padding="8" />
     <style id="option" borderRadius="12" marginBottom="4" padding="12">
@@ -19,7 +20,11 @@
     </style>
     <style id="button" backgroundColor="#278CFF" borderRadius="18" padding="16" marginTop="22" />
     <style id="button-text" color="#FFFFFF" fontWeight="700" textAlign="center" />
-    <style id="error" color="#B42318" marginBottom="10" />
+    <style id="error-summary" backgroundColor="#FFF0EE" borderRadius="14" color="#B42318" fontWeight="600" marginBottom="10" padding="12" />
+    <style id="field-error" color="#B42318" fontSize="12" marginTop="6" />
+    <style id="date-modal" backgroundColor="#FFFFFF" borderTopLeftRadius="28" borderTopRightRadius="28" paddingBottom="20" paddingHorizontal="16" shadowColor="#161A35" shadowOffsetY="-4" shadowOpacity="0.12" shadowRadius="12" />
+    <style id="date-modal-overlay" backgroundColor="#161A35" opacity="0.35" />
+    <style id="date-modal-action" color="#278CFF" fontSize="16" fontWeight="700" padding="18" />
   </styles>
   <screen id="task-form-screen">
     <body style="screen" scroll="true" shows-scroll-indicator="false">

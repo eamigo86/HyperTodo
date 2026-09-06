@@ -162,6 +162,15 @@ def test_task_form_has_back_action_visible_categories_and_time_keypad(user):
     assert due_date is not None
     assert due_date.attrib["field-style"] == "field"
     assert due_date.attrib["placeholder"] == "Select due date"
+    assert due_date.attrib["modal-style"] == "date-modal"
+    assert due_date.attrib["modal-overlay-style"] == "date-modal-overlay"
+    assert due_date.attrib["modal-text-style"] == "date-modal-action"
+    modal = root.find(".//hv:style[@id='date-modal']", NS)
+    overlay = root.find(".//hv:style[@id='date-modal-overlay']", NS)
+    assert modal is not None
+    assert modal.attrib["backgroundColor"] == "#FFFFFF"
+    assert overlay is not None
+    assert overlay.attrib["backgroundColor"] == "#161A35"
     assert due_time is not None
     assert due_time.attrib["keyboard-type"] == "number-pad"
     assert due_time.attrib["mask"] == "99:99"
@@ -347,7 +356,22 @@ def test_invalid_task_form_returns_422_hxml(user):
     root = assert_hxml(response, status=422)
     assert root.tag == f"{{{NS['hv']}}}view"
     assert root.attrib["id"] == "task-form-panel"
-    assert root.find(".//hv:text[@id='form-errors']", NS) is not None
+    summary = root.find(".//hv:text[@id='form-errors']", NS)
+    title_error = root.find(".//hv:text[@id='title-error']", NS)
+    due_time_error = root.find(".//hv:text[@id='due-time-error']", NS)
+    title = root.find(".//hv:text-field[@name='title']", NS)
+    due_time = root.find(".//hv:text-field[@name='due_time']", NS)
+
+    assert summary is not None
+    assert summary.text == "Review the fields marked in red."
+    assert title_error is not None
+    assert title_error.text == "This field is required."
+    assert due_time_error is not None
+    assert due_time_error.text == "A due date is required when a time is set."
+    assert title is not None
+    assert "field-invalid" in title.attrib["style"]
+    assert due_time is not None
+    assert "field-invalid" in due_time.attrib["style"]
 
 
 def test_category_crud_and_cross_user_resources_are_hidden(user, other_user):

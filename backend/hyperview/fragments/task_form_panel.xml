@@ -5,20 +5,26 @@
   </view>
   <form id="task-form">
     <view style="card">
-      {% if form.errors %}<text id="form-errors" style="error">Please correct the highlighted task details.</text>{% endif %}
+      {% if form.errors %}<text id="form-errors" style="error-summary">Review the fields marked in red.</text>{% endif %}
+      {% if form.non_field_errors %}<text id="non-field-error" style="field-error">{{ form.non_field_errors|join:', ' }}</text>{% endif %}
       <text style="label">Title</text>
-      <text-field name="title" value="{{ form.title.value|default:'' }}" placeholder="What needs doing?" style="field" />
+      <text-field name="title" value="{{ form.title.value|default:'' }}" placeholder="What needs doing?" style="field{% if form.title.errors %} field-invalid{% endif %}" />
+      {% if form.title.errors %}<text id="title-error" style="field-error">{{ form.title.errors|join:', ' }}</text>{% endif %}
       <text style="label">Notes</text>
-      <text-field name="notes" value="{{ form.notes.value|default:'' }}" placeholder="Optional details" multiline="true" style="field" />
+      <text-field name="notes" value="{{ form.notes.value|default:'' }}" placeholder="Optional details" multiline="true" style="field{% if form.notes.errors %} field-invalid{% endif %}" />
+      {% if form.notes.errors %}<text id="notes-error" style="field-error">{{ form.notes.errors|join:', ' }}</text>{% endif %}
       <text style="label">Category</text>
-      <select-single name="category" style="select">
+      <select-single name="category" style="select{% if form.category.errors %} field-invalid{% endif %}">
         <option style="option" value=""{% if not form.category.value %} selected="true"{% endif %}><text style="option-text">No category</text></option>
         {% for option in form.fields.category.queryset %}<option style="option" value="{{ option.id }}"{% if form.category.value|stringformat:'s' == option.id|stringformat:'s' %} selected="true"{% endif %}><text style="option-text">{{ option.name }}</text></option>{% endfor %}
       </select-single>
+      {% if form.category.errors %}<text id="category-error" style="field-error">{{ form.category.errors|join:', ' }}</text>{% endif %}
       <text style="label">Due date</text>
-      <date-field name="due_date" value="{{ form.due_date.value|date:'Y-m-d'|default:'' }}" field-style="field" field-text-style="field-text" label-format="MMM D, YYYY" placeholder="Select due date" />
+      <date-field name="due_date" value="{{ form.due_date.value|date:'Y-m-d'|default:'' }}" field-style="field{% if form.due_date.errors %} field-invalid{% endif %}" field-text-style="field-text" label-format="MMM D, YYYY" modal-style="date-modal" modal-overlay-style="date-modal-overlay" modal-text-style="date-modal-action" placeholder="Select due date" />
+      {% if form.due_date.errors %}<text id="due-date-error" style="field-error">{{ form.due_date.errors|join:', ' }}</text>{% endif %}
       <text style="label">Due time</text>
-      <text-field name="due_time" value="{{ form.due_time.value|time:'H:i'|default:'' }}" placeholder="HH:MM" keyboard-type="number-pad" mask="99:99" style="field" />
+      <text-field name="due_time" value="{{ form.due_time.value|time:'H:i'|default:'' }}" placeholder="HH:MM" keyboard-type="number-pad" mask="99:99" style="field{% if form.due_time.errors %} field-invalid{% endif %}" />
+      {% if form.due_time.errors %}<text id="due-time-error" style="field-error">{{ form.due_time.errors|join:', ' }}</text>{% endif %}
       {% hv_csrf_token %}
       <view id="task-submit" style="button" href="{% if task %}/hv/tasks/{{ task.id }}/edit/{% else %}/hv/tasks/new/{% endif %}" verb="post" action="replace" target="task-form-panel"><text style="button-text">Save task</text></view>
     </view>
