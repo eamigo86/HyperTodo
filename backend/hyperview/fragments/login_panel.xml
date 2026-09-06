@@ -1,0 +1,18 @@
+{% load dj_hyperview %}<view xmlns="https://hyperview.org/hyperview" id="login-panel">
+  <form id="login-form">
+    <view style="card">
+      <text style="card-title">Welcome back</text>
+      <text style="card-copy">Sign in to see your tasks and categories.</text>
+      {% if form.errors %}<text id="form-errors" style="error">The username or password is incorrect.</text>{% endif %}
+      <text style="label">Username</text>
+      <text-field id="username" name="username" value="{{ form.username.value|default:'' }}" placeholder="Enter your username" text-content-type="username" style="field" />
+      <text style="label">Password</text>
+      <text-field id="password" name="password" placeholder="Enter your password" secure-text="true" text-content-type="password" href="/hv/login/" verb="post" action="replace" target="login-panel" trigger="submit" style="field" />
+      {% hv_csrf_token %}
+      <view id="login-submit" style="button" href="/hv/login/" verb="post" action="replace" target="login-panel">
+        <text style="button-text">Sign in</text>
+      </view>
+      <text style="hint">Your tasks stay private to your account.</text>
+    </view>
+  </form>
+</view>

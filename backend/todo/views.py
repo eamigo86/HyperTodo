@@ -115,7 +115,7 @@ def login_view(request: HttpRequest) -> HttpResponse:
         request: Incoming login request.
 
     Returns:
-        Direct HXML dashboard, login form, or method error response.
+        Login document, form fragment, transition fragment, or method error response.
     """
     if invalid := _method(request, "GET", "POST"):
         return invalid
@@ -128,11 +128,15 @@ def login_view(request: HttpRequest) -> HttpResponse:
         )
         if user is not None:
             login(request, user)
-            return _dashboard_response(request)
+            return HyperviewTemplateResponse(
+                request, "fragments/login_transition.xml"
+            )
         form.add_error(None, "The username or password is incorrect.")
-    status = 422 if request.method == "POST" else 200
+        return HyperviewTemplateResponse(
+            request, "fragments/login_panel.xml", {"form": form}, status=422
+        )
     return HyperviewTemplateResponse(
-        request, "screens/login.xml", {"form": form}, status=status
+        request, "screens/login.xml", {"form": form}
     )
 
 

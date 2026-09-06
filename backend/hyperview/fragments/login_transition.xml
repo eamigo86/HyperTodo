@@ -1,0 +1,3 @@
+<view xmlns="https://hyperview.org/hyperview" id="login-transition">
+  <behavior trigger="load" href="/hv/" action="reload" />
+</view>

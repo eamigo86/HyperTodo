@@ -45,14 +45,17 @@ def test_root_serves_login_without_redirect_and_dashboard_after_login(user):
     assert dashboard_root.find(".//hv:screen[@id='dashboard-screen']", NS) is not None
 
 
-def test_login_screen_uses_secure_credentials_and_document_navigation():
+def test_login_screen_uses_secure_credentials_and_fragment_submission():
     response = Client().get(reverse("todo:login"))
     root = assert_hxml(response)
 
+    screen_style = root.find(".//hv:style[@id='screen']", NS)
     username = root.find(".//hv:text-field[@name='username']", NS)
     password = root.find(".//hv:text-field[@name='password']", NS)
     submit = root.find(".//hv:view[@id='login-submit']", NS)
 
+    assert screen_style is not None
+    assert screen_style.attrib["flex"] == "1"
     assert username is not None
     assert username.attrib["text-content-type"] == "username"
     assert password is not None
@@ -60,7 +63,11 @@ def test_login_screen_uses_secure_credentials_and_document_navigation():
     assert password.attrib["text-content-type"] == "password"
     assert "secure-text-entry" not in password.attrib
     assert submit is not None
-    assert submit.attrib["action"] == "reload"
+    assert submit.attrib["action"] == "replace"
+    assert submit.attrib["target"] == "login-panel"
+    visible_text = "".join(root.itertext())
+    assert "PLAN WITH INTENTION" not in visible_text
+    assert "✓" not in visible_text
 
 
 def test_login_requires_csrf_and_returns_direct_hxml(user):
@@ -71,14 +78,25 @@ def test_login_requires_csrf_and_returns_direct_hxml(user):
         reverse("todo:login"),
         {"username": "ada", "password": "wrong", "csrfmiddlewaretoken": token},
     )
-    assert_hxml(rejected, status=422)
+    rejected_root = assert_hxml(rejected, status=422)
+    assert rejected_root.tag == f"{{{NS['hv']}}}view"
+    assert rejected_root.attrib["id"] == "login-panel"
     accepted = client.post(
         reverse("todo:login"),
         {"username": "ada", "password": "correct-horse", "csrfmiddlewaretoken": token},
     )
     root = assert_hxml(accepted)
-    assert root.find(".//hv:screen[@id='dashboard-screen']", NS) is not None
+    assert root.tag == f"{{{NS['hv']}}}view"
+    assert root.attrib["id"] == "login-transition"
+    transition = root.find("./hv:behavior", NS)
+    assert transition is not None
+    assert transition.attrib == {
+        "trigger": "load",
+        "href": "/hv/",
+        "action": "reload",
+    }
     assert accepted.status_code != 302
+    assert client.session["_auth_user_id"] == str(user.pk)
 
 
 def test_login_post_without_csrf_is_hxml_403(user):
