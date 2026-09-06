@@ -4,9 +4,10 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Alert, Animated, Easing, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
 
 const COMPONENT_NAMESPACE = "https://hypertodo.app/components";
-const ACTION_WIDTH = 78;
-const ACTION_COUNT = 3;
-const ACTIONS_WIDTH = ACTION_WIDTH * ACTION_COUNT;
+const EDIT_ACTION_WIDTH = 68;
+const TOGGLE_ACTION_WIDTH = 96;
+const DELETE_ACTION_WIDTH = 70;
+const ACTIONS_WIDTH = EDIT_ACTION_WIDTH + TOGGLE_ACTION_WIDTH + DELETE_ACTION_WIDTH;
 const SWIPE_THRESHOLD = 44;
 const ANIMATION_DURATION = 160;
 
@@ -58,6 +59,9 @@ function SwipeTaskRowComponent({
       PanResponder.create({
         onMoveShouldSetPanResponder: (_event, gesture) =>
           Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+        onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+          Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+        onPanResponderGrant: () => actionsTranslateX.stopAnimation(),
         onPanResponderMove: (_event, gesture) => {
           const origin = actionsOpen ? 0 : ACTIONS_WIDTH;
           const nextPosition = Math.max(
@@ -73,6 +77,7 @@ function SwipeTaskRowComponent({
           animateActions(shouldOpen);
         },
         onPanResponderTerminate: () => animateActions(actionsOpen),
+        onPanResponderTerminationRequest: () => false,
       }),
     [actionsOpen, actionsTranslateX, animateActions],
   );
@@ -100,7 +105,7 @@ function SwipeTaskRowComponent({
             animateActions(false);
             update("edit-href", "new", "get");
           }}
-          style={[styles.action, styles.edit]}
+          style={[styles.action, styles.edit, styles.editAction]}
         >
           <Text style={styles.actionText}>Edit</Text>
         </Pressable>
@@ -111,9 +116,11 @@ function SwipeTaskRowComponent({
             animateActions(false);
             update("toggle-href", "replace", "post");
           }}
-          style={[styles.action, styles.complete]}
+          style={[styles.action, styles.complete, styles.toggleAction]}
         >
-          <Text style={styles.actionText}>{completed ? "Reopen" : "Complete"}</Text>
+          <Text numberOfLines={1} style={styles.actionText}>
+            {completed ? "Reopen" : "Complete"}
+          </Text>
         </Pressable>
         <Pressable
           accessibilityLabel="Delete task"
@@ -131,7 +138,7 @@ function SwipeTaskRowComponent({
               },
             ]);
           }}
-          style={[styles.action, styles.remove]}
+          style={[styles.action, styles.remove, styles.deleteAction]}
         >
           <Text style={styles.actionText}>Delete</Text>
         </Pressable>
@@ -168,7 +175,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 8,
-    width: ACTION_WIDTH,
+  },
+  editAction: {
+    width: EDIT_ACTION_WIDTH,
+  },
+  toggleAction: {
+    width: TOGGLE_ACTION_WIDTH,
+  },
+  deleteAction: {
+    width: DELETE_ACTION_WIDTH,
   },
   edit: {
     backgroundColor: "#278CFF",

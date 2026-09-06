@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert } from "react-native";
+import { Alert, PanResponder } from "react-native";
 import { fireEvent, render } from "@testing-library/react-native";
 
 jest.mock("hyperview", () => ({
@@ -55,6 +55,32 @@ describe("SwipeTaskRow", () => {
     expect(screen.getByTestId("task-swipe-actions").props.style).toEqual(
       expect.objectContaining({ position: "absolute", right: 0 }),
     );
+  });
+
+  it("keeps ownership of horizontal gestures when a child responder competes", () => {
+    const createSpy = jest.spyOn(PanResponder, "create");
+    render(<SwipeTaskRow {...props} />);
+    const responderConfig = createSpy.mock.calls[0][0];
+    const horizontalGesture = { dx: -24, dy: 3 };
+
+    expect(
+      responderConfig.onMoveShouldSetPanResponderCapture?.(
+        {} as never,
+        horizontalGesture as never,
+      ),
+    ).toBe(true);
+    expect(
+      responderConfig.onPanResponderTerminationRequest?.({} as never, {} as never),
+    ).toBe(false);
+  });
+
+  it("keeps the Complete action on one line", () => {
+    const screen = render(<SwipeTaskRow {...props} />);
+
+    expect(screen.getByText("Complete").props.numberOfLines).toBe(1);
+    expect(screen.getByRole("button", { name: "Complete task" }).props.style).toContainEqual({
+      width: 96,
+    });
   });
 
   it("opens editing as a new Hyperview route", () => {
