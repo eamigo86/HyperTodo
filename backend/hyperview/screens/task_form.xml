@@ -3,8 +3,10 @@
   <styles>
     <style id="screen" backgroundColor="#F7F8FC" flex="1" />
     <style id="screen-content" flex="1" padding="24" />
-    <style id="screen-header" alignItems="center" backgroundColor="#278CFF" flexDirection="row" height="58" justifyContent="center" paddingHorizontal="20" />
-    <style id="back-button" alignItems="center" height="44" justifyContent="center" left="8" position="absolute" width="44" />
+    <style id="screen-header" alignItems="center" backgroundColor="#278CFF" flexDirection="row" height="58" justifyContent="center" paddingHorizontal="4" />
+    <style id="back-button" alignItems="center" height="44" justifyContent="center" width="52" />
+    <style id="screen-header-title-slot" alignItems="center" flex="1" justifyContent="center" />
+    <style id="screen-header-spacer" width="52" />
     <style id="back" color="#FFFFFF" fontSize="28" fontWeight="400" lineHeight="30" />
     <style id="screen-header-title" color="#FFFFFF" fontSize="19" fontWeight="700" />
     <style id="card" backgroundColor="#FFFFFF" borderRadius="28" padding="20" />

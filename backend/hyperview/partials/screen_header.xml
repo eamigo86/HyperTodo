@@ -1,4 +1,5 @@
 <view xmlns="https://hyperview.org/hyperview" id="screen-header" style="screen-header">
   <view id="{{ back_id }}" style="back-button" action="back"><text style="back">&lt;</text></view>
-  <text style="screen-header-title">{{ header_title }}</text>
+  <view style="screen-header-title-slot"><text style="screen-header-title">{{ header_title }}</text></view>
+  <view style="screen-header-spacer" />
 </view>
