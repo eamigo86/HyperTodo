@@ -1,7 +1,34 @@
 {% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
-    <style id="screen" backgroundColor="#F7F8FC" padding="24" /><style id="title" color="#161A35" fontSize="27" fontWeight="700" marginBottom="20" /><style id="card" backgroundColor="#FFFFFF" borderRadius="28" padding="20" /><style id="label" color="#4C526B" fontSize="13" fontWeight="600" marginTop="12" marginBottom="6" /><style id="field" backgroundColor="#F1F4FC" borderRadius="16" padding="13" /><style id="button" backgroundColor="#278CFF" borderRadius="18" padding="16" marginTop="22" /><style id="button-text" color="#FFFFFF" fontWeight="700" textAlign="center" /><style id="error" color="#B42318" marginBottom="10" />
+    <style id="screen" backgroundColor="#F7F8FC" flex="1" padding="24" />
+    <style id="header" alignItems="center" flexDirection="row" marginBottom="20" />
+    <style id="back-button" alignItems="center" backgroundColor="#FFFFFF" borderColor="#E1E6F0" borderRadius="20" borderWidth="1" height="40" justifyContent="center" marginRight="12" width="40" />
+    <style id="back" color="#4C526B" fontSize="22" fontWeight="500" lineHeight="24" />
+    <style id="title" color="#161A35" fontSize="27" fontWeight="700" />
+    <style id="card" backgroundColor="#FFFFFF" borderRadius="28" padding="20" />
+    <style id="label" color="#4C526B" fontSize="13" fontWeight="600" marginTop="12" marginBottom="6" />
+    <style id="field" backgroundColor="#F1F4FC" borderRadius="16" padding="13" />
+    <style id="color-select" backgroundColor="#F7F8FC" borderRadius="18" padding="8" />
+    <style id="color-option" alignItems="center" borderRadius="14" flexDirection="row" marginBottom="4" padding="11">
+      <modifier selected="true"><style backgroundColor="#E7EEFF" /></modifier>
+    </style>
+    <style id="color-option-text" color="#4C526B" fontSize="15" fontWeight="600">
+      <modifier selected="true"><style color="#1F6FD1" /></modifier>
+    </style>
+    <style id="color-swatch" borderColor="#FFFFFF" borderRadius="10" borderWidth="2" height="20" marginRight="10" width="20" />
+    <style id="lavender" backgroundColor="#AEBBFA" />
+    <style id="yellow" backgroundColor="#FFF27B" />
+    <style id="mint" backgroundColor="#C9F0E7" />
+    <style id="pink" backgroundColor="#F6B5E8" />
+    <style id="green" backgroundColor="#3B9B70" />
+    <style id="button" backgroundColor="#278CFF" borderRadius="18" padding="16" marginTop="22" />
+    <style id="button-text" color="#FFFFFF" fontWeight="700" textAlign="center" />
+    <style id="error" color="#B42318" marginBottom="10" />
   </styles>
-  <screen id="category-form-screen"><body style="screen"><text style="title">{% if category %}Edit category{% else %}New category{% endif %}</text><form id="category-form"><view style="card">{% if form.errors %}<text id="form-errors" style="error">Please correct the category details.</text>{% endif %}<text style="label">Name</text><text-field name="name" value="{{ form.name.value|default:'' }}" placeholder="Category name" style="field" /><text style="label">Color</text><select-single name="color" style="field">{% for value,label in form.fields.color.choices %}<option value="{{ value }}"{% if form.color.value == value %} selected="true"{% endif %}>{{ label }}</option>{% endfor %}</select-single>{% hv_csrf_token %}<view style="button" href="{% if category %}/hv/categories/{{ category.id }}/edit/{% else %}/hv/categories/new/{% endif %}" verb="post" action="replace"><text style="button-text">Save category</text></view></view></form></body></screen>
+  <screen id="category-form-screen">
+    <body style="screen" scroll="true" shows-scroll-indicator="false">
+      {% include "fragments/category_form_panel.xml" %}
+    </body>
+  </screen>
 </doc>

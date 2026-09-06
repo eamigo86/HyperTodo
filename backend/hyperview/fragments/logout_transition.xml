@@ -1,0 +1,3 @@
+<view xmlns="https://hyperview.org/hyperview" id="logout-panel">
+  <behavior trigger="load" href="/hv/" action="reload" />
+</view>

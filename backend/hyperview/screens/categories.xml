@@ -1,20 +1,70 @@
 {% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
-    <style id="screen" backgroundColor="#FFFFFF" padding="24" />
-    <style id="title" color="#161A35" fontSize="27" fontWeight="700" marginBottom="20" />
+    <style id="screen" backgroundColor="#F7F8FC" flex="1" />
+    <style id="screen-content" flex="1" padding="24" />
+    <style id="header" alignItems="center" flexDirection="row" marginBottom="20" />
+    <style id="back-button" alignItems="center" backgroundColor="#FFFFFF" borderColor="#E1E6F0" borderRadius="20" borderWidth="1" height="40" justifyContent="center" marginRight="12" width="40" />
+    <style id="back" color="#4C526B" fontSize="22" fontWeight="500" lineHeight="24" />
+    <style id="title" color="#161A35" fontSize="27" fontWeight="700" />
     <style id="card" borderRadius="24" padding="20" marginBottom="12" />
-    <style id="lavender" backgroundColor="#AEBBFA" /><style id="yellow" backgroundColor="#FFF27B" /><style id="mint" backgroundColor="#C9F0E7" /><style id="pink" backgroundColor="#F6B5E8" /><style id="green" backgroundColor="#3B9B70" />
+    <style id="lavender" backgroundColor="#AEBBFA" />
+    <style id="yellow" backgroundColor="#FFF27B" />
+    <style id="mint" backgroundColor="#C9F0E7" />
+    <style id="pink" backgroundColor="#F6B5E8" />
+    <style id="green" backgroundColor="#3B9B70" />
     <style id="name" color="#161A35" fontSize="20" fontWeight="700" />
     <style id="meta" color="#4C526B" marginTop="7" />
     <style id="actions" flexDirection="row" marginTop="14" />
     <style id="action" color="#161A35" fontWeight="600" marginRight="20" />
+    <style id="danger" color="#8F1D17" fontWeight="600" />
     <style id="primary" backgroundColor="#278CFF" borderRadius="24" padding="16" marginTop="12" />
     <style id="primary-text" color="#FFFFFF" textAlign="center" fontWeight="700" />
+    <style id="bottom-navigation" alignItems="center" backgroundColor="#FFFFFF" borderTopColor="#E7EAF3" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
+    <style id="nav-item" alignItems="center" borderRadius="16" flex="1" justifyContent="center" paddingVertical="7" />
+    <style id="nav-active" backgroundColor="#EEF3FF" />
+    <style id="nav-symbol" color="#68708B" fontSize="21" lineHeight="23" />
+    <style id="nav-label" color="#68708B" fontSize="10" fontWeight="600" marginTop="2" />
+    <style id="nav-add" alignItems="center" backgroundColor="#278CFF" borderRadius="26" height="52" justifyContent="center" marginHorizontal="5" marginTop="-18" width="52" />
+    <style id="nav-add-symbol" color="#FFFFFF" fontSize="30" fontWeight="400" lineHeight="32" />
+    <style id="side-menu" bottom="0" flexDirection="row" left="0" position="absolute" right="0" top="0" zIndex="50" />
+    <style id="side-menu-panel" backgroundColor="#FFFFFF" padding="24" width="286" />
+    <style id="side-menu-header" alignItems="center" flexDirection="row" justifyContent="space-between" marginBottom="16" />
+    <style id="side-menu-eyebrow" color="#278CFF" fontSize="11" fontWeight="700" letterSpacing="1.5" />
+    <style id="side-menu-title" color="#161A35" fontSize="22" fontWeight="700" marginTop="3" />
+    <style id="side-menu-close" alignItems="center" backgroundColor="#EEF2FC" borderRadius="22" height="44" justifyContent="center" width="44" />
+    <style id="side-menu-close-text" color="#4C526B" fontSize="26" lineHeight="28" />
+    <style id="side-menu-user" color="#7B8097" fontSize="13" marginBottom="28" />
+    <style id="side-menu-links" flex="1" />
+    <style id="side-menu-link" borderRadius="16" marginBottom="8" padding="15" />
+    <style id="side-menu-link-active" backgroundColor="#EEF3FF" />
+    <style id="side-menu-link-text" color="#20243D" fontSize="16" fontWeight="600" />
+    <style id="side-menu-logout-panel" borderTopColor="#E7EAF3" borderTopWidth="1" paddingTop="16" />
+    <style id="side-menu-logout" borderRadius="16" padding="15" />
+    <style id="side-menu-logout-text" color="#B42318" fontSize="16" fontWeight="600" />
+    <style id="side-menu-scrim" backgroundColor="#161A35" flex="1" opacity="0.22" />
   </styles>
-  <screen id="categories-screen"><body style="screen">
-    <text style="title">Categories</text>
-    {% for category in categories %}<view style="card {{ category.color }}"><text style="name">{{ category.name }}</text><text style="meta">{{ category.tasks.count }} tasks</text><view style="actions"><view href="/hv/categories/{{ category.id }}/edit/" action="new"><text style="action">Edit</text></view><form>{% hv_csrf_token %}<view href="/hv/categories/{{ category.id }}/delete/" verb="post" action="replace"><text style="action">Delete</text></view></form></view></view>{% empty %}<text style="meta">Create a category to organize your tasks.</text>{% endfor %}
-    <view style="primary" href="/hv/categories/new/" action="new"><text style="primary-text">+ Add category</text></view>
-  </body></screen>
+  <screen id="categories-screen">
+    <body style="screen">
+      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false">
+        <view style="header">
+          <view id="category-list-back" style="back-button" action="back"><text style="back">&lt;</text></view>
+          <text style="title">Categories</text>
+        </view>
+        {% for category in categories %}
+        <view style="card {{ category.color }}">
+          <text style="name">{{ category.name }}</text>
+          <text style="meta">{{ category.tasks.count }} tasks</text>
+          <view style="actions">
+            <view href="/hv/categories/{{ category.id }}/edit/" action="new"><text style="action">Edit</text></view>
+            <form>{% hv_csrf_token %}<view href="/hv/categories/{{ category.id }}/delete/" verb="post" action="replace"><text style="danger">Delete</text></view></form>
+          </view>
+        </view>
+        {% empty %}<text style="meta">Create a category to organize your tasks.</text>{% endfor %}
+        <view style="primary" href="/hv/categories/new/" action="new"><text style="primary-text">+ Add category</text></view>
+      </view>
+      {% include "fragments/bottom_navigation.xml" with active_nav="categories" %}
+      {% include "fragments/side_menu.xml" with active_nav="categories" %}
+    </body>
+  </screen>
 </doc>

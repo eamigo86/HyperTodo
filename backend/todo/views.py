@@ -148,20 +148,18 @@ def login_view(request: HttpRequest) -> HttpResponse:
 
 @hxml_endpoint
 def logout_view(request: HttpRequest) -> HttpResponse:
-    """End a Django session and return the login screen directly.
+    """End a Django session and reload the guest root document.
 
     Args:
         request: Incoming logout request.
 
     Returns:
-        Direct HXML login or method error response.
+        Logout transition fragment or method error response.
     """
     if invalid := _method(request, "POST"):
         return invalid
     logout(request)
-    return HyperviewTemplateResponse(
-        request, "screens/login.xml", {"form": LoginForm()}
-    )
+    return HyperviewTemplateResponse(request, "fragments/logout_transition.xml")
 
 
 @hxml_endpoint
@@ -359,9 +357,14 @@ def _category_form_response(
     category: Category | None = None,
     status: int = 200,
 ) -> HyperviewTemplateResponse:
+    template_name = (
+        "fragments/category_form_panel.xml"
+        if request.method == "POST"
+        else "screens/category_form.xml"
+    )
     return HyperviewTemplateResponse(
         request,
-        "screens/category_form.xml",
+        template_name,
         {"form": form, "category": category},
         status=status,
     )
@@ -375,7 +378,7 @@ def category_new(request: HttpRequest) -> HttpResponse:
         request: Incoming category form request.
 
     Returns:
-        Category form or refreshed category list HXML.
+        Category form document, form fragment, or list transition HXML.
     """
     if denied := _require_user(request):
         return denied
@@ -390,8 +393,7 @@ def category_new(request: HttpRequest) -> HttpResponse:
         )
         return HyperviewTemplateResponse(
             request,
-            "screens/categories.xml",
-            {"categories": Category.objects.filter(user=request.user)},
+            "fragments/category_transition.xml",
             status=201,
         )
     return _category_form_response(
@@ -408,7 +410,7 @@ def category_edit(request: HttpRequest, category_id: UUID) -> HttpResponse:
         category_id: Category identifier from the route.
 
     Returns:
-        Category form or refreshed category list HXML.
+        Category form document, form fragment, or list transition HXML.
     """
     if denied := _require_user(request):
         return denied
@@ -425,8 +427,7 @@ def category_edit(request: HttpRequest, category_id: UUID) -> HttpResponse:
         )
         return HyperviewTemplateResponse(
             request,
-            "screens/categories.xml",
-            {"categories": Category.objects.filter(user=request.user)},
+            "fragments/category_transition.xml",
         )
     return _category_form_response(
         request,
@@ -445,7 +446,7 @@ def category_delete(request: HttpRequest, category_id: UUID) -> HttpResponse:
         category_id: Category identifier from the route.
 
     Returns:
-        Refreshed category list HXML.
+        Category-list reload transition fragment.
     """
     if denied := _require_user(request):
         return denied
@@ -454,8 +455,7 @@ def category_delete(request: HttpRequest, category_id: UUID) -> HttpResponse:
     delete_category(user=request.user, category_id=category_id)
     return HyperviewTemplateResponse(
         request,
-        "screens/categories.xml",
-        {"categories": Category.objects.filter(user=request.user)},
+        "fragments/category_list_transition.xml",
     )
 
 

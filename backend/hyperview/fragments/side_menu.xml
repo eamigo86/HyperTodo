@@ -1,0 +1,24 @@
+{% load dj_hyperview %}<view xmlns="https://hyperview.org/hyperview" id="side-menu" style="side-menu" hide="true">
+  <view style="side-menu-panel">
+    <view style="side-menu-header">
+      <view>
+        <text style="side-menu-eyebrow">HYPERTODO</text>
+        <text style="side-menu-title">Your workspace</text>
+      </view>
+      <view id="close-side-menu" style="side-menu-close" action="hide" target="side-menu"><text style="side-menu-close-text">×</text></view>
+    </view>
+    <text style="side-menu-user">Signed in as {{ request.user.username }}</text>
+    <view style="side-menu-links">
+      <view style="side-menu-link{% if active_nav == 'dashboard' %} side-menu-link-active{% endif %}" href="/hv/dashboard/" action="navigate"><text style="side-menu-link-text">Home</text></view>
+      <view style="side-menu-link{% if active_nav == 'tasks' %} side-menu-link-active{% endif %}" href="/hv/tasks/" action="navigate"><text style="side-menu-link-text">Tasks</text></view>
+      <view style="side-menu-link{% if active_nav == 'categories' %} side-menu-link-active{% endif %}" href="/hv/categories/" action="navigate"><text style="side-menu-link-text">Categories</text></view>
+    </view>
+    <view id="logout-panel" style="side-menu-logout-panel">
+      <form id="side-menu-logout-form">
+        {% hv_csrf_token %}
+        <view id="side-menu-logout" style="side-menu-logout" href="/hv/logout/" verb="post" action="replace" target="logout-panel"><text style="side-menu-logout-text">Sign out</text></view>
+      </form>
+    </view>
+  </view>
+  <view style="side-menu-scrim" action="hide" target="side-menu" />
+</view>

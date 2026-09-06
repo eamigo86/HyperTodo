@@ -1,10 +1,12 @@
 """HTTP contract tests for server-driven Hyperview screens."""
 
+from datetime import timedelta
 from xml.etree import ElementTree
 
 import pytest
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
 from todo.models import Category, Task
 
@@ -179,6 +181,92 @@ def test_navigation_buttons_use_symbol_only(user):
         assert "".join(back.itertext()).strip() == "<"
 
 
+def test_dashboard_tiles_render_labels_and_filtered_destinations(user):
+    client = Client()
+    client.force_login(user)
+    root = assert_hxml(client.get(reverse("todo:dashboard")))
+
+    expected = {
+        "dashboard-today": ("Today", "/hv/tasks/?status=today"),
+        "dashboard-scheduled": ("Scheduled", "/hv/tasks/?status=scheduled"),
+        "dashboard-all": ("All", "/hv/tasks/?status=all"),
+        "dashboard-overdue": ("Overdue", "/hv/tasks/?status=overdue"),
+    }
+    for tile_id, (label, href) in expected.items():
+        tile = root.find(f".//hv:view[@id='{tile_id}']", NS)
+        assert tile is not None
+        assert tile.attrib["href"] == href
+        assert tile.attrib["action"] == "navigate"
+        assert label in "".join(tile.itertext())
+
+
+def test_task_screen_scrolls_and_makes_dashboard_filter_visible(user):
+    now = timezone.now()
+    Task.objects.create(user=user, title="Due today", due_at=now + timedelta(hours=1))
+    Task.objects.create(user=user, title="Due later", due_at=now + timedelta(days=3))
+    Task.objects.create(user=user, title="Past due", due_at=now - timedelta(days=1))
+    client = Client()
+    client.force_login(user)
+
+    expected = {
+        "today": ("Due today", {"Due later", "Past due"}),
+        "scheduled": ("Due later", {"Due today", "Past due"}),
+        "overdue": ("Past due", {"Due today", "Due later"}),
+    }
+    for status_filter, (included, excluded) in expected.items():
+        root = assert_hxml(
+            client.get(reverse("todo:tasks"), {"status": status_filter})
+        )
+        content = root.find(".//hv:view[@id='screen-content']", NS)
+        selected = root.find(f".//hv:view[@id='filter-{status_filter}']", NS)
+        summary = root.find(".//hv:text[@id='filter-summary']", NS)
+        visible_text = "".join(root.itertext())
+
+        assert content is not None
+        assert content.attrib["scroll"] == "true"
+        assert selected is not None
+        assert "chip-active" in selected.attrib["style"]
+        assert summary is not None
+        assert status_filter.title() in (summary.text or "")
+        assert included in visible_text
+        assert excluded.isdisjoint(visible_text)
+
+
+def test_category_form_has_back_navigation_and_selectable_color_options(user):
+    client = Client()
+    client.force_login(user)
+    root = assert_hxml(client.get(reverse("todo:category-new")))
+
+    back = root.find(".//hv:view[@id='category-back']", NS)
+    color = root.find(".//hv:select-single[@name='color']", NS)
+    submit = root.find(".//hv:view[@id='category-submit']", NS)
+
+    assert back is not None
+    assert back.attrib["action"] == "back"
+    assert "".join(back.itertext()).strip() == "<"
+    assert color is not None
+    labels = [node.text for node in color.findall("./hv:option/hv:text", NS)]
+    assert labels == ["Lavender", "Yellow", "Mint", "Pink", "Green"]
+    assert submit is not None
+    assert submit.attrib["action"] == "replace"
+    assert submit.attrib["target"] == "category-form-panel"
+
+
+def test_back_control_uses_quiet_bordered_surface(user):
+    client = Client()
+    client.force_login(user)
+
+    for route in (reverse("todo:tasks"), reverse("todo:category-new")):
+        root = assert_hxml(client.get(route))
+        style = root.find(".//hv:style[@id='back-button']", NS)
+        assert style is not None
+        assert style.attrib["backgroundColor"] == "#FFFFFF"
+        assert style.attrib["borderColor"] == "#E1E6F0"
+        assert style.attrib["borderWidth"] == "1"
+        assert style.attrib["height"] == "40"
+        assert style.attrib["width"] == "40"
+
+
 def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
     client = csrf_client()
     client.force_login(user)
@@ -270,14 +358,22 @@ def test_category_crud_and_cross_user_resources_are_hidden(user, other_user):
         reverse("todo:category-new"),
         {"name": "Work", "color": "lavender", "csrfmiddlewaretoken": token},
     )
-    assert_hxml(created, status=201)
+    assert_transition(
+        created,
+        "category-transition",
+        action="navigate",
+        href="/hv/categories/",
+        status=201,
+    )
     category = Category.objects.get(user=user)
 
     edit = client.post(
         reverse("todo:category-edit", args=(category.pk,)),
         {"name": "Focus", "color": "green", "csrfmiddlewaretoken": token},
     )
-    assert_hxml(edit)
+    assert_transition(
+        edit, "category-transition", action="navigate", href="/hv/categories/"
+    )
     category.refresh_from_db()
     assert category.name == "Focus"
 
@@ -308,14 +404,64 @@ def test_filters_reject_invalid_values_and_hide_foreign_categories(user, other_u
     assert_hxml(client.get(reverse("todo:tasks"), {"category": foreign.pk}), status=404)
 
 
+def test_primary_screens_share_server_driven_navigation(user):
+    client = Client()
+    client.force_login(user)
+
+    expected_active = {
+        reverse("todo:dashboard"): "nav-dashboard",
+        reverse("todo:tasks"): "nav-tasks",
+        reverse("todo:categories"): "nav-categories",
+    }
+    for route, active_id in expected_active.items():
+        root = assert_hxml(client.get(route))
+        content = root.find(".//hv:view[@id='screen-content']", NS)
+        bottom = root.find(".//hv:view[@id='bottom-navigation']", NS)
+        drawer = root.find(".//hv:view[@id='side-menu']", NS)
+        open_menu = root.find(".//hv:view[@id='open-side-menu']", NS)
+        close_menu = root.find(".//hv:view[@id='close-side-menu']", NS)
+
+        assert content is not None
+        assert content.attrib["scroll"] == "true"
+        assert bottom is not None
+        assert drawer is not None
+        assert drawer.attrib["hide"] == "true"
+        assert open_menu is not None
+        assert open_menu.attrib["action"] == "show"
+        assert open_menu.attrib["target"] == "side-menu"
+        assert close_menu is not None
+        assert close_menu.attrib["action"] == "hide"
+        assert close_menu.attrib["target"] == "side-menu"
+
+        destinations = {
+            item.attrib["id"]: (item.attrib["href"], item.attrib["action"])
+            for item in bottom.findall("./hv:view", NS)
+            if "href" in item.attrib
+        }
+        assert destinations == {
+            "nav-dashboard": ("/hv/dashboard/", "navigate"),
+            "nav-tasks": ("/hv/tasks/", "navigate"),
+            "nav-add-task": ("/hv/tasks/new/", "new"),
+            "nav-categories": ("/hv/categories/", "navigate"),
+        }
+        active = root.find(f".//hv:view[@id='{active_id}']", NS)
+        assert active is not None
+        assert "nav-active" in active.attrib["style"]
+
+        logout_action = root.find(".//hv:view[@id='side-menu-logout']", NS)
+        assert logout_action is not None
+        assert logout_action.attrib["action"] == "replace"
+        assert logout_action.attrib["target"] == "logout-panel"
+
+
 def test_logout_is_post_only_csrf_protected_and_direct_hxml(user):
     client = csrf_client()
     client.force_login(user)
     token = token_from(client.get(reverse("todo:dashboard")))
     assert client.get(reverse("todo:logout")).status_code == 405
     response = client.post(reverse("todo:logout"), {"csrfmiddlewaretoken": token})
-    root = assert_hxml(response)
-    assert root.find(".//hv:screen[@id='login-screen']", NS) is not None
+    assert_transition(response, "logout-panel", action="reload", href="/hv/")
+    assert "_auth_user_id" not in client.session
 
 
 def test_all_private_endpoints_return_direct_session_expired_hxml(user):
@@ -385,13 +531,13 @@ def test_task_and_category_get_screens_and_invalid_edits(user):
     )
     category_form = client.get(reverse("todo:category-edit", args=(category.pk,)))
     token = token_from(category_form)
-    assert_hxml(
-        client.post(
-            reverse("todo:category-edit", args=(category.pk,)),
-            {"name": "", "color": "pink", "csrfmiddlewaretoken": token},
-        ),
-        status=422,
+    invalid_category = client.post(
+        reverse("todo:category-edit", args=(category.pk,)),
+        {"name": "", "color": "pink", "csrfmiddlewaretoken": token},
     )
+    invalid_root = assert_hxml(invalid_category, status=422)
+    assert invalid_root.tag == f"{{{NS['hv']}}}view"
+    assert invalid_root.attrib["id"] == "category-form-panel"
 
 
 def test_category_delete_succeeds_and_task_cross_user_is_hidden(user, other_user):
@@ -402,11 +548,15 @@ def test_category_delete_succeeds_and_task_cross_user_is_hidden(user, other_user
     client = csrf_client()
     client.force_login(user)
     token = token_from(client.get(reverse("todo:dashboard")))
-    assert_hxml(
-        client.post(
-            reverse("todo:category-delete", args=(category.pk,)),
-            {"csrfmiddlewaretoken": token},
-        )
+    deleted = client.post(
+        reverse("todo:category-delete", args=(category.pk,)),
+        {"csrfmiddlewaretoken": token},
+    )
+    assert_transition(
+        deleted,
+        "category-list-transition",
+        action="reload",
+        href="/hv/categories/",
     )
     client.force_login(other_user)
     assert_hxml(client.get(reverse("todo:task-edit", args=(task.pk,))), status=404)

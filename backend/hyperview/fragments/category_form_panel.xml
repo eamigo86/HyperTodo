@@ -1,0 +1,24 @@
+{% load dj_hyperview %}<view xmlns="https://hyperview.org/hyperview" id="category-form-panel">
+  <view style="header">
+    <view id="category-back" style="back-button" action="back"><text style="back">&lt;</text></view>
+    <text style="title">{% if category %}Edit category{% else %}New category{% endif %}</text>
+  </view>
+  <form id="category-form">
+    <view style="card">
+      {% if form.errors %}<text id="form-errors" style="error">Please correct the highlighted category details.</text>{% endif %}
+      <text style="label">Name</text>
+      <text-field name="name" value="{{ form.name.value|default:'' }}" placeholder="Category name" style="field" />
+      <text style="label">Color</text>
+      <select-single name="color" style="color-select">
+        {% for value,label in form.fields.color.choices %}
+        <option style="color-option" value="{{ value }}"{% if form.color.value == value %} selected="true"{% endif %}>
+          <view style="color-swatch {{ value }}" />
+          <text style="color-option-text">{{ label }}</text>
+        </option>
+        {% endfor %}
+      </select-single>
+      {% hv_csrf_token %}
+      <view id="category-submit" style="button" href="{% if category %}/hv/categories/{{ category.id }}/edit/{% else %}/hv/categories/new/{% endif %}" verb="post" action="replace" target="category-form-panel"><text style="button-text">Save category</text></view>
+    </view>
+  </form>
+</view>

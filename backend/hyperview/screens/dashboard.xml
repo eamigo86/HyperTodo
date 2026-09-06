@@ -1,11 +1,12 @@
 {% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
-    <style id="screen" backgroundColor="#FFFFFF" padding="24" />
+    <style id="screen" backgroundColor="#F7F8FC" flex="1" />
+    <style id="screen-content" flex="1" padding="24" />
     <style id="eyebrow" color="#6D728A" fontSize="14" />
     <style id="title" color="#161A35" fontSize="28" fontWeight="700" marginBottom="22" />
     <style id="row" flexDirection="row" marginBottom="12" />
-    <style id="tile" flex="1" borderRadius="20" padding="18" marginRight="10" />
+    <style id="tile" flex="1" borderRadius="20" justifyContent="space-between" minHeight="104" padding="18" marginRight="10" />
     <style id="lavender" backgroundColor="#AEBBFA" />
     <style id="yellow" backgroundColor="#FFF27B" />
     <style id="mint" backgroundColor="#C9F0E7" />
@@ -13,35 +14,59 @@
     <style id="tile-label" color="#20243D" fontSize="16" />
     <style id="tile-count" color="#161A35" fontSize="28" fontWeight="700" marginTop="12" />
     <style id="section" color="#161A35" fontSize="18" fontWeight="700" marginTop="20" marginBottom="12" />
-    <style id="task" backgroundColor="#F3F6FD" borderRadius="22" padding="16" marginBottom="10" />
+    <style id="task" backgroundColor="#FFFFFF" borderRadius="22" padding="16" marginBottom="10" />
     <style id="task-title" color="#20243D" fontSize="16" fontWeight="600" />
     <style id="meta" color="#7B8097" fontSize="13" marginTop="5" />
     <style id="primary" backgroundColor="#278CFF" borderRadius="24" padding="16" marginTop="18" />
     <style id="primary-text" color="#FFFFFF" textAlign="center" fontWeight="700" />
-    <style id="link" color="#278CFF" fontWeight="600" marginTop="16" />
+    <style id="bottom-navigation" alignItems="center" backgroundColor="#FFFFFF" borderTopColor="#E7EAF3" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
+    <style id="nav-item" alignItems="center" borderRadius="16" flex="1" justifyContent="center" paddingVertical="7" />
+    <style id="nav-active" backgroundColor="#EEF3FF" />
+    <style id="nav-symbol" color="#68708B" fontSize="21" lineHeight="23" />
+    <style id="nav-label" color="#68708B" fontSize="10" fontWeight="600" marginTop="2" />
+    <style id="nav-add" alignItems="center" backgroundColor="#278CFF" borderRadius="26" height="52" justifyContent="center" marginHorizontal="5" marginTop="-18" width="52" />
+    <style id="nav-add-symbol" color="#FFFFFF" fontSize="30" fontWeight="400" lineHeight="32" />
+    <style id="side-menu" bottom="0" flexDirection="row" left="0" position="absolute" right="0" top="0" zIndex="50" />
+    <style id="side-menu-panel" backgroundColor="#FFFFFF" padding="24" width="286" />
+    <style id="side-menu-header" alignItems="center" flexDirection="row" justifyContent="space-between" marginBottom="16" />
+    <style id="side-menu-eyebrow" color="#278CFF" fontSize="11" fontWeight="700" letterSpacing="1.5" />
+    <style id="side-menu-title" color="#161A35" fontSize="22" fontWeight="700" marginTop="3" />
+    <style id="side-menu-close" alignItems="center" backgroundColor="#EEF2FC" borderRadius="22" height="44" justifyContent="center" width="44" />
+    <style id="side-menu-close-text" color="#4C526B" fontSize="26" lineHeight="28" />
+    <style id="side-menu-user" color="#7B8097" fontSize="13" marginBottom="28" />
+    <style id="side-menu-links" flex="1" />
+    <style id="side-menu-link" borderRadius="16" marginBottom="8" padding="15" />
+    <style id="side-menu-link-active" backgroundColor="#EEF3FF" />
+    <style id="side-menu-link-text" color="#20243D" fontSize="16" fontWeight="600" />
+    <style id="side-menu-logout-panel" borderTopColor="#E7EAF3" borderTopWidth="1" paddingTop="16" />
+    <style id="side-menu-logout" borderRadius="16" padding="15" />
+    <style id="side-menu-logout-text" color="#B42318" fontSize="16" fontWeight="600" />
+    <style id="side-menu-scrim" backgroundColor="#161A35" flex="1" opacity="0.22" />
   </styles>
   <screen id="dashboard-screen">
     <body style="screen">
-      <text style="eyebrow">Hello {{ request.user.first_name|default:request.user.username }},</text>
-      <text style="title">You have work today</text>
-      <view style="row">
-        <view style="tile lavender" href="/hv/tasks/?status=today" action="new"><text style="tile-label">Today</text><text style="tile-count">{{ counts.today }}</text></view>
-        <view style="tile yellow" href="/hv/tasks/?status=scheduled" action="new"><text style="tile-label">Scheduled</text><text style="tile-count">{{ counts.scheduled }}</text></view>
+      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false">
+        <text style="eyebrow">Hello {{ request.user.first_name|default:request.user.username }},</text>
+        <text style="title">You have work today</text>
+        <view style="row">
+          <view id="dashboard-today" style="tile lavender" href="/hv/tasks/?status=today" action="navigate"><text style="tile-label">Today</text><text style="tile-count">{{ counts.today }}</text></view>
+          <view id="dashboard-scheduled" style="tile yellow" href="/hv/tasks/?status=scheduled" action="navigate"><text style="tile-label">Scheduled</text><text style="tile-count">{{ counts.scheduled }}</text></view>
+        </view>
+        <view style="row">
+          <view id="dashboard-all" style="tile mint" href="/hv/tasks/?status=all" action="navigate"><text style="tile-label">All</text><text style="tile-count">{{ counts.all }}</text></view>
+          <view id="dashboard-overdue" style="tile pink" href="/hv/tasks/?status=overdue" action="navigate"><text style="tile-label">Overdue</text><text style="tile-count">{{ counts.overdue }}</text></view>
+        </view>
+        <text style="section">Today's tasks</text>
+        {% for task in tasks %}
+        <view style="task" href="/hv/tasks/{{ task.id }}/edit/" action="new">
+          <text style="task-title">{{ task.title }}</text>
+          {% if task.due_at %}<text style="meta">{{ task.due_at|date:'D, M j · H:i' }}</text>{% endif %}
+        </view>
+        {% empty %}<text style="meta">Nothing due today. Enjoy the breathing room.</text>{% endfor %}
+        <view style="primary" href="/hv/tasks/new/" action="new"><text style="primary-text">+ Add task</text></view>
       </view>
-      <view style="row">
-        <view style="tile mint" href="/hv/tasks/" action="new"><text style="tile-label">All</text><text style="tile-count">{{ counts.all }}</text></view>
-        <view style="tile pink" href="/hv/tasks/?status=overdue" action="new"><text style="tile-label">Overdue</text><text style="tile-count">{{ counts.overdue }}</text></view>
-      </view>
-      <text style="section">Today's tasks</text>
-      {% for task in tasks %}
-      <view style="task" href="/hv/tasks/{{ task.id }}/edit/" action="new">
-        <text style="task-title">{{ task.title }}</text>
-        {% if task.due_at %}<text style="meta">{{ task.due_at|date:'D, M j · H:i' }}</text>{% endif %}
-      </view>
-      {% empty %}<text style="meta">Nothing due today. Enjoy the breathing room.</text>{% endfor %}
-      <view style="primary" href="/hv/tasks/new/" action="new"><text style="primary-text">+ Add task</text></view>
-      <view href="/hv/categories/" action="new"><text style="link">Manage categories</text></view>
-      <form id="logout-form">{% hv_csrf_token %}<view href="/hv/logout/" verb="post" action="replace"><text style="link">Sign out</text></view></form>
+      {% include "fragments/bottom_navigation.xml" with active_nav="dashboard" %}
+      {% include "fragments/side_menu.xml" with active_nav="dashboard" %}
     </body>
   </screen>
 </doc>

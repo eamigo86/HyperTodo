@@ -1,14 +1,18 @@
 {% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
-    <style id="screen" backgroundColor="#FFFFFF" padding="24" />
-    <style id="header" flexDirection="row" alignItems="center" marginBottom="20" />
-    <style id="back-button" alignItems="center" backgroundColor="#EEF2FC" borderRadius="22" height="44" justifyContent="center" marginRight="12" width="44" />\n    <style id="back" color="#278CFF" fontSize="24" fontWeight="600" lineHeight="28" />
+    <style id="screen" backgroundColor="#F7F8FC" flex="1" />
+    <style id="screen-content" flex="1" padding="24" />
+    <style id="header" alignItems="center" flexDirection="row" marginBottom="18" />
+    <style id="back-button" alignItems="center" backgroundColor="#FFFFFF" borderColor="#E1E6F0" borderRadius="20" borderWidth="1" height="40" justifyContent="center" marginRight="12" width="40" />
+    <style id="back" color="#4C526B" fontSize="22" fontWeight="500" lineHeight="24" />
     <style id="title" color="#161A35" fontSize="26" fontWeight="700" />
-    <style id="filters" flexDirection="row" marginBottom="16" />
-    <style id="chip" backgroundColor="#EEF2FC" borderRadius="16" padding="10" marginRight="8" />
+    <style id="filter-summary" color="#6D728A" fontSize="13" marginBottom="10" />
+    <style id="filters" flexDirection="row" flexWrap="wrap" marginBottom="10" />
+    <style id="chip" backgroundColor="#EEF2FC" borderRadius="16" marginBottom="8" marginRight="8" paddingHorizontal="12" paddingVertical="9" />
+    <style id="chip-active" backgroundColor="#DDE7FF" />
     <style id="chip-text" color="#4C526B" fontSize="13" />
-    <style id="task" backgroundColor="#F3F6FD" borderRadius="22" padding="16" marginBottom="12" />
+    <style id="task" backgroundColor="#FFFFFF" borderRadius="22" padding="16" marginBottom="12" />
     <style id="done" opacity="0.55" />
     <style id="task-title" color="#20243D" fontSize="17" fontWeight="600" />
     <style id="meta" color="#7B8097" fontSize="13" marginTop="5" />
@@ -17,29 +21,67 @@
     <style id="danger" color="#B42318" fontWeight="600" />
     <style id="primary" backgroundColor="#278CFF" borderRadius="24" padding="16" marginTop="12" />
     <style id="primary-text" color="#FFFFFF" textAlign="center" fontWeight="700" />
+    <style id="bottom-navigation" alignItems="center" backgroundColor="#FFFFFF" borderTopColor="#E7EAF3" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
+    <style id="nav-item" alignItems="center" borderRadius="16" flex="1" justifyContent="center" paddingVertical="7" />
+    <style id="nav-active" backgroundColor="#EEF3FF" />
+    <style id="nav-symbol" color="#68708B" fontSize="21" lineHeight="23" />
+    <style id="nav-label" color="#68708B" fontSize="10" fontWeight="600" marginTop="2" />
+    <style id="nav-add" alignItems="center" backgroundColor="#278CFF" borderRadius="26" height="52" justifyContent="center" marginHorizontal="5" marginTop="-18" width="52" />
+    <style id="nav-add-symbol" color="#FFFFFF" fontSize="30" fontWeight="400" lineHeight="32" />
+    <style id="side-menu" bottom="0" flexDirection="row" left="0" position="absolute" right="0" top="0" zIndex="50" />
+    <style id="side-menu-panel" backgroundColor="#FFFFFF" padding="24" width="286" />
+    <style id="side-menu-header" alignItems="center" flexDirection="row" justifyContent="space-between" marginBottom="16" />
+    <style id="side-menu-eyebrow" color="#278CFF" fontSize="11" fontWeight="700" letterSpacing="1.5" />
+    <style id="side-menu-title" color="#161A35" fontSize="22" fontWeight="700" marginTop="3" />
+    <style id="side-menu-close" alignItems="center" backgroundColor="#EEF2FC" borderRadius="22" height="44" justifyContent="center" width="44" />
+    <style id="side-menu-close-text" color="#4C526B" fontSize="26" lineHeight="28" />
+    <style id="side-menu-user" color="#7B8097" fontSize="13" marginBottom="28" />
+    <style id="side-menu-links" flex="1" />
+    <style id="side-menu-link" borderRadius="16" marginBottom="8" padding="15" />
+    <style id="side-menu-link-active" backgroundColor="#EEF3FF" />
+    <style id="side-menu-link-text" color="#20243D" fontSize="16" fontWeight="600" />
+    <style id="side-menu-logout-panel" borderTopColor="#E7EAF3" borderTopWidth="1" paddingTop="16" />
+    <style id="side-menu-logout" borderRadius="16" padding="15" />
+    <style id="side-menu-logout-text" color="#B42318" fontSize="16" fontWeight="600" />
+    <style id="side-menu-scrim" backgroundColor="#161A35" flex="1" opacity="0.22" />
   </styles>
   <screen id="tasks-screen">
     <body style="screen">
-      <view style="header"><view style="back-button" href="/hv/dashboard/" action="back"><text style="back">&lt;</text></view><text style="title">Tasks</text></view>
-      <view style="filters">
-        <view style="chip" href="/hv/tasks/?status=all" action="reload"><text style="chip-text">All</text></view>
-        <view style="chip" href="/hv/tasks/?status=active" action="reload"><text style="chip-text">Active</text></view>
-        <view style="chip" href="/hv/tasks/?status=completed" action="reload"><text style="chip-text">Done</text></view>
-      </view>
-      {% if categories %}<view style="filters">{% for category in categories %}<view style="chip" href="/hv/tasks/?status={{ status_filter }}&amp;category={{ category.id }}" action="reload"><text style="chip-text">{{ category.name }}</text></view>{% endfor %}</view>{% endif %}
-      {% for task in tasks %}
-      <view style="task{% if task.is_completed %} done{% endif %}">
-        <text style="task-title">{% if task.is_completed %}✓ {% endif %}{{ task.title }}</text>
-        {% if task.category %}<text style="meta">{{ task.category.name }}</text>{% endif %}
-        {% if task.due_at %}<text style="meta">Due {{ task.due_at|date:'M j · H:i' }}</text>{% endif %}
-        <view style="actions">
-          <view href="/hv/tasks/{{ task.id }}/edit/" action="new"><text style="action">Edit</text></view>
-          <form>{% hv_csrf_token %}<view href="/hv/tasks/{{ task.id }}/toggle/" verb="post" action="replace"><text style="action">{% if task.is_completed %}Reopen{% else %}Complete{% endif %}</text></view></form>
-          <form>{% hv_csrf_token %}<view href="/hv/tasks/{{ task.id }}/delete/" verb="post" action="replace"><text style="danger">Delete</text></view></form>
+      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false">
+        <view style="header">
+          <view id="task-list-back" style="back-button" action="back"><text style="back">&lt;</text></view>
+          <text style="title">Tasks</text>
         </view>
+        <text id="filter-summary" style="filter-summary">{{ status_filter|title }} tasks{% if selected_category %} · {{ selected_category.name }}{% endif %}</text>
+        <view style="filters">
+          <view id="filter-all" style="chip{% if status_filter == 'all' %} chip-active{% endif %}" href="/hv/tasks/?status=all" action="reload"><text style="chip-text">All</text></view>
+          <view id="filter-active" style="chip{% if status_filter == 'active' %} chip-active{% endif %}" href="/hv/tasks/?status=active" action="reload"><text style="chip-text">Active</text></view>
+          <view id="filter-completed" style="chip{% if status_filter == 'completed' %} chip-active{% endif %}" href="/hv/tasks/?status=completed" action="reload"><text style="chip-text">Done</text></view>
+          <view id="filter-today" style="chip{% if status_filter == 'today' %} chip-active{% endif %}" href="/hv/tasks/?status=today" action="reload"><text style="chip-text">Today</text></view>
+          <view id="filter-scheduled" style="chip{% if status_filter == 'scheduled' %} chip-active{% endif %}" href="/hv/tasks/?status=scheduled" action="reload"><text style="chip-text">Scheduled</text></view>
+          <view id="filter-overdue" style="chip{% if status_filter == 'overdue' %} chip-active{% endif %}" href="/hv/tasks/?status=overdue" action="reload"><text style="chip-text">Overdue</text></view>
+        </view>
+        {% if categories %}
+        <view style="filters">
+          {% for category in categories %}<view style="chip{% if selected_category.id == category.id %} chip-active{% endif %}" href="/hv/tasks/?status={{ status_filter }}&amp;category={{ category.id }}" action="reload"><text style="chip-text">{{ category.name }}</text></view>{% endfor %}
+        </view>
+        {% endif %}
+        {% for task in tasks %}
+        <view style="task{% if task.is_completed %} done{% endif %}">
+          <text style="task-title">{% if task.is_completed %}✓ {% endif %}{{ task.title }}</text>
+          {% if task.category %}<text style="meta">{{ task.category.name }}</text>{% endif %}
+          {% if task.due_at %}<text style="meta">Due {{ task.due_at|date:'M j · H:i' }}</text>{% endif %}
+          <view style="actions">
+            <view href="/hv/tasks/{{ task.id }}/edit/" action="new"><text style="action">Edit</text></view>
+            <form>{% hv_csrf_token %}<view href="/hv/tasks/{{ task.id }}/toggle/" verb="post" action="replace"><text style="action">{% if task.is_completed %}Reopen{% else %}Complete{% endif %}</text></view></form>
+            <form>{% hv_csrf_token %}<view href="/hv/tasks/{{ task.id }}/delete/" verb="post" action="replace"><text style="danger">Delete</text></view></form>
+          </view>
+        </view>
+        {% empty %}<text style="meta">No tasks match these filters.</text>{% endfor %}
+        <view style="primary" href="/hv/tasks/new/" action="new"><text style="primary-text">+ Add task</text></view>
       </view>
-      {% empty %}<text style="meta">No tasks match these filters.</text>{% endfor %}
-      <view style="primary" href="/hv/tasks/new/" action="new"><text style="primary-text">+ Add task</text></view>
+      {% include "fragments/bottom_navigation.xml" with active_nav="tasks" %}
+      {% include "fragments/side_menu.xml" with active_nav="tasks" %}
     </body>
   </screen>
 </doc>

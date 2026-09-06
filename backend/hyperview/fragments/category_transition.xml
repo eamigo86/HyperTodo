@@ -1,0 +1,3 @@
+<view xmlns="https://hyperview.org/hyperview" id="category-transition">
+  <behavior trigger="load" href="/hv/categories/" action="navigate" />
+</view>
