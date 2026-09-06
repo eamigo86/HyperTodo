@@ -3,7 +3,7 @@
   <styles>
     <style id="screen" backgroundColor="#F7F8FC" flex="1" padding="24" />
     <style id="header" alignItems="center" flexDirection="row" marginBottom="20" />
-    <style id="back" color="#278CFF" fontSize="17" fontWeight="600" marginRight="16" />
+    <style id="back-button" alignItems="center" backgroundColor="#EEF2FC" borderRadius="22" height="44" justifyContent="center" marginRight="12" width="44" />\n    <style id="back" color="#278CFF" fontSize="24" fontWeight="600" lineHeight="28" />
     <style id="title" color="#161A35" fontSize="27" fontWeight="700" />
     <style id="card" backgroundColor="#FFFFFF" borderRadius="28" padding="20" />
     <style id="label" color="#4C526B" fontSize="13" fontWeight="600" marginTop="12" marginBottom="6" />

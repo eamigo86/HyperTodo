@@ -168,6 +168,17 @@ def test_task_form_has_back_action_visible_categories_and_time_keypad(user):
     assert labels == ["No category", "Work"]
 
 
+def test_navigation_buttons_use_symbol_only(user):
+    client = Client()
+    client.force_login(user)
+
+    for route in (reverse("todo:task-new"), reverse("todo:tasks")):
+        root = assert_hxml(client.get(route))
+        back = root.find(".//hv:view[@action='back']", NS)
+        assert back is not None
+        assert "".join(back.itertext()).strip() == "<"
+
+
 def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
     client = csrf_client()
     client.force_login(user)

@@ -3,7 +3,7 @@
   <styles>
     <style id="screen" backgroundColor="#FFFFFF" padding="24" />
     <style id="header" flexDirection="row" alignItems="center" marginBottom="20" />
-    <style id="back" color="#278CFF" fontSize="17" marginRight="16" />
+    <style id="back-button" alignItems="center" backgroundColor="#EEF2FC" borderRadius="22" height="44" justifyContent="center" marginRight="12" width="44" />\n    <style id="back" color="#278CFF" fontSize="24" fontWeight="600" lineHeight="28" />
     <style id="title" color="#161A35" fontSize="26" fontWeight="700" />
     <style id="filters" flexDirection="row" marginBottom="16" />
     <style id="chip" backgroundColor="#EEF2FC" borderRadius="16" padding="10" marginRight="8" />
@@ -20,7 +20,7 @@
   </styles>
   <screen id="tasks-screen">
     <body style="screen">
-      <view style="header"><view href="/hv/dashboard/" action="back"><text style="back">‹ Home</text></view><text style="title">Tasks</text></view>
+      <view style="header"><view style="back-button" href="/hv/dashboard/" action="back"><text style="back">&lt;</text></view><text style="title">Tasks</text></view>
       <view style="filters">
         <view style="chip" href="/hv/tasks/?status=all" action="reload"><text style="chip-text">All</text></view>
         <view style="chip" href="/hv/tasks/?status=active" action="reload"><text style="chip-text">Active</text></view>

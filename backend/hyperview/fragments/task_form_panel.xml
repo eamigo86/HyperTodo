@@ -1,6 +1,6 @@
 {% load dj_hyperview %}<view xmlns="https://hyperview.org/hyperview" id="task-form-panel">
   <view style="header">
-    <view id="task-back" action="back"><text style="back">‹ Back</text></view>
+    <view id="task-back" style="back-button" action="back"><text style="back">&lt;</text></view>
     <text style="title">{% if task %}Edit task{% else %}New task{% endif %}</text>
   </view>
   <form id="task-form">
