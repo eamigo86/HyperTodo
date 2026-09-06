@@ -653,6 +653,13 @@ def test_task_cards_expose_swipe_actions_instead_of_tiny_links(user):
         "completed": "false",
     }
     assert root.find(".//hv:view[@style='actions']", NS) is None
+    card = row.find("./hv:view", NS)
+    title = row.find(".//hv:text[@style='task-title']", NS)
+    assert card is not None
+    assert card.attrib["style"] == "task"
+    assert title is not None
+    assert title.attrib["numberOfLines"] == "1"
+    assert title.attrib["ellipsizeMode"] == "tail"
     assert (
         root.find(
             ".//hv:form//hv:text-field[@name='csrfmiddlewaretoken']", NS

@@ -73,7 +73,7 @@ export default function SnackbarHost(): React.JSX.Element | null {
 
   const toneStyle = notice.tone === "error" ? styles.error : styles.success;
   return (
-    <View pointerEvents="box-none" style={styles.host}>
+    <View pointerEvents="box-none" style={styles.host} testID="snackbar-host">
       <Animated.View
         accessibilityLiveRegion="polite"
         style={[styles.surface, toneStyle, { opacity, transform: [{ translateY }] }]}
@@ -97,7 +97,7 @@ export default function SnackbarHost(): React.JSX.Element | null {
 
 const styles = StyleSheet.create({
   host: {
-    bottom: 82,
+    bottom: 104,
     left: 16,
     position: "absolute",
     right: 16,

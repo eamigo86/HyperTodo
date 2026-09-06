@@ -19,7 +19,6 @@
     <style id="list-spinner" alignItems="center" height="28" justifyContent="center" />
     <style id="swipe-row" borderRadius="22" marginBottom="12" overflow="hidden" />
     <style id="task" backgroundColor="#FFFFFF" borderRadius="22" padding="16" />
-    <style id="done" opacity="0.55" />
     <style id="task-title" color="#20243D" fontSize="17" fontWeight="600" />
     <style id="meta" color="#7B8097" fontSize="13" marginTop="5" />
     <style id="bottom-navigation" alignItems="center" backgroundColor="#FFFFFF" borderTopColor="#E7EAF3" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />

@@ -3,8 +3,8 @@
   <form>
     {% load dj_hyperview %}{% hv_csrf_token %}
     <app:swipe-row xmlns:app="https://hypertodo.app/components" id="task-swipe-{{ task.id }}" style="swipe-row" edit-href="/hv/tasks/{{ task.id }}/edit/" toggle-href="/hv/tasks/{{ task.id }}/toggle/" delete-href="/hv/tasks/{{ task.id }}/delete/" completed="{% if task.is_completed %}true{% else %}false{% endif %}">
-      <view style="task{% if task.is_completed %} done{% endif %}">
-        <text style="task-title">{% if task.is_completed %}✓ {% endif %}{{ task.title }}</text>
+      <view style="task">
+        <text style="task-title" ellipsizeMode="tail" numberOfLines="1">{% if task.is_completed %}✓ {% endif %}{{ task.title }}</text>
         {% if task.category %}<text style="meta">{{ task.category.name }}</text>{% endif %}
         {% if task.due_at %}<text style="meta">Due {{ task.due_at|date:'M j · H:i' }}</text>{% endif %}
       </view>

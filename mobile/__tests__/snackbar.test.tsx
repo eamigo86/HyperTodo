@@ -38,6 +38,9 @@ describe("server-driven snackbar feedback", () => {
     expect(screen.getByTestId("snackbar-surface").props.style).toEqual(
       expect.objectContaining({ backgroundColor: "#147DEB" }),
     );
+    expect(screen.getByTestId("snackbar-host").props.style).toEqual(
+      expect.objectContaining({ bottom: 104 }),
+    );
 
     act(() => publishSnackbar({ message: "Could not save task.", tone: "error" }));
     expect(screen.getByText("Could not save task.")).toBeTruthy();

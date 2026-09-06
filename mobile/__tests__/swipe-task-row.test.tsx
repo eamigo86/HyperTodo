@@ -2,20 +2,6 @@ import React from "react";
 import { Alert } from "react-native";
 import { fireEvent, render } from "@testing-library/react-native";
 
-const mockClose = jest.fn();
-
-jest.mock("react-native-gesture-handler", () => {
-  const { View } = require("react-native");
-  return {
-    Swipeable: ({ children, renderRightActions }: any) => (
-      <View testID="swipeable-row">
-        {children}
-        {renderRightActions?.(null, null, { close: mockClose })}
-      </View>
-    ),
-  };
-});
-
 jest.mock("hyperview", () => ({
   createStyleProp: jest.fn(() => [{ marginBottom: 12 }]),
   renderChildren: jest.fn(() => null),
@@ -41,9 +27,14 @@ const props = {
 };
 
 describe("SwipeTaskRow", () => {
+  const openActions = (screen: ReturnType<typeof render>): void => {
+    const row = screen.getByTestId("task-swipe-123");
+    fireEvent(row, "responderMove", {}, { dx: -100, dy: 0 });
+    fireEvent(row, "responderRelease", {}, { dx: -100, dy: 0 });
+  };
+
   beforeEach(() => {
     props.onUpdate.mockClear();
-    mockClose.mockClear();
     jest.restoreAllMocks();
   });
 
@@ -55,8 +46,20 @@ describe("SwipeTaskRow", () => {
     expect(screen.getByRole("button", { name: "Delete task" })).toBeTruthy();
   });
 
+  it("keeps task content stationary beneath an absolute action tray", () => {
+    const screen = render(<SwipeTaskRow {...props} />);
+
+    expect(screen.getByTestId("task-swipe-content").props.style).not.toEqual(
+      expect.objectContaining({ transform: expect.anything() }),
+    );
+    expect(screen.getByTestId("task-swipe-actions").props.style).toEqual(
+      expect.objectContaining({ position: "absolute", right: 0 }),
+    );
+  });
+
   it("opens editing as a new Hyperview route", () => {
     const screen = render(<SwipeTaskRow {...props} />);
+    openActions(screen);
 
     fireEvent.press(screen.getByRole("button", { name: "Edit task" }));
 
@@ -70,6 +73,7 @@ describe("SwipeTaskRow", () => {
 
   it("posts completion through the surrounding HXML form", () => {
     const screen = render(<SwipeTaskRow {...props} />);
+    openActions(screen);
 
     fireEvent.press(screen.getByRole("button", { name: "Complete task" }));
 
@@ -77,7 +81,7 @@ describe("SwipeTaskRow", () => {
       "/hv/tasks/123/toggle/",
       "replace",
       element,
-      { verb: "post" },
+      { targetId: "task-swipe-123", verb: "post" },
     );
   });
 
@@ -86,6 +90,7 @@ describe("SwipeTaskRow", () => {
       buttons?.find((button) => button.style === "destructive")?.onPress?.();
     });
     const screen = render(<SwipeTaskRow {...props} />);
+    openActions(screen);
 
     fireEvent.press(screen.getByRole("button", { name: "Delete task" }));
 
@@ -98,7 +103,7 @@ describe("SwipeTaskRow", () => {
       "/hv/tasks/123/delete/",
       "replace",
       element,
-      { verb: "post" },
+      { targetId: "task-swipe-123", verb: "post" },
     );
   });
 });
