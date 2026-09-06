@@ -12,7 +12,8 @@
     <style id="field" backgroundColor="#F1F4FC" borderColor="#E2E7F3" borderRadius="16" borderWidth="1" color="#161A35" fontSize="16" marginBottom="16" padding="16" />
     <style id="button" backgroundColor="#278CFF" borderRadius="18" padding="17" marginTop="6" />
     <style id="button-text" color="#FFFFFF" fontSize="17" fontWeight="700" textAlign="center" />
-    <style id="error" backgroundColor="#FFF0EE" borderRadius="12" color="#B42318" fontSize="14" lineHeight="20" marginBottom="18" padding="12" />
+    <style id="error-card" backgroundColor="#FFF0EE" borderColor="#FFD5D0" borderRadius="12" borderWidth="1" marginBottom="18" padding="12" />
+    <style id="error-text" color="#B42318" fontSize="14" fontWeight="600" lineHeight="20" />
     <style id="hint" color="#8A8FA3" fontSize="13" lineHeight="19" marginTop="18" textAlign="center" />
   </styles>
   <screen id="login-screen">

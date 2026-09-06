@@ -50,12 +50,15 @@ def test_login_screen_uses_secure_credentials_and_fragment_submission():
     root = assert_hxml(response)
 
     screen_style = root.find(".//hv:style[@id='screen']", NS)
+    error_style = root.find(".//hv:style[@id='error-text']", NS)
     username = root.find(".//hv:text-field[@name='username']", NS)
     password = root.find(".//hv:text-field[@name='password']", NS)
     submit = root.find(".//hv:view[@id='login-submit']", NS)
 
     assert screen_style is not None
     assert screen_style.attrib["flex"] == "1"
+    assert error_style is not None
+    assert error_style.attrib["color"] == "#B42318"
     assert username is not None
     assert username.attrib["text-content-type"] == "username"
     assert password is not None
@@ -81,6 +84,13 @@ def test_login_requires_csrf_and_returns_direct_hxml(user):
     rejected_root = assert_hxml(rejected, status=422)
     assert rejected_root.tag == f"{{{NS['hv']}}}view"
     assert rejected_root.attrib["id"] == "login-panel"
+    error = rejected_root.find(".//hv:text[@id='form-errors']", NS)
+    assert error is not None
+    assert error.attrib["style"] == "error-text"
+    assert error.text == "Invalid username or password. Please try again."
+    username = rejected_root.find(".//hv:text-field[@name='username']", NS)
+    assert username is not None
+    assert username.attrib["value"] == "ada"
     accepted = client.post(
         reverse("todo:login"),
         {"username": "ada", "password": "correct-horse", "csrfmiddlewaretoken": token},

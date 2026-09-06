@@ -3,7 +3,7 @@
     <view style="card">
       <text style="card-title">Welcome back</text>
       <text style="card-copy">Sign in to see your tasks and categories.</text>
-      {% if form.errors %}<text id="form-errors" style="error">The username or password is incorrect.</text>{% endif %}
+      {% if form.errors %}<view id="login-error" style="error-card"><text id="form-errors" style="error-text">Invalid username or password. Please try again.</text></view>{% endif %}
       <text style="label">Username</text>
       <text-field id="username" name="username" value="{{ form.username.value|default:'' }}" placeholder="Enter your username" text-content-type="username" style="field" />
       <text style="label">Password</text>
