@@ -29,7 +29,7 @@ const config: ExpoConfig = {
   android: {
     package: "com.eamigo.hypertodo",
     adaptiveIcon: {
-      backgroundColor: "#AEBBFA",
+      backgroundColor: "#F7F8FC",
       foregroundImage: "./assets/android-icon-foreground.png",
       monochromeImage: "./assets/android-icon-monochrome.png"
     }
