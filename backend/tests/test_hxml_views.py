@@ -12,7 +12,10 @@ from todo.models import Category, Task
 
 pytestmark = pytest.mark.django_db
 MEDIA_TYPE = "application/vnd.hyperview+xml"
-NS = {"hv": "https://hyperview.org/hyperview"}
+NS = {
+    "hv": "https://hyperview.org/hyperview",
+    "app": "https://hypertodo.app/components",
+}
 
 
 def assert_hxml(response, *, status=200):
@@ -510,23 +513,15 @@ def test_side_menu_is_loaded_and_closed_through_hxml_requests(user):
     client.force_login(user)
 
     opened = assert_hxml(client.get(reverse("todo:menu"), {"active": "tasks"}))
-    assert opened.attrib == {"id": "side-menu-host", "style": "side-menu"}
-    close = opened.find(".//hv:view[@id='close-side-menu']", NS)
-    scrim = opened.find(".//hv:view[@id='side-menu-scrim']", NS)
+    assert opened.tag == f"{{{NS['app']}}}side-menu"
+    assert opened.attrib == {
+        "id": "side-menu-host",
+        "style": "side-menu",
+        "close-href": "/hv/menu/close/",
+        "animation-duration": "220",
+    }
     logout_action = opened.find(".//hv:view[@id='side-menu-logout']", NS)
     active_link = opened.find(".//hv:view[@href='/hv/tasks/']", NS)
-    assert close is not None
-    assert close.attrib == {
-        "id": "close-side-menu",
-        "style": "side-menu-close",
-        "href": "/hv/menu/close/",
-        "action": "replace",
-        "target": "side-menu-host",
-    }
-    assert scrim is not None
-    assert scrim.attrib["href"] == "/hv/menu/close/"
-    assert scrim.attrib["action"] == "replace"
-    assert scrim.attrib["target"] == "side-menu-host"
     assert logout_action is not None
     assert logout_action.attrib["action"] == "replace"
     assert logout_action.attrib["target"] == "logout-panel"

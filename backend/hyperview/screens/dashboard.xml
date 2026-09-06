@@ -29,12 +29,10 @@
     <style id="nav-add" alignItems="center" backgroundColor="#278CFF" borderRadius="24" height="48" justifyContent="center" width="48" />
     <style id="nav-add-symbol" color="#FFFFFF" fontSize="29" fontWeight="400" lineHeight="31" />
     <style id="side-menu" bottom="0" flexDirection="row" left="0" position="absolute" right="0" top="0" zIndex="50" />
-    <style id="side-menu-panel" backgroundColor="#FFFFFF" padding="24" width="286" />
+    <style id="side-menu-panel" backgroundColor="#FFFFFF" flex="1" padding="24" width="286" />
     <style id="side-menu-header" alignItems="center" flexDirection="row" justifyContent="space-between" marginBottom="16" />
     <style id="side-menu-eyebrow" color="#278CFF" fontSize="11" fontWeight="700" letterSpacing="1.5" />
     <style id="side-menu-title" color="#161A35" fontSize="22" fontWeight="700" marginTop="3" />
-    <style id="side-menu-close" alignItems="center" backgroundColor="#EEF2FC" borderRadius="22" height="44" justifyContent="center" width="44" />
-    <style id="side-menu-close-text" color="#4C526B" fontSize="26" lineHeight="28" />
     <style id="side-menu-user" color="#7B8097" fontSize="13" marginBottom="28" />
     <style id="side-menu-links" flex="1" />
     <style id="side-menu-link" borderRadius="16" marginBottom="8" padding="15" />
@@ -43,7 +41,6 @@
     <style id="side-menu-logout-panel" borderTopColor="#E7EAF3" borderTopWidth="1" paddingTop="16" />
     <style id="side-menu-logout" borderRadius="16" padding="15" />
     <style id="side-menu-logout-text" color="#B42318" fontSize="16" fontWeight="600" />
-    <style id="side-menu-scrim" backgroundColor="#161A35" flex="1" opacity="0.22" />
   </styles>
   <screen id="dashboard-screen">
     <body style="screen">

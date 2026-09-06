@@ -1,11 +1,10 @@
-{% load dj_hyperview %}<view xmlns="https://hyperview.org/hyperview" id="side-menu-host" style="side-menu">
-  <view style="side-menu-panel">
+{% load dj_hyperview %}<side-menu xmlns="https://hypertodo.app/components" id="side-menu-host" style="side-menu" close-href="/hv/menu/close/" animation-duration="220">
+  <view xmlns="https://hyperview.org/hyperview" style="side-menu-panel">
     <view style="side-menu-header">
       <view>
         <text style="side-menu-eyebrow">HYPERTODO</text>
         <text style="side-menu-title">Your workspace</text>
       </view>
-      <view id="close-side-menu" style="side-menu-close" href="/hv/menu/close/" action="replace" target="side-menu-host"><text style="side-menu-close-text">×</text></view>
     </view>
     <text style="side-menu-user">Signed in as {{ request.user.username }}</text>
     <view style="side-menu-links">
@@ -20,5 +19,4 @@
       </form>
     </view>
   </view>
-  <view id="side-menu-scrim" style="side-menu-scrim" href="/hv/menu/close/" action="replace" target="side-menu-host" />
-</view>
+</side-menu>
