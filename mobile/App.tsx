@@ -13,6 +13,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { getApiUrl } from "./src/config";
 import AnimatedSideMenu from "./src/components/AnimatedSideMenu";
+import AnimatedSplash from "./src/components/AnimatedSplash";
 import SwipeTaskRow from "./src/components/SwipeTaskRow";
 import SnackbarHost from "./src/components/SnackbarHost";
 import ShowSnackbarBehavior from "./src/behaviors/ShowSnackbarBehavior";
@@ -50,25 +51,27 @@ const hyperviewFetch = createHyperviewFetch(entrypointUrl);
 export default function App(): React.JSX.Element {
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <SafeAreaView
-        accessibilityLabel="HyperTodo safe area"
-        edges={["top", "bottom"]}
-        style={styles.safeArea}
-      >
-        <NavigationContainer onReady={() => void SplashScreen.hideAsync()}>
-          <Hyperview
-            behaviors={[ShowSnackbarBehavior]}
-            components={[AnimatedSideMenu, SwipeTaskRow]}
-            entrypointUrl={entrypointUrl}
-            fetch={hyperviewFetch}
-            formatDate={(date, format) => date && format ? moment(date).format(format) : undefined}
-            loadingScreen={LoadingScreen}
-            errorScreen={ErrorScreen}
-          />
-        </NavigationContainer>
-        <SnackbarHost />
-      </SafeAreaView>
+      <AnimatedSplash>
+        <StatusBar style="dark" />
+        <SafeAreaView
+          accessibilityLabel="HyperTodo safe area"
+          edges={["top", "bottom"]}
+          style={styles.safeArea}
+        >
+          <NavigationContainer>
+            <Hyperview
+              behaviors={[ShowSnackbarBehavior]}
+              components={[AnimatedSideMenu, SwipeTaskRow]}
+              entrypointUrl={entrypointUrl}
+              fetch={hyperviewFetch}
+              formatDate={(date, format) => date && format ? moment(date).format(format) : undefined}
+              loadingScreen={LoadingScreen}
+              errorScreen={ErrorScreen}
+            />
+          </NavigationContainer>
+          <SnackbarHost />
+        </SafeAreaView>
+      </AnimatedSplash>
     </SafeAreaProvider>
   );
 }
