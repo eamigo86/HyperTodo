@@ -73,7 +73,7 @@
         <view id="task-list-spinner" style="list-spinner" hide="true"><spinner /></view>
       </view>
       {% include "fragments/bottom_navigation.xml" with active_nav="tasks" %}
-      {% include "fragments/side_menu.xml" with active_nav="tasks" %}
+      {% include "fragments/side_menu_host.xml" %}
     </body>
   </screen>
 </doc>

@@ -68,7 +68,7 @@
         <view style="primary" href="/hv/tasks/new/" action="new"><text style="primary-text">+ Add task</text></view>
       </view>
       {% include "fragments/bottom_navigation.xml" with active_nav="dashboard" %}
-      {% include "fragments/side_menu.xml" with active_nav="dashboard" %}
+      {% include "fragments/side_menu_host.xml" %}
     </body>
   </screen>
 </doc>

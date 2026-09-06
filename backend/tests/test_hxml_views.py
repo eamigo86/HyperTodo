@@ -449,9 +449,8 @@ def test_primary_screens_share_server_driven_navigation(user):
         root = assert_hxml(client.get(route))
         content = root.find(".//hv:view[@id='screen-content']", NS)
         bottom = root.find(".//hv:view[@id='bottom-navigation']", NS)
-        drawer = root.find(".//hv:view[@id='side-menu']", NS)
+        drawer_host = root.find(".//hv:view[@id='side-menu-host']", NS)
         open_menu = root.find(".//hv:view[@id='open-side-menu']", NS)
-        close_menu = root.find(".//hv:view[@id='close-side-menu']", NS)
 
         assert content is not None
         if route == reverse("todo:dashboard"):
@@ -460,29 +459,22 @@ def test_primary_screens_share_server_driven_navigation(user):
             assert "scroll" not in content.attrib
             assert root.find(".//hv:list", NS) is not None
         assert bottom is not None
-        assert drawer is not None
-        assert drawer.attrib["hide"] == "true"
+        assert drawer_host is not None
+        assert len(drawer_host) == 0
         assert open_menu is not None
-        open_behavior = open_menu.find("./hv:behavior", NS)
-        assert open_behavior is not None
-        assert open_behavior.attrib == {
-            "trigger": "press",
-            "action": "show",
-            "target": "side-menu",
-        }
-        assert close_menu is not None
-        close_behavior = close_menu.find("./hv:behavior", NS)
-        assert close_behavior is not None
-        assert close_behavior.attrib == {
-            "trigger": "press",
-            "action": "hide",
-            "target": "side-menu",
-        }
+        active_nav = {
+            "nav-dashboard": "dashboard",
+            "nav-tasks": "tasks",
+            "nav-categories": "categories",
+        }[active_id]
+        assert open_menu.attrib["href"] == f"/hv/menu/?active={active_nav}"
+        assert open_menu.attrib["action"] == "replace"
+        assert open_menu.attrib["target"] == "side-menu-host"
 
         destinations = {
             item.attrib["id"]: (item.attrib["href"], item.attrib["action"])
             for item in bottom.findall("./hv:view", NS)
-            if "href" in item.attrib
+            if item.attrib["id"].startswith("nav-")
         }
         assert destinations == {
             "nav-dashboard": ("/hv/dashboard/", "navigate"),
@@ -513,10 +505,37 @@ def test_primary_screens_share_server_driven_navigation(user):
         assert add_style.attrib["height"] == "48"
         assert "marginTop" not in add_style.attrib
 
-        logout_action = root.find(".//hv:view[@id='side-menu-logout']", NS)
-        assert logout_action is not None
-        assert logout_action.attrib["action"] == "replace"
-        assert logout_action.attrib["target"] == "logout-panel"
+def test_side_menu_is_loaded_and_closed_through_hxml_requests(user):
+    client = Client()
+    client.force_login(user)
+
+    opened = assert_hxml(client.get(reverse("todo:menu"), {"active": "tasks"}))
+    assert opened.attrib == {"id": "side-menu-host", "style": "side-menu"}
+    close = opened.find(".//hv:view[@id='close-side-menu']", NS)
+    scrim = opened.find(".//hv:view[@id='side-menu-scrim']", NS)
+    logout_action = opened.find(".//hv:view[@id='side-menu-logout']", NS)
+    active_link = opened.find(".//hv:view[@href='/hv/tasks/']", NS)
+    assert close is not None
+    assert close.attrib == {
+        "id": "close-side-menu",
+        "style": "side-menu-close",
+        "href": "/hv/menu/close/",
+        "action": "replace",
+        "target": "side-menu-host",
+    }
+    assert scrim is not None
+    assert scrim.attrib["href"] == "/hv/menu/close/"
+    assert scrim.attrib["action"] == "replace"
+    assert scrim.attrib["target"] == "side-menu-host"
+    assert logout_action is not None
+    assert logout_action.attrib["action"] == "replace"
+    assert logout_action.attrib["target"] == "logout-panel"
+    assert active_link is not None
+    assert "side-menu-link-active" in active_link.attrib["style"]
+
+    closed = assert_hxml(client.get(reverse("todo:menu-close")))
+    assert closed.attrib == {"id": "side-menu-host"}
+    assert len(closed) == 0
 
 
 def test_task_list_supports_refresh_and_infinite_scroll(user):
@@ -597,7 +616,7 @@ def test_list_pagination_rejects_invalid_page_and_fragment(user):
 def test_logout_is_post_only_csrf_protected_and_direct_hxml(user):
     client = csrf_client()
     client.force_login(user)
-    token = token_from(client.get(reverse("todo:dashboard")))
+    token = token_from(client.get(reverse("todo:menu")))
     assert client.get(reverse("todo:logout")).status_code == 405
     response = client.post(reverse("todo:logout"), {"csrfmiddlewaretoken": token})
     assert_transition(response, "logout-panel", action="reload", href="/hv/")
@@ -611,6 +630,8 @@ def test_all_private_endpoints_return_direct_session_expired_hxml(user):
     )
     routes = [
         reverse("todo:dashboard"),
+        reverse("todo:menu"),
+        reverse("todo:menu-close"),
         reverse("todo:tasks"),
         reverse("todo:task-new"),
         reverse("todo:task-edit", args=(task.pk,)),
@@ -635,6 +656,8 @@ def test_endpoints_reject_unsupported_methods_as_hxml(user):
     calls = [
         ("put", reverse("todo:login")),
         ("post", reverse("todo:dashboard")),
+        ("post", reverse("todo:menu")),
+        ("post", reverse("todo:menu-close")),
         ("post", reverse("todo:tasks")),
         ("put", reverse("todo:task-new")),
         ("put", reverse("todo:task-edit", args=(task.pk,))),
@@ -687,7 +710,7 @@ def test_category_delete_succeeds_and_task_cross_user_is_hidden(user, other_user
     )
     client = csrf_client()
     client.force_login(user)
-    token = token_from(client.get(reverse("todo:dashboard")))
+    token = token_from(client.get(reverse("todo:menu")))
     deleted = client.post(
         reverse("todo:category-delete", args=(category.pk,)),
         {"csrfmiddlewaretoken": token},

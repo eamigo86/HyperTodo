@@ -14,9 +14,8 @@
     {% if active_nav == 'categories' %}<image style="nav-icon" source="{% static 'todo/icons/categories-active.png' %}" />{% else %}<image style="nav-icon" source="{% static 'todo/icons/categories.png' %}" />{% endif %}
     <text style="nav-label{% if active_nav == 'categories' %} nav-label-active{% endif %}">Categories</text>
   </view>
-  <view id="open-side-menu" href-style="nav-hit-area" style="nav-item">
+  <view id="open-side-menu" href-style="nav-hit-area" style="nav-item" href="/hv/menu/?active={{ active_nav }}" action="replace" target="side-menu-host">
     <image style="nav-icon" source="{% static 'todo/icons/menu.png' %}" />
     <text style="nav-label">Menu</text>
-    <behavior trigger="press" action="show" target="side-menu" />
   </view>
 </view>

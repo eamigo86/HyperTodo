@@ -200,6 +200,45 @@ def dashboard(request: HttpRequest) -> HttpResponse:
 
 
 @hxml_endpoint
+def menu(request: HttpRequest) -> HttpResponse:
+    """Render the authenticated side-menu fragment.
+
+    Args:
+        request: Incoming side-menu request.
+
+    Returns:
+        Open side-menu fragment, session-expired response, or method error.
+    """
+    if denied := _require_user(request):
+        return denied
+    if invalid := _method(request, "GET"):
+        return invalid
+    active_nav = request.GET.get("active", "")
+    return HyperviewTemplateResponse(
+        request,
+        "fragments/side_menu.xml",
+        {"active_nav": active_nav},
+    )
+
+
+@hxml_endpoint
+def menu_close(request: HttpRequest) -> HttpResponse:
+    """Render an empty side-menu host to close the overlay.
+
+    Args:
+        request: Incoming side-menu close request.
+
+    Returns:
+        Empty side-menu host, session-expired response, or method error.
+    """
+    if denied := _require_user(request):
+        return denied
+    if invalid := _method(request, "GET"):
+        return invalid
+    return HyperviewTemplateResponse(request, "fragments/side_menu_host.xml")
+
+
+@hxml_endpoint
 def task_list(request: HttpRequest) -> HttpResponse:
     """Render a filtered private task list.
 

@@ -61,7 +61,7 @@
         <view style="primary" href="/hv/categories/new/" action="new"><text style="primary-text">+ Add category</text></view>
       </view>
       {% include "fragments/bottom_navigation.xml" with active_nav="categories" %}
-      {% include "fragments/side_menu.xml" with active_nav="categories" %}
+      {% include "fragments/side_menu_host.xml" %}
     </body>
   </screen>
 </doc>
