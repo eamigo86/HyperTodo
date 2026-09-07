@@ -8,13 +8,13 @@ from django.db.models import Count, Min, Q, QuerySet
 from django.db.models.expressions import OrderBy
 from django.db.models.functions import TruncDate
 from django.utils import timezone
+from django.utils.formats import date_format
 
-from .models import Category, Task
+from .models import BiometricCredential, Category, Task
 
 WEEK_DAYS = 7
 BAR_MAX_HEIGHT = 48
 BAR_MIN_HEIGHT = 6
-WEEKDAY_INITIALS = "MTWTFSS"
 # A weekday name only identifies one day inside the coming week.
 WEEKDAY_LABEL_DAYS = 6
 NEXT_TASK_LIMIT = 5
@@ -180,7 +180,11 @@ def _week_bars(completions: dict[date, int], today: date) -> list[dict[str, Any]
     peak = max(counts)
     return [
         {
-            "label": WEEKDAY_INITIALS[day.weekday()],
+            # date_format reads django.utils.dates, which IS translated;
+            # strftime follows the C locale and can never see the active
+            # language, so it rendered English initials inside a Spanish
+            # dashboard. "l" is the full weekday name, sliced to one letter.
+            "label": date_format(day, "l")[0].upper(),
             "date": day,
             "completed": completed,
             "height": (
@@ -229,8 +233,8 @@ def _next_scheduled_label(next_scheduled: datetime | None, today: date) -> str:
         return ""
     local = timezone.localtime(next_scheduled)
     if (local.date() - today).days <= WEEKDAY_LABEL_DAYS:
-        return local.strftime("%a")
-    return f"{local:%b} {local.strftime('%d').lstrip('0')}"
+        return date_format(local, "D")
+    return f"{date_format(local, 'M')} {local.strftime('%d').lstrip('0')}"
 
 
 def dashboard_summary(user: AbstractBaseUser) -> dict[str, Any]:
@@ -277,3 +281,18 @@ def dashboard_summary(user: AbstractBaseUser) -> dict[str, Any]:
         "next_tasks": list(tasks_for_user(user, status="active")[:NEXT_TASK_LIMIT]),
         "next_scheduled_label": _next_scheduled_label(next_scheduled, today),
     }
+
+
+def has_biometric_credential(user: AbstractBaseUser) -> bool:
+    """Report whether an account currently holds a device credential.
+
+    BiometricCredential.user is a OneToOneField, so at most one device is enrolled
+    per account and this answers "is this phone enrolled" in every realistic case.
+
+    Args:
+        user: Authenticated account owner.
+
+    Returns:
+        True when a credential exists for the user.
+    """
+    return BiometricCredential.objects.filter(user=user).exists()

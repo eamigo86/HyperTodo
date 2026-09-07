@@ -1,16 +1,25 @@
 """HTTP contract tests for server-driven Hyperview screens."""
 
+import re
 from datetime import timedelta
+from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
+from dj_hyperview import HyperviewFragmentTemplateResponse
 from django.contrib.auth import get_user_model
+from django.contrib.staticfiles import finders
 from django.template.defaultfilters import date as date_filter
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
+from tests.test_forms_ui import contrast_ratio, read_png_icon, style_by_id
+from todo import theme as theme_tokens
+from todo.context_processors import THEME_COOKIE
+from todo.middleware import THEME_HEADER
 from todo.models import Category, Task
+from todo.views import MIN_SWIPE_ACTIONS_VERSION, _supports_swipe_actions
 
 pytestmark = pytest.mark.django_db
 MEDIA_TYPE = "application/vnd.hyperview+xml"
@@ -21,9 +30,15 @@ NS = {
 }
 
 
-def assert_hxml(response, *, status=200, media_type=MEDIA_TYPE):
+def assert_hxml(response, *, status=200, media_type=None):
     """Assert a response is parseable UTF-8 Hyperview XML."""
     assert response.status_code == status
+    if media_type is None:
+        media_type = (
+            FRAGMENT_MEDIA_TYPE
+            if isinstance(response, HyperviewFragmentTemplateResponse)
+            else MEDIA_TYPE
+        )
     assert response.headers["Content-Type"] == f"{media_type}; charset=utf-8"
     return ElementTree.fromstring(response.content)
 
@@ -41,16 +56,29 @@ def token_from(response):
     return field.attrib["value"]
 
 
-def assert_transition(response, transition_id, *, action, href, status=200):
-    """Assert an HXML fragment contains the expected load transition."""
+def assert_transition(response, transition_id, *, action, href=None, status=200):
+    """Assert an HXML fragment contains the expected load transition.
+
+    href=None means the action takes no href: close and back act on the stack,
+    not on a url (services/navigator/navigator.ts:98-106).
+    """
     root = assert_hxml(response, status=status)
     assert root.tag == f"{{{NS['hv']}}}view"
     assert root.attrib["id"] == transition_id
     behavior = root.find(f"./hv:behavior[@action='{action}']", NS)
     assert behavior is not None
     assert behavior.attrib["trigger"] == "load"
-    assert behavior.attrib["href"] == href
+    assert behavior.attrib.get("href") == href
     return root
+
+
+def announced_event(root):
+    """Return the event name a fragment dispatches on load, or None."""
+    behavior = root.find("./hv:behavior[@action='dispatch-event']", NS)
+    if behavior is None:
+        return None
+    assert behavior.attrib["trigger"] == "load"
+    return behavior.attrib["event-name"]
 
 
 def assert_snackbar(root, message, *, tone="success"):
@@ -67,24 +95,32 @@ def assert_snackbar(root, message, *, tone="success"):
 
 
 def test_root_initializes_stack_navigator_for_guest_and_user(user):
+    # The id is the same in both sessions and only the href moves. `#root-route` in
+    # bottom_navigation.xml and side_menu.xml dispatches CommonActions.navigate
+    # against this literal name, and StackRouter returns null for a name that is not
+    # in routeNames (StackRouter.js:224-227) with no warning and no visual feedback.
+    # A session-dependent id would make the Home tab silently dead after a sign-in.
     client = Client()
-    login_response = client.get(reverse("todo:root"))
-    login_root = assert_hxml(login_response)
-    navigator = login_root.find(".//hv:navigator[@id='root-navigator']", NS)
-    assert navigator is not None
-    assert navigator.attrib["type"] == "stack"
-    login_route = navigator.find("./hv:nav-route[@id='login-route']", NS)
-    assert login_route is not None
-    assert login_route.attrib["href"] == "/hv/login/"
-    assert login_route.attrib["selected"] == "true"
+
+    def route_of(response):
+        navigator = assert_hxml(response).find(
+            ".//hv:navigator[@id='root-navigator']", NS
+        )
+        assert navigator is not None
+        assert navigator.attrib["type"] == "stack"
+        routes = navigator.findall("./hv:nav-route", NS)
+        assert len(routes) == 1
+        assert routes[0].attrib["selected"] == "true"
+        return routes[0]
+
+    anonymous = route_of(client.get(reverse("todo:root")))
+    assert anonymous.attrib["id"] == "root-route"
+    assert anonymous.attrib["href"] == "/hv/login/"
 
     client.force_login(user)
-    dashboard_response = client.get(reverse("todo:root"))
-    dashboard_root = assert_hxml(dashboard_response)
-    dashboard_route = dashboard_root.find(".//hv:nav-route[@id='dashboard-route']", NS)
-    assert dashboard_route is not None
-    assert dashboard_route.attrib["href"] == "/hv/dashboard/"
-    assert dashboard_route.attrib["selected"] == "true"
+    authenticated = route_of(client.get(reverse("todo:root")))
+    assert authenticated.attrib["id"] == "root-route"
+    assert authenticated.attrib["href"] == "/hv/dashboard/"
 
 
 def test_login_screen_uses_secure_credentials_and_fragment_submission():
@@ -128,10 +164,12 @@ def test_login_requires_csrf_and_returns_direct_hxml(user):
     rejected_root = assert_hxml(rejected, status=422)
     assert rejected_root.tag == f"{{{NS['hv']}}}view"
     assert rejected_root.attrib["id"] == "login-panel"
-    error = rejected_root.find(".//hv:text[@id='form-errors']", NS)
+    error = rejected_root.find(".//hv:view[@id='login-error']/hv:text", NS)
     assert error is not None
     assert error.attrib["style"] == "error-text"
-    assert error.text == "Invalid username or password. Please try again."
+    # The panel renders the form's own error now, so an empty submit no longer
+    # claims the credentials were wrong. views.py adds this exact string.
+    assert error.text == "The username or password is incorrect."
     username = rejected_root.find(".//hv:text-field[@name='username']", NS)
     assert username is not None
     assert username.attrib["value"] == "ada"
@@ -142,12 +180,18 @@ def test_login_requires_csrf_and_returns_direct_hxml(user):
     root = assert_hxml(accepted)
     assert root.tag == f"{{{NS['hv']}}}view"
     assert root.attrib["id"] == "login-transition"
-    transition = root.find("./hv:behavior", NS)
+    # `reload /hv/dashboard/`, not `navigate` and not `reload /hv/`. This fragment
+    # replaced the login sheet, so navigating away left an emptied login screen alive
+    # at index 0 of the stack, one iOS swipe-back from the dashboard. Reloading a
+    # SCREEN url repoints this route instead; reloading /hv/ would hand a navigator
+    # document to a screen route, which HvDoc cannot merge and so renders as a stack
+    # nested inside this route, one level deeper on every login (hv-doc.tsx:120-131).
+    transition = root.find("./hv:behavior[@action='reload']", NS)
     assert transition is not None
     assert transition.attrib == {
         "trigger": "load",
         "href": "/hv/dashboard/",
-        "action": "navigate",
+        "action": "reload",
     }
     assert accepted.status_code != 302
     assert client.session["_auth_user_id"] == str(user.pk)
@@ -175,7 +219,7 @@ def test_task_form_has_back_action_visible_categories_and_time_keypad(user):
     back = root.find(".//hv:view[@id='task-back']", NS)
     due_date = root.find(".//hv:date-field[@name='due_date']", NS)
     due_time = root.find(".//hv:text-field[@name='due_time']", NS)
-    category = root.find(".//hv:select-single[@name='category']", NS)
+    category = root.find(".//hv:picker-field[@name='category']", NS)
 
     assert back is not None
     assert back.attrib["action"] == "back"
@@ -195,7 +239,7 @@ def test_task_form_has_back_action_visible_categories_and_time_keypad(user):
     assert due_time.attrib["keyboard-type"] == "number-pad"
     assert due_time.attrib["mask"] == "99:99"
     assert category is not None
-    labels = [node.text for node in category.findall("./hv:option/hv:text", NS)]
+    labels = [node.attrib["label"] for node in category.findall("./hv:picker-item", NS)]
     assert labels == ["No category", "Work"]
 
 
@@ -283,7 +327,9 @@ def test_dashboard_hero_shows_initials_and_today_progress(user, monkeypatch):
     bucket = root.find(".//hv:style[@id='progress-5']", NS)
     assert bucket is not None
     assert bucket.attrib["width"] == "50%"
-    assert hero.find(".//hv:image", NS) is None
+    # The retired hero-icon stays retired, and so does the disclosure chevron: the
+    # avatar disc is the menu trigger on its own, so the hero ships no images at all.
+    assert [image.attrib["style"] for image in hero.findall(".//hv:image", NS)] == []
     assert root.find(".//hv:style[@id='hero-icon']", NS) is None
 
 
@@ -429,6 +475,10 @@ def test_dashboard_up_next_rows_open_edit_and_toggle_the_content_fragment(
     assert "See all" in "".join(see_all.itertext())
     assert row is not None
     assert row.attrib["href"] == f"/hv/tasks/{task.pk}/edit/"
+    # `navigate`, not `new`: the form's transition ends in action="back", which pops
+    # the focused route whatever its presentation (navigator.ts:33-77). `navigate`
+    # resolves to the dynamic `card` route, so the form slides in from the right and
+    # keeps the iOS swipe-back gesture that the modal presentation suppressed.
     assert row.attrib["action"] == "navigate"
     assert "Ship it" in "".join(row.itertext())
     assert "17:00 · Work" in "".join(row.itertext())
@@ -542,6 +592,10 @@ def test_dashboard_category_chips_filter_the_task_list(user, monkeypatch):
         f"/hv/tasks/?category={work.pk}",
     ]
     assert all(chip.attrib["action"] == "navigate" for chip in chips)
+    # Every chip is a live navigate target, so it owes the 44pt floor the identical
+    # chip on the tasks screen already meets. paddingVertical="9" around 13px text
+    # drew about 34pt.
+    assert int(root.find(".//hv:style[@id='chip']", NS).attrib["minHeight"]) >= 44
     assert "Admin · 0" in "".join(chips[0].itertext())
     assert "Work · 1" in "".join(chips[1].itertext())
     assert "mint" in chips[0].attrib["style"]
@@ -709,6 +763,45 @@ def test_category_form_has_back_navigation_and_selectable_color_options(user):
     assert submit.attrib["target"] == "category-form-panel"
 
 
+# test_the_menu_chevron_ships_in_the_colour_it_renders_in is gone with its subject:
+# the hero draws no chevron and chevron-down.png no longer ships, so there is no
+# artefact left to decode. What it protected -- that the side-menu trigger clears 3:1
+# against the hero band -- is now covered by test_settings.py's
+# test_the_dashboard_avatar_survives_its_own_press_state, which checks the disc
+# against the band AND the initials against the disc, at rest and pressed.
+
+
+def test_the_stat_icons_are_dark_enough_for_the_badge_they_sit_in(user, monkeypatch):
+    # stat-icon sets no tintColor either, so the export colour is the render
+    # colour. Both sides of this ratio come off the shipped artefacts: the glyph
+    # from the file, the fill from the screen's own stylesheet.
+    freeze_local(monkeypatch)
+    root = dashboard_root(user)
+    row = root.find(".//hv:view[@id='dashboard-stats']", NS)
+
+    for card in row.findall("./hv:view", NS):
+        badge = card.find("./hv:view", NS)
+        image = badge.find("./hv:image", NS)
+        tones = [name for name in badge.attrib["style"].split() if name != "stat-badge"]
+        assert len(tones) == 1, badge.attrib["style"]
+        fill = root.find(f".//hv:style[@id='{tones[0]}']", NS).attrib["backgroundColor"]
+        source = image.attrib["source"].rsplit("/", 1)[-1]
+        icon = read_png_icon(finders.find(f"todo/icons/{source}"))
+
+        assert contrast_ratio(icon.colour, fill) >= 3, (
+            f"{card.attrib['id']}: {icon.colour} on {fill}"
+        )
+
+
+# test_the_nav_icons_are_baked_in_the_colours_the_nav_labels_declare is gone with
+# its subject: home-active.png and its three twins were deleted when the glyphs
+# moved to tintColor, and a baked colour is no longer what renders. The tie it
+# made -- glyph colour equals the colour of the word under it -- is now made
+# style to style, in BOTH palettes, by
+# tests/test_theme_icons.py, test_the_nav_glyph_is_tinted_the_colour_the_nav_label
+# _declares, which reads the tint the style declares instead of the file's pixels.
+
+
 def test_task_toggle_from_the_dashboard_returns_the_content_fragment(user, monkeypatch):
     now = freeze_local(monkeypatch)
     task = Task.objects.create(user=user, title="Ship it", due_at=now.replace(hour=17))
@@ -740,7 +833,11 @@ def test_task_toggle_from_the_dashboard_returns_the_content_fragment(user, monke
     assert root.find(f".//hv:view[@id='dashboard-task-{task.pk}']", NS) is None
     assert "1 done · 1-day streak" in "".join(root.itertext())
 
-    defined = {style.attrib["id"] for style in screen.findall(".//hv:style", NS)}
+    # `.//hv:style` also matches a <style> nested in a <modifier>, which has no id
+    # and turns this guard into a KeyError instead of a style assertion.
+    defined = {
+        style.attrib["id"] for style in screen.findall("./hv:styles/hv:style", NS)
+    }
     used = {
         style_id
         for node in root.iter()
@@ -773,11 +870,13 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
             "csrfmiddlewaretoken": token,
         },
     )
+    # `back`, not `navigate`: this fragment replaced the whole form panel, so the form
+    # screen is empty and has to be popped rather than left in the stack behind a
+    # freshly pushed task list.
     created_root = assert_transition(
         created,
         "task-transition",
-        action="navigate",
-        href="/hv/tasks/",
+        action="back",
         status=201,
     )
     assert_snackbar(created_root, "Task created.")
@@ -796,9 +895,7 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
             "csrfmiddlewaretoken": edit_token,
         },
     )
-    updated_root = assert_transition(
-        updated, "task-transition", action="navigate", href="/hv/tasks/"
-    )
+    updated_root = assert_transition(updated, "task-transition", action="back")
     assert_snackbar(updated_root, "Task updated.")
     task.refresh_from_db()
     assert task.title == "Ship XML"
@@ -808,8 +905,9 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
         {"csrfmiddlewaretoken": edit_token},
     )
     toggled_root = assert_transition(
-        toggled, "task-list-transition", action="reload", href="/hv/tasks/"
+        toggled, "task-list-transition", action="dispatch-event"
     )
+    assert announced_event(toggled_root) == "tasks-changed"
     assert_snackbar(toggled_root, "Task completed.")
     task.refresh_from_db()
     assert task.completed_at is not None
@@ -819,7 +917,7 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
         {"csrfmiddlewaretoken": edit_token},
     )
     deleted_root = assert_transition(
-        deleted, "task-list-transition", action="reload", href="/hv/tasks/"
+        deleted, "task-list-transition", action="dispatch-event"
     )
     assert_snackbar(deleted_root, "Task deleted.")
     assert not Task.objects.filter(pk=task.pk).exists()
@@ -836,9 +934,11 @@ def test_invalid_task_form_returns_422_hxml(user):
     root = assert_hxml(response, status=422)
     assert root.tag == f"{{{NS['hv']}}}view"
     assert root.attrib["id"] == "task-form-panel"
-    summary = root.find(".//hv:text[@id='form-errors']", NS)
-    title_error = root.find(".//hv:text[@id='title-error']", NS)
-    due_time_error = root.find(".//hv:text[@id='due-time-error']", NS)
+    # Selected by style and document order: an id on a <text> becomes the Android
+    # accessible name (services/index.ts:161 then :81-84), so these error nodes
+    # carry none. Title is the first field on the form and due_time the last.
+    summary = root.find(".//hv:view[@style='error-card']/hv:text", NS)
+    title_error, due_time_error = root.findall(".//hv:text[@style='field-error']", NS)
     title = root.find(".//hv:text-field[@name='title']", NS)
     due_time = root.find(".//hv:text-field[@name='due_time']", NS)
 
@@ -881,7 +981,7 @@ def test_category_crud_and_cross_user_resources_are_hidden(user, other_user):
             "event-name": "categories-changed",
             "once": "true",
         },
-        {"trigger": "load", "action": "close", "delay": "350"},
+        {"trigger": "load", "action": "back"},
     ]
     category = Category.objects.get(user=user)
 
@@ -936,7 +1036,6 @@ def test_primary_screens_share_server_driven_navigation(user):
         content = root.find(".//hv:view[@id='screen-content']", NS)
         bottom = root.find(".//hv:view[@id='bottom-navigation']", NS)
         drawer_host = root.find(".//hv:view[@id='side-menu-host']", NS)
-        open_menu = root.find(".//hv:view[@id='open-side-menu']", NS)
 
         assert content is not None
         if route == reverse("todo:dashboard"):
@@ -945,17 +1044,11 @@ def test_primary_screens_share_server_driven_navigation(user):
             assert "scroll" not in content.attrib
             assert root.find(".//hv:list", NS) is not None
         assert bottom is not None
-        assert drawer_host is not None
-        assert len(drawer_host) == 0
-        assert open_menu is not None
-        active_nav = {
-            "nav-dashboard": "dashboard",
-            "nav-tasks": "tasks",
-            "nav-categories": "categories",
-        }[active_id]
-        assert open_menu.attrib["href"] == f"/hv/menu/?active={active_nav}"
-        assert open_menu.attrib["action"] == "replace"
-        assert open_menu.attrib["target"] == "side-menu-host"
+        # The side menu now opens from the dashboard hero avatar only, so only the
+        # dashboard still hosts it. tests/test_settings.py owns that trigger.
+        if route == reverse("todo:dashboard"):
+            assert drawer_host is not None
+            assert len(drawer_host) == 0
 
         destinations = {
             item.attrib["id"]: (item.attrib["href"], item.attrib["action"])
@@ -963,10 +1056,16 @@ def test_primary_screens_share_server_driven_navigation(user):
             if item.attrib["id"].startswith("nav-")
         }
         assert destinations == {
-            "nav-dashboard": ("/hv/dashboard/", "navigate"),
+            # A fragment href, not a url: getRouteId returns the fragment name
+            # (services/navigator/helpers.ts:211-218) so this dispatches
+            # navigate('root-route'), which StackRouter truncates the stack back to.
+            # `/hv/dashboard/` would collapse to the dynamic name `card`, never match
+            # the declared root route, and push a second dashboard behind Home.
+            "nav-dashboard": ("#root-route", "navigate"),
             "nav-tasks": ("/hv/tasks/", "navigate"),
-            "nav-add-task": ("/hv/tasks/new/", "new"),
+            "nav-add-task": ("/hv/tasks/new/", "navigate"),
             "nav-categories": ("/hv/categories/", "navigate"),
+            "nav-settings": ("/hv/settings/", "navigate"),
         }
         active = root.find(f".//hv:view[@id='{active_id}']", NS)
         assert active is not None
@@ -975,7 +1074,7 @@ def test_primary_screens_share_server_driven_navigation(user):
         active_icon = active.find("./hv:image", NS)
         active_label = active.find("./hv:text", NS)
         assert active_icon is not None
-        assert active_icon.attrib["source"].endswith("-active.png")
+        assert "nav-icon-active" in active_icon.attrib["style"].split()
         assert active_label is not None
         assert "nav-label-active" in active_label.attrib["style"]
 
@@ -1003,6 +1102,12 @@ def test_side_menu_is_loaded_and_closed_through_hxml_requests(user):
         "style": "side-menu",
         "close-href": "/hv/menu/close/",
         "animation-duration": "220",
+        # A percentage of the window, not points: supportsTablet is false and the
+        # orientation is locked portrait (app.config.ts:61,85), so the only variable
+        # is phone width, and the client's 286pt default is 89% of a 320pt screen but
+        # only 67% of a 430pt one. parsePanelWidth reads this
+        # (AnimatedSideMenu.tsx:30-35) and keeps 286 only when it is missing.
+        "panel-width": "80",
     }
     logout_action = opened.find(".//hv:view[@id='side-menu-logout']", NS)
     active_link = opened.find(".//hv:view[@href='/hv/tasks/']", NS)
@@ -1011,6 +1116,44 @@ def test_side_menu_is_loaded_and_closed_through_hxml_requests(user):
     assert logout_action.attrib["target"] == "logout-panel"
     assert active_link is not None
     assert "side-menu-link-active" in active_link.attrib["style"]
+
+    # Every destination carries its own glyph, and only the row you are standing on
+    # draws the active file. The icons are DECORATIVE: no alt, so Image leaves
+    # `accessible` unset on iOS and sets no contentDescription on Android
+    # (Image.ios.js:171,184, Image.android.js:262-263), and no id, which on Android
+    # would overwrite any label with the slug (services/index.ts:84,161). The row's
+    # own <text> is therefore the single announcement.
+    rows = [
+        view
+        for view in opened.iter(f"{{{NS['hv']}}}view")
+        if "side-menu-link" in (view.attrib.get("style") or "").split()
+    ]
+    assert len(rows) == 4
+    for row in rows:
+        images = row.findall("./hv:image", NS)
+        assert len(images) == 1, row.attrib["href"]
+        assert len(row.findall("./hv:text", NS)) == 1, row.attrib["href"]
+        assert not {"alt", "id"} & set(images[0].attrib), row.attrib["href"]
+        active = "side-menu-link-active" in row.attrib["style"].split()
+        assert (
+            "side-menu-icon-active" in images[0].attrib["style"].split()
+        ) is active, row.attrib["href"]
+
+    header = opened.find(".//hv:view[@style='side-menu-header']", NS)
+    assert header is not None
+    assert header.find(".//hv:text[@style='side-menu-name']", NS) is not None
+    assert header.find(".//hv:text[@style='side-menu-email']", NS) is not None
+
+    sign_out = opened.find(".//hv:view[@id='side-menu-logout']", NS)
+    sign_out_icon = sign_out.find("./hv:image", NS)
+    assert sign_out_icon is not None
+    assert sign_out_icon.attrib["source"].endswith("/logout.png")
+    # The footer chrome lives OUTSIDE the replace target, because
+    # fragments/logout_transition.xml answers with a bare unstyled <view
+    # id="logout-panel"> and would otherwise drop the divider mid-sign-out.
+    panel = opened.find(".//hv:view[@id='logout-panel']", NS)
+    assert "style" not in panel.attrib
+    assert opened.find(".//hv:view[@style='side-menu-footer']", NS) is not None
 
     closed = assert_hxml(client.get(reverse("todo:menu-close")))
     assert closed.attrib == {"id": "side-menu-host"}
@@ -1093,11 +1236,16 @@ def test_category_list_refreshes_after_mutation_and_paginates(user):
     assert category_list.attrib["trigger"] == "refresh"
     assert len(category_list.findall("./hv:item", NS)) == 20
     refresh = category_list.find("./hv:behavior[@trigger='refresh']", NS)
-    changed = category_list.find("./hv:behavior[@trigger='on-event']", NS)
+    # The listener lives on the screen, not on the <list>: HvList never sets
+    # supportsHyperRef (components/hv-element/utils.tsx:16), so an on-event behavior
+    # parked on it is never registered, and `replace target="category-list"` would
+    # destroy it along with the list it is meant to refresh.
+    changed = root.find(".//hv:behavior[@trigger='on-event']", NS)
     load_more = category_list.find(".//hv:behavior[@trigger='visible']", NS)
     assert refresh is not None
     assert refresh.attrib["action"] == "replace"
     assert refresh.attrib["target"] == "category-list"
+    assert category_list.find("./hv:behavior[@trigger='on-event']", NS) is None
     assert changed is not None
     assert changed.attrib["event-name"] == "categories-changed"
     assert changed.attrib["action"] == "replace"
@@ -1127,31 +1275,61 @@ def test_logout_is_post_only_csrf_protected_and_direct_hxml(user):
     token = token_from(client.get(reverse("todo:menu")))
     assert client.get(reverse("todo:logout")).status_code == 405
     response = client.post(reverse("todo:logout"), {"csrfmiddlewaretoken": token})
-    assert_transition(response, "logout-panel", action="reload", href="/hv/")
+    # A screen url, not /hv/: see the login transition above. Signing out has to
+    # replace this route's document, not nest a navigator inside it.
+    assert_transition(response, "logout-panel", action="reload", href="/hv/login/")
     assert "_auth_user_id" not in client.session
 
 
-def test_all_private_endpoints_return_direct_session_expired_hxml(user):
+def test_private_document_routes_send_an_expired_session_to_the_sign_in_screen(user):
+    # These are reached with reload/navigate/new/push, so the 401 goes through
+    # loadDocument and may — must — be a whole screen.
     task = Task.objects.create(user=user, title="Private")
     category = Category.objects.create(
         user=user, name="Private", color=Category.Color.PINK
     )
     routes = [
         reverse("todo:dashboard"),
-        reverse("todo:menu"),
-        reverse("todo:menu-close"),
         reverse("todo:tasks"),
         reverse("todo:task-new"),
         reverse("todo:task-edit", args=(task.pk,)),
-        reverse("todo:task-toggle", args=(task.pk,)),
-        reverse("todo:task-delete", args=(task.pk,)),
         reverse("todo:categories"),
         reverse("todo:category-new"),
         reverse("todo:category-edit", args=(category.pk,)),
-        reverse("todo:category-delete", args=(category.pk,)),
+        reverse("todo:settings"),
     ]
     for route in routes:
-        assert_hxml(Client().get(route), status=401)
+        root = assert_hxml(Client().get(route), status=401)
+        assert (
+            root.find(".//hv:screen[@id='session-expired-screen']", NS) is not None
+        ), f"{route} stopped routing an expired session to the sign-in screen"
+
+
+def test_private_fragment_routes_answer_an_expired_session_with_a_recoverable_fragment(
+    user,
+):
+    # These land inside a screen through loadElement, which rejects doc/screen/body,
+    # so the 401 owes a bare fragment that can still get the user out of the hole.
+    task = Task.objects.create(user=user, title="Private")
+    category = Category.objects.create(
+        user=user, name="Private", color=Category.Color.PINK
+    )
+    routes = [
+        reverse("todo:menu"),
+        reverse("todo:menu-close"),
+        reverse("todo:task-toggle", args=(task.pk,)),
+        reverse("todo:task-delete", args=(task.pk,)),
+        reverse("todo:category-delete", args=(category.pk,)),
+        f"{reverse('todo:tasks')}?status=all&fragment=list",
+        f"{reverse('todo:categories')}?fragment=list",
+    ]
+    for route in routes:
+        root = assert_hxml(Client().get(route), status=401)
+        for forbidden in ("doc", "navigator", "screen", "body"):
+            assert root.find(f".//hv:{forbidden}", NS) is None, f"{route}: {forbidden}"
+        assert root.find("./hv:behavior[@action='reload']", NS) is not None, (
+            f"{route} lost the only control that gets the user off a dead screen"
+        )
 
 
 def test_endpoints_reject_unsupported_methods_as_hxml(user):
@@ -1173,6 +1351,7 @@ def test_endpoints_reject_unsupported_methods_as_hxml(user):
         ("get", reverse("todo:task-delete", args=(task.pk,))),
         ("post", reverse("todo:categories")),
         ("put", reverse("todo:category-new")),
+        ("put", reverse("todo:settings")),
         ("put", reverse("todo:category-edit", args=(category.pk,))),
         ("get", reverse("todo:category-delete", args=(category.pk,))),
         ("post", reverse("todo:source-probe")),
@@ -1231,9 +1410,9 @@ def test_category_delete_succeeds_and_task_cross_user_is_hidden(user, other_user
     deleted_root = assert_transition(
         deleted,
         "category-list-transition",
-        action="reload",
-        href="/hv/categories/",
+        action="dispatch-event",
     )
+    assert announced_event(deleted_root) == "categories-changed"
     assert_snackbar(deleted_root, "Category deleted.")
     client.force_login(other_user)
     assert_hxml(client.get(reverse("todo:task-edit", args=(task.pk,))), status=404)
@@ -1247,3 +1426,442 @@ def test_user_content_is_xml_escaped(user):
     root = assert_hxml(response)
     titles = [node.text for node in root.findall(".//hv:text", NS)]
     assert 'Use <xml> & "quotes"' in titles
+
+
+def nav_behaviors(root):
+    """Return every navigation behavior a transition fragment will run."""
+    return [
+        behavior
+        for behavior in root.findall("./hv:behavior", NS)
+        if behavior.attrib.get("action")
+        in {"navigate", "new", "push", "reload", "close", "back"}
+    ]
+
+
+def test_a_successful_login_repoints_the_login_route_at_the_dashboard(user):
+    # The POST is a `replace target="login-panel"`, so its response empties the login
+    # screen. Navigating away from that emptied screen left it alive underneath the
+    # dashboard, and the iOS swipe-back gesture on a `card` route walked straight back
+    # onto the blank white sheet. Reloading swaps the login route's own document, and
+    # the href names the dashboard SCREEN: /hv/ answers with the root navigator
+    # document, which HvDoc cannot merge into a screen route and instead renders as a
+    # nested stack inside it (hv-doc.tsx:120-131), one level deeper on every login.
+    client = Client()
+
+    response = client.post(
+        reverse("todo:login"),
+        {"username": "ada", "password": "correct-horse"},
+        headers={"accept": f"application/xml, {FRAGMENT_MEDIA_TYPE}"},
+    )
+
+    root = assert_hxml(response)
+    navigation = nav_behaviors(root)
+    assert [behavior.attrib["action"] for behavior in navigation] == ["reload"]
+    assert navigation[0].attrib["href"] == "/hv/dashboard/"
+
+    # The route the reload repoints is still the only one the navigator declares, so
+    # the dashboard replaces the login screen rather than stacking on top of it.
+    routes = assert_hxml(client.get(reverse("todo:root"))).findall(
+        "./hv:navigator/hv:nav-route", NS
+    )
+    assert [route.attrib["id"] for route in routes] == ["root-route"]
+    assert routes[0].attrib["href"] == "/hv/dashboard/"
+
+
+def test_saving_a_task_pops_the_emptied_form_and_announces_the_change(user):
+    task = Task.objects.create(user=user, title="Water the plants")
+    client = Client()
+    client.force_login(user)
+
+    response = client.post(
+        reverse("todo:task-edit", args=[task.pk]),
+        {"title": "Water the ferns"},
+        headers={"accept": f"application/xml, {FRAGMENT_MEDIA_TYPE}"},
+    )
+
+    root = assert_hxml(response)
+    assert [behavior.attrib["action"] for behavior in nav_behaviors(root)] == ["back"]
+    announce = root.find("./hv:behavior[@action='dispatch-event']", NS)
+    assert announce is not None
+    assert announce.attrib["event-name"] == "tasks-changed"
+    assert announce.attrib["trigger"] == "load"
+
+
+def test_the_screens_behind_a_task_form_refresh_when_it_announces_a_change(user):
+    # `close` pops the form without touching the screen underneath, and HvDoc only
+    # refetches when its url changes (hv-doc.tsx:178-194). Without these listeners the
+    # user lands back on a list that still shows the old title.
+    client = Client()
+    client.force_login(user)
+
+    tasks = assert_hxml(client.get(reverse("todo:tasks")))
+    listener = tasks.find(".//hv:behavior[@event-name='tasks-changed']", NS)
+    assert listener is not None
+    assert listener.attrib["trigger"] == "on-event"
+    assert listener.attrib["action"] == "replace"
+    assert listener.attrib["target"] == "task-list"
+    assert tasks.find(".//hv:list/hv:behavior[@event-name='tasks-changed']", NS) is None
+
+    dashboard = assert_hxml(client.get(reverse("todo:dashboard")))
+    hook = dashboard.find(".//hv:behavior[@event-name='tasks-changed']", NS)
+    assert hook is not None
+    assert hook.attrib["trigger"] == "on-event"
+    assert hook.attrib["action"] == "reload"
+
+
+def test_a_swipe_toggle_refreshes_the_list_without_dropping_the_filter(user):
+    # The swipe row posts the toggle action as a `replace` of the row itself
+    # (mobile/src/components/SwipeRow.tsx:116-126), so the response is the only
+    # thing that can refresh anything. A `reload href="/hv/tasks/"` here re-requested
+    # the list with NO query string, and task_list defaults status to "all" with no
+    # category, so the filter the user was looking at vanished under them and the
+    # dashboard behind the stack was never refreshed at all.
+    task = Task.objects.create(user=user, title="Renew the domain")
+    client = Client()
+    client.force_login(user)
+
+    toggled = client.post(reverse("todo:task-toggle", args=(task.pk,)))
+
+    root = assert_transition(toggled, "task-list-transition", action="dispatch-event")
+    assert nav_behaviors(root) == [], (
+        "an href-bearing navigation here re-requests the list with no filter on it"
+    )
+    assert announced_event(root) == "tasks-changed"
+
+    # ...and the listener that hears it carries the filter the screen was showing.
+    filtered = assert_hxml(client.get(f"{reverse('todo:tasks')}?status=overdue"))
+    listener = filtered.find(".//hv:behavior[@event-name='tasks-changed']", NS)
+    assert "status=overdue" in listener.attrib["href"]
+
+
+def test_signing_in_or_out_makes_every_parked_screen_refetch(user):
+    # `reload` dispatches nothing to the navigator (hyperview.tsx:70-133): it swaps
+    # the CURRENT route's document and nothing else. Reached from session_expired
+    # inside a pushed route, the previous session's screens stay mounted below with
+    # their rendered documents, because HvDoc only refetches when its url changes
+    # (hv-doc.tsx:178-194) -- one iOS swipe-back from another account's data.
+    client = Client()
+    client.force_login(user)
+
+    for name in ("dashboard", "tasks", "categories", "settings"):
+        root = assert_hxml(client.get(reverse(f"todo:{name}")))
+        listener = root.find(".//hv:behavior[@event-name='session-changed']", NS)
+        assert listener is not None, f"{name} keeps the old session's data on screen"
+        assert listener.attrib["trigger"] == "on-event"
+        assert listener.attrib["action"] == "reload"
+        # href-less, so each screen re-requests its OWN url, filters included.
+        assert "href" not in listener.attrib
+
+    for label, response in (
+        ("logout", client.post(reverse("todo:logout"))),
+        (
+            "login",
+            Client().post(
+                reverse("todo:login"),
+                {"username": "ada", "password": "correct-horse"},
+                headers={"accept": f"application/xml, {FRAGMENT_MEDIA_TYPE}"},
+            ),
+        ),
+    ):
+        announce = assert_hxml(response).find(
+            "./hv:behavior[@action='dispatch-event']", NS
+        )
+        assert announce is not None, f"{label} leaves the parked screens stale"
+        assert announce.attrib["event-name"] == "session-changed"
+        assert announce.attrib["trigger"] == "load"
+
+
+@pytest.mark.parametrize(
+    ("email", "expected"),
+    [("ada@example.com", "ada@example.com"), ("", "@menu-user")],
+)
+def test_the_side_menu_identity_line_always_renders(email, expected):
+    # The line has to be unconditional or the header changes height between two
+    # accounts. `@username` is the fallback rather than a bare username, which would
+    # visually duplicate the name line whenever get_full_name is empty; it carries
+    # exactly what "Signed in as {{ username }}" carried before.
+    user = get_user_model().objects.create_user(username="menu-user", password="x")
+    user.email = email
+    user.save(update_fields=("email",))
+    client = Client()
+    client.force_login(user)
+
+    opened = assert_hxml(client.get(reverse("todo:menu")))
+
+    assert opened.find(".//hv:text[@style='side-menu-email']", NS).text == expected
+    name = opened.find(".//hv:text[@style='side-menu-name']", NS)
+    assert name.text == "menu-user"
+    for line in (name, opened.find(".//hv:text[@style='side-menu-email']", NS)):
+        assert line.attrib["numberOfLines"] == "1"
+        assert line.attrib["ellipsizeMode"] == "tail"
+
+
+# test_the_side_menu_glyphs_stay_visible_on_every_row_state is gone from HERE with
+# its subject: side-menu-icon declares a tintColor, which RCTImageView applies after
+# decoding, so the baked pixels this version read are dead data. Re-baking the
+# glyphs at #FFFFFF failed it while changing nothing on screen, and a tint drifting
+# to an invisible colour would have kept it green. The live version of the same
+# contract, reading the TINT and in both palettes, is
+# tests/test_theme_icons.py, test_the_side_menu_glyphs_stay_visible_on_every_row
+# _state.
+
+
+def test_the_side_menu_header_ink_clears_the_fill_it_is_drawn_on(user):
+    # This used to assert a hardcoded "#FFFFFF" against the header fill and never
+    # looked at side-menu-name, side-menu-email or side-menu-initials at all, so
+    # every colour it claimed to protect could be changed with the suite green.
+    # 16/700 and 13/400 are both normal text under WCAG, and 20/700 is only large
+    # because it is 20px, so the whole block is held to 4.5:1.
+    client = Client()
+    client.force_login(user)
+    screen = assert_hxml(client.get(reverse("todo:dashboard")))
+
+    def declared(style_id, attribute):
+        node = screen.find(f".//hv:styles/hv:style[@id='{style_id}']", NS)
+        assert node is not None, f"missing style {style_id}"
+        return node.attrib[attribute]
+
+    for ink_id, fill_id in (
+        ("side-menu-name", "side-menu-header"),
+        ("side-menu-email", "side-menu-header"),
+        ("side-menu-initials", "side-menu-avatar"),
+    ):
+        ink = declared(ink_id, "color")
+        fill = declared(fill_id, "backgroundColor")
+        assert int(declared(ink_id, "fontSize")) < 24
+        assert contrast_ratio(ink, fill) >= 4.5, f"{ink_id}: {ink} on {fill}"
+
+
+def test_every_side_menu_row_announces_itself_as_a_control(user):
+    # A <view> cannot carry a server-set role: HvView builds its props from an
+    # allowlist and never copies element attributes, and HyperRef's TouchableOpacity
+    # is accessible={false}, so the inner <text> is the node a screen reader lands
+    # on. Without a role it is announced as static text and neither VoiceOver nor
+    # TalkBack offers to activate it. `button`, not `link`: Android only sets
+    # isClickable for BUTTON (ReactAccessibilityDelegate.kt:654-665), and the
+    # dashboard trigger already proves the value works on both platforms.
+    client = Client()
+    client.force_login(user)
+
+    opened = assert_hxml(client.get(reverse("todo:menu")))
+
+    labels = [
+        node
+        for node in opened.iter(f"{{{NS['hv']}}}text")
+        if (node.attrib.get("style") or "")
+        in ("side-menu-link-text", "side-menu-logout-text")
+    ]
+    assert len(labels) == 5, [label.text for label in labels]
+    for label in labels:
+        assert label.attrib.get("accessibilityRole") == "button", label.text
+        # createProps spreads the id-derived test props LAST, so an id here would
+        # overwrite the announcement with a slug on Android.
+        assert "id" not in label.attrib, label.text
+
+
+@pytest.mark.parametrize(
+    ("announced", "supported"),
+    [
+        (None, False),  # no header at all
+        ("", False),
+        ("0.9.9", False),
+        ("1.0.0", False),
+        ("1.0.9", False),
+        ("1.1.0", True),
+        ("1.1", True),  # a two-part version is 1.1.0
+        ("1.1.0-rc1", True),  # built from the 1.1.0 source, so it has the component
+        ("2.0.3", True),
+        ("nightly", False),
+        ("x" * 64, False),  # longer than APP_VERSION_PATTERN allows, so "unknown"
+    ],
+)
+def test_the_swipe_action_capability_is_gated_on_the_announced_client_version(
+    rf, announced, supported
+):
+    # A backend deploy reaches EVERY installed binary at once -- there is no release
+    # ordering that protects a user who never updates, and dj-hyperview can publish
+    # templates straight from the database (tests/test_template_sources.py:31-36).
+    # Only the CATEGORY list still asks: the pre-1.1.0 component was task-shaped and
+    # drew a fixed Edit/Complete/Delete triad off three row attributes, so a category
+    # served through it shows a Complete button with no toggle-href behind it, and
+    # that component returned silently on a missing href -- a control that looks
+    # alive and does nothing. The task row needs no gate at all, because it carries
+    # both component generations' shapes at once (hyperview/partials/task_items.xml);
+    # the replacement component is mobile/src/components/SwipeRow.tsx.
+    headers = {} if announced is None else {"HTTP_X_APP_VERSION": announced}
+
+    assert _supports_swipe_actions(rf.get("/hv/tasks/", **headers)) is supported
+
+
+def test_the_shipped_client_version_can_actually_open_the_capability_gate():
+    # The gate is only as good as the version bump. Leave app.config.ts behind and
+    # _supports_swipe_actions answers False for every real client forever, so a
+    # successful deploy changes nothing at all -- the silent no-op the version
+    # header exists to prevent, one level up.
+    config = (Path(__file__).resolve().parents[2] / "mobile/app.config.ts").read_text()
+    declared = re.search(r'version:\s*"([0-9]+(?:\.[0-9]+)*)"', config)
+
+    assert declared is not None, "no version literal in mobile/app.config.ts"
+    shipped = tuple((list(map(int, declared.group(1).split("."))) + [0, 0, 0])[:3])
+    assert shipped >= MIN_SWIPE_ACTIONS_VERSION, (
+        f"the client announces {declared.group(1)}, below the "
+        f"{'.'.join(map(str, MIN_SWIPE_ACTIONS_VERSION))} the gate requires"
+    )
+
+
+@pytest.mark.parametrize("completed", [False, True])
+def test_a_task_row_declares_the_same_actions_the_component_used_to_hardcode(
+    user, completed
+):
+    # The Complete/Reopen split moves to the server, which already knows
+    # task.is_completed, so the client loses both ternaries. The `completed`
+    # attribute stays for the pre-1.1.0 shape asserted below; 1.1.0 and later never
+    # read it. No version header here on purpose: the row is now one document that
+    # both component generations drive, so its shape cannot depend on one.
+    task = Task.objects.create(user=user, title="Swipe me")
+    if completed:
+        task.completed_at = timezone.now()
+        task.save(update_fields=("completed_at",))
+    client = Client()
+    client.force_login(user)
+
+    root = assert_hxml(client.get(reverse("todo:tasks")))
+    row = root.find(".//app:swipe-row", NS)
+    actions = row.findall("./app:swipe-action", NS)
+
+    assert row.attrib["id"] == f"task-swipe-{task.pk}"
+    assert row.attrib["style"] == "swipe-row"
+    assert [action.attrib["label"] for action in actions] == [
+        "Edit",
+        "Reopen" if completed else "Complete",
+        "Delete",
+    ]
+    assert [action.attrib["href"] for action in actions] == [
+        f"/hv/tasks/{task.pk}/edit/",
+        f"/hv/tasks/{task.pk}/toggle/",
+        f"/hv/tasks/{task.pk}/delete/",
+    ]
+    assert [action.attrib["action"] for action in actions] == [
+        "navigate",
+        "replace",
+        "replace",
+    ]
+    assert [action.attrib["verb"] for action in actions] == ["get", "post", "post"]
+    assert actions[2].attrib["confirm-title"] == "Delete task?"
+    assert actions[2].attrib["confirm-body"] == "This action cannot be undone."
+    assert row.find("./hv:view[@style='task']", NS) is not None
+
+
+def test_a_task_row_carries_both_action_shapes_whatever_version_arrives(user):
+    # The row used to change shape on X-App-Version, and the unknown bucket served
+    # the pre-1.1.0 attributes. A 1.1.0 binary behind a proxy that strips the header
+    # therefore got a row it cannot drive: SwipeRow reads app:swipe-action CHILDREN
+    # (mobile/src/components/SwipeRow.tsx:52-88), finds none, and renders content
+    # with an empty action tray. Both shapes ride together now, because each
+    # generation ignores the other's -- an unregistered element renders as nothing
+    # (hyperview/src/services/render/index.tsx:71-85) and an attribute nobody reads
+    # is inert -- so no header can produce a row with dead controls.
+    task = Task.objects.create(user=user, title="Swipe me")
+    rendered = {}
+    for announced in (None, "1.0.0", "1.1.0", "nonsense"):
+        client = Client(
+            **({} if announced is None else {"headers": {"x-app-version": announced}})
+        )
+        client.force_login(user)
+        listed = assert_hxml(client.get(reverse("todo:tasks")))
+        row = listed.find(".//app:swipe-row", NS)
+        rendered[announced] = ElementTree.tostring(row, encoding="unicode")
+
+    assert len(set(rendered.values())) == 1, (
+        "the task row still changes shape with the announced version"
+    )
+    row = ElementTree.fromstring(rendered[None])
+    assert row.attrib["edit-href"] == f"/hv/tasks/{task.pk}/edit/"
+    assert row.attrib["toggle-href"] == f"/hv/tasks/{task.pk}/toggle/"
+    assert row.attrib["delete-href"] == f"/hv/tasks/{task.pk}/delete/"
+    assert row.attrib["completed"] == "false"
+    assert len(row.findall("./app:swipe-action", NS)) == 3
+
+
+@pytest.mark.parametrize(
+    ("route", "varies"),
+    [
+        # category_items.xml still picks its markup off the header, so a shared cache
+        # that keys only on the url can hand one generation the other's body.
+        ("todo:categories", True),
+        # settings.xml prints the announced version into the document.
+        ("todo:settings", True),
+        # The task row carries both shapes, so its body is version-independent and
+        # owes no cache split. Delete this row the day it branches again.
+        ("todo:tasks", False),
+    ],
+)
+def test_bodies_that_move_with_the_client_version_declare_it_in_vary(
+    client, user, route, varies
+):
+    client.force_login(user)
+
+    response = client.get(reverse(route), headers={"x-app-version": "1.1.0"})
+
+    announced = {
+        field.strip().lower() for field in response.headers.get("Vary", "").split(",")
+    }
+    assert ("x-app-version" in announced) is varies, response.headers.get("Vary")
+
+
+# The native shell paints four surfaces the server can never reach: both safe-area
+# insets, the splash overlay and the two full-screen failure states. Without a
+# channel it hardcodes light, so a dark screen sits on a #F7F8FC strip. One
+# response header is the whole channel; the client half is mobile/src/theme.ts.
+@pytest.mark.parametrize(
+    ("fixture", "expected"), [("light_user", "light"), ("dark_user", "dark")]
+)
+def test_every_response_names_the_palette_it_was_painted_with(
+    client, request, fixture, expected
+):
+    client.force_login(request.getfixturevalue(fixture))
+
+    response = client.get(reverse("todo:dashboard"))
+
+    assert response.headers[THEME_HEADER] == expected
+
+
+@pytest.mark.parametrize(
+    ("cookie", "expected"),
+    [
+        # The signed-out screens have no profile to read, so the cookie the
+        # preference write leaves behind is their only channel -- the same
+        # fallback todo/context_processors.py already implements for the body.
+        ("dark", "dark"),
+        ("chartreuse", "light"),
+        ("", "light"),
+    ],
+)
+def test_the_signed_out_screens_answer_from_the_cookie_like_their_bodies_do(
+    cookie, expected
+):
+    client = Client()
+    if cookie:
+        client.cookies[THEME_COOKIE] = cookie
+
+    response = client.get(reverse("todo:login"))
+
+    assert response.headers[THEME_HEADER] == expected
+
+
+def test_the_header_can_never_disagree_with_the_stylesheet_it_shipped_with(
+    client, dark_user
+):
+    # Django renders a TemplateResponse inside BaseHandler._get_response, i.e.
+    # before the response unwinds back through the middleware chain. Asserting the
+    # header against the body PINS that ordering instead of assuming it: a header
+    # resolved from a different profile read than the context processor used would
+    # hand the shell a palette the document does not actually use.
+    client.force_login(dark_user)
+
+    response = client.get(reverse("todo:dashboard"))
+
+    painted = theme_tokens.THEMES[response.headers[THEME_HEADER]]
+    root = ElementTree.fromstring(response.content)
+    navigation = style_by_id(root, "bottom-navigation")
+    assert navigation.attrib["backgroundColor"] == painted["canvas"]

@@ -1,13 +1,22 @@
-{% for task in tasks %}
+{% load i18n %}{% for task in tasks %}
 <item key="task-{{ task.id }}">
   <form>
     {% load dj_hyperview %}{% hv_csrf_token %}
+    <!-- Both action shapes at once, so no client version has to be guessed. A binary
+         older than 1.1.0 reads the four attributes on this tag and skips the
+         unregistered app:swipe-action children entirely, which cost an info log and
+         nothing else (services/render/index.tsx:71-85). 1.1.0 and later read the
+         children and never look the attributes up. Neither can see the other's
+         shape, so a proxy that strips X-App-Version cannot produce a dead row. -->
     <app:swipe-row xmlns:app="https://hypertodo.app/components" id="task-swipe-{{ task.id }}" style="swipe-row" edit-href="/hv/tasks/{{ task.id }}/edit/" toggle-href="/hv/tasks/{{ task.id }}/toggle/" delete-href="/hv/tasks/{{ task.id }}/delete/" completed="{% if task.is_completed %}true{% else %}false{% endif %}">
       <view style="task">
         <text style="task-title" ellipsizeMode="tail" numberOfLines="1">{% if task.is_completed %}✓ {% endif %}{{ task.title }}</text>
         {% if task.category %}<text style="meta">{{ task.category.name }}</text>{% endif %}
-        {% if task.due_at %}<text style="meta">Due {{ task.due_at|date:'M j · H:i' }}</text>{% endif %}
+        {% if task.due_at %}<text style="meta">{% blocktranslate with due=task.due_at|date:'M j · H:i' %}Due {{ due }}{% endblocktranslate %}</text>{% endif %}
       </view>
+      <app:swipe-action href="/hv/tasks/{{ task.id }}/edit/" action="navigate" verb="get" label="{% translate "Edit" %}" a11y-label="{% translate "Edit task" %}" tone="primary" />
+      <app:swipe-action href="/hv/tasks/{{ task.id }}/toggle/" action="replace" verb="post" label="{% if task.is_completed %}{% translate "Reopen" %}{% else %}{% translate "Complete" %}{% endif %}" a11y-label="{% if task.is_completed %}{% translate "Reopen task" %}{% else %}{% translate "Complete task" %}{% endif %}" tone="positive" />
+      <app:swipe-action href="/hv/tasks/{{ task.id }}/delete/" action="replace" verb="post" label="{% translate "Delete" %}" a11y-label="{% translate "Delete task" %}" tone="danger" confirm-title="{% translate "Delete task?" %}" confirm-body="{% translate "This action cannot be undone." %}" confirm-label="{% translate "Delete" %}" />
     </app:swipe-row>
   </form>
   {% if forloop.last and page_obj.has_next %}
@@ -15,5 +24,5 @@
   {% endif %}
 </item>
 {% empty %}
-{% if page_obj.number == 1 %}<item key="task-empty" style="empty-item"><text style="meta">No tasks match these filters.</text></item>{% endif %}
+{% if page_obj.number == 1 %}<item key="task-empty" style="empty-item"><view style="empty-card"><text style="empty-title">{% translate "Nothing here yet" %}</text><text style="empty-copy">{% translate "No tasks match these filters." %}</text></view></item>{% endif %}
 {% endfor %}

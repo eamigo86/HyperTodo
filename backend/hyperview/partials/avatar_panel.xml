@@ -1,0 +1,63 @@
+{% load i18n %}<view xmlns="https://hyperview.org/hyperview" id="avatar-panel">
+  <!-- No <form>, no href and no id that anything replaces. The photo is a FIELD
+       of settings-form now: the pick writes base64 into the hidden text-field
+       beside this row and the Save button posts it with the name, the email and
+       the biometric switch, in one request that either commits all four or
+       commits none. It used to own an endpoint, a form and a 422 of its own,
+       which is how a user could mistype an email, pick a photo, tap Save, and
+       get the photo stored and the email refused with nothing on screen saying
+       which half had happened.
+       ONE row for both client states, so the card never changes shape between a
+       client that can pick and one that cannot. The disc composes a second style
+       id to drop its own marginBottom rather than editing avatar-disc, because
+       that margin is pinned in the light golden and dropping a pinned attribute
+       fails there; adding an id is allowed. -->
+  <view style="avatar-row">
+  <!-- The wrapper, not the disc, carries the id the behavior hides: HvView copies
+       NO server attribute, so this element announces nothing at all and rule 6 is
+       satisfied by construction. Hiding it is a render-level skip
+       (services/render/index.tsx:34-40), so the stored disc is gone from the tree
+       rather than merely covered. -->
+  <view id="avatar-current"{% if pending_avatar %} hide="true"{% endif %}>{% if request.user.profile.avatar %}<image style="avatar-disc avatar-disc-row" source="{{ request.user.profile.avatar.url }}" alt="{% translate "Your profile photo" %}" />{% else %}<view style="avatar-disc avatar-disc-row"><text style="avatar-initials"{% if not avatar_upload_supported %} accessibilityLabel="{% translate "Your initials. Update HyperTodo to change your photo." %}"{% endif %}>{{ initials }}</text></view>{% endif %}</view>
+  <!-- The instant preview. NO `source` attribute at all while it is idle, and
+       never source="": HvImage only builds imageProps.source from a TRUTHY
+       attribute (hv-image/index.tsx:17-21), but createProps copies every
+       attribute verbatim (:23), so an empty one reaches React Native as the empty
+       STRING rather than as absent. `hide` is what keeps it off the screen.
+       An id and NO alt, deliberately. React Native only makes an Image an
+       accessibility node when alt is present (Image.android.js:272-276), so the
+       id-derived accessibilityLabel is never focusable and TalkBack never speaks
+       the slug; the saved-photo image above keeps its alt and carries no id. -->
+  <image id="avatar-preview" hide="{% if pending_avatar %}false{% else %}true{% endif %}"{% if pending_avatar %} source="data:{{ pending_avatar_mime }};base64,{{ pending_avatar }}"{% endif %} style="avatar-disc avatar-disc-row" />
+  {% if avatar_upload_supported %}<!-- The role rides the <text>, and the box carries no id: HvView copies no
+       server attribute and HyperRef's TouchableOpacity is accessible={false}, so
+       this <text> is the only announceable node in the control, and without
+       accessibilityRole it reads as static text. An id here would put
+       accessibilityLabel="avatar-pick" on that TouchableOpacity on Android
+       (services/index.ts:81-84 through hyper-ref.tsx:299) and TalkBack would
+       focus the wrapper and read the slug. PickAvatarBehavior never reads this
+       element's own id, only its three targets. -->
+  <view style="avatar-action">
+    <!-- Three writes, one updateRoot. `target` takes the base64, `preview-target`
+         shows it, `current-target` hides the stored disc. All three survive one
+         shallowCloneToRoot because shallowClone MOVES the existing children into
+         the clone by reference (services/index.ts:179-188) and only the ancestors
+         on one path are replaced. "Choose photo" and not "Upload": it opens the
+         library and writes nothing until Save. -->
+    <behavior trigger="press" action="pick-avatar" target="avatar-data" preview-target="avatar-preview" current-target="avatar-current" />
+    <text style="avatar-action-text" accessibilityRole="button">{% translate "Choose photo" %}</text>
+  </view>{% else %}<!-- The same box, drawn as a DISABLED control: no href and no behavior at
+       all, so HyperRef never wraps it and it is genuinely not pressable rather
+       than pressable and dead. Its fill and border are deliberately faint,
+       because that faintness IS the disabled affordance and WCAG exempts an
+       inactive component; the TEXT still clears AA, because the instruction is
+       the whole point. -->
+  <view style="avatar-gate"><text style="avatar-gate-text">{% translate "Update the app" %}</text></view>{% endif %}
+  </view>
+  {% if not avatar_upload_supported %}<text style="avatar-gate-note">{% translate "Update HyperTodo to change your photo." %}</text>{% endif %}
+  <!-- No id, for the reason the preview above carries one and no alt, one step
+       further: createProps spreads createTestProps LAST (services/index.ts:161),
+       so an id here would BECOME the Android accessible name (:81-84) and
+       TalkBack would say "avatar-error" instead of why the photo was refused. -->
+  {% if avatar_error %}<text style="field-error">{{ avatar_error }}</text>{% endif %}
+</view>

@@ -1,18 +1,49 @@
-{% load dj_hyperview %}<view xmlns="https://hyperview.org/hyperview" id="login-panel">
+{% load dj_hyperview i18n static %}<view xmlns="https://hyperview.org/hyperview" id="login-panel">
+  {% if biometric == 'reset' %}<behavior trigger="load" action="store-biometric-token" token="" once="true" immediate="true" />{% endif %}<behavior trigger="load" action="probe-biometrics" once="true" available-target="biometric-optin" token-target="biometric-signin" />
   <form id="login-form">
     <view style="card">
-      <text style="card-title">Welcome back</text>
-      <text style="card-copy">Sign in to see your tasks and categories.</text>
-      {% if form.errors %}<view id="login-error" style="error-card"><text id="form-errors" style="error-text">Invalid username or password. Please try again.</text></view>{% endif %}
-      <text style="label">Username</text>
-      <text-field id="username" name="username" value="{{ form.username.value|default:'' }}" placeholder="Enter your username" text-content-type="username" style="field" />
-      <text style="label">Password</text>
-      <text-field id="password" name="password" placeholder="Enter your password" secure-text="true" text-content-type="password" href="/hv/login/" verb="post" action="replace" target="login-panel" trigger="submit" style="field" />
+      <text style="card-title">{% translate "Welcome back" %}</text>
+      <text style="card-copy">{% translate "Sign in to see your tasks and categories." %}</text>
+      {% if biometric_error %}<view id="biometric-error" style="error-card"><text style="error-text">{{ biometric_error }}</text></view>{% endif %}
+      <!-- The ids live on the WRAPPING views: HvView copies no server attribute,
+           while createProps spreads createTestProps LAST onto a <text>
+           (services/index.ts:161 then :81-84) and TalkBack would read the slug
+           instead of the error. -->
+      {% if form.errors %}<view id="login-error" style="error-card"><text style="error-text">{{ form.non_field_errors.0|default:_("Enter your username and password.") }}</text></view>{% endif %}
+      <text style="label">{% translate "Username" %}</text>
+      <text-field id="username" name="username" value="{{ form.username.value|default:'' }}" placeholder="{% translate "Enter your username" %}" placeholderTextColor="{{ theme.ink_muted }}" text-content-type="username" style="field" />
+      <text style="label">{% translate "Password" %}</text>
+      <text-field id="password" name="password" placeholder="{% translate "Enter your password" %}" placeholderTextColor="{{ theme.ink_muted }}" secure-text="true" text-content-type="password" href="/hv/login/" verb="post" action="replace" target="login-panel" trigger="submit" style="field" />
+      <view id="biometric-optin" hide="true" style="optin-row">
+        <text style="optin-label">{% translate "Unlock with biometrics next time" %}</text>
+        <!-- The id IS the accessible name here, ugly as that reads. HvSwitch builds
+             its props from createTestProps alone (hv-switch/index.tsx:57), never
+             createProps, so an alt/accessibilityLabel attribute is dropped and the
+             id is the only channel: createTestPropsFromId hands Android
+             accessibilityLabel=@id (services/index.ts:76-84). The label beside it is
+             a sibling and is never associated. Nothing looks this element up by id:
+             ProbeBiometricsBehavior reveals the ROW, biometric-optin. -->
+        <switch id="{% translate "Unlock with biometrics next time" %}" name="enable_biometrics" value="{{ optin_default|default:'off' }}" style="optin-switch" />
+      </view>
       {% hv_csrf_token %}
       <view id="login-submit" style="button" href="/hv/login/" verb="post" action="replace" target="login-panel">
-        <text style="button-text">Sign in</text>
+        <text style="button-text">{% translate "Sign in" %}</text>
       </view>
-      <text style="hint">Your tasks stay private to your account.</text>
     </view>
   </form>
+  <form id="biometric-form">
+    {% hv_csrf_token %}
+    <text-field hide="true" id="biometric-token" name="biometric_token" value="" />
+    <view id="biometric-signin" hide="true" style="biometric-button">
+      <behavior trigger="press" action="biometric-unlock" target="biometric-token" event-name="biometric-authenticated" prompt="{% translate "Sign in to HyperTodo" %}" />
+      <behavior trigger="on-event" event-name="biometric-authenticated" href="/hv/biometric/login/" verb="post" action="replace" target="login-panel" />
+      <!-- Both variants ship hidden and WITHOUT an id: probe-biometrics picks one by
+           reading @variant. An id would be copied over the alt-derived accessibility
+           label on Android (hyperview services/index.ts:161 and :84 beat
+           react-native Image.android.js:260-263), so TalkBack would read the slug. -->
+      <image hide="true" variant="face" style="biometric-icon" source="{% static 'todo/icons/face-id.png' %}" alt="{% translate "Sign in with face recognition" %}" />
+      <image hide="true" variant="fingerprint" style="biometric-icon" source="{% static 'todo/icons/fingerprint.png' %}" alt="{% translate "Sign in with your fingerprint" %}" />
+    </view>
+  </form>
+  <text style="hint">{% translate "Your tasks stay private to your account." %}</text>
 </view>

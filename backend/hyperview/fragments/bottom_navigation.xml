@@ -1,21 +1,21 @@
-{% load static %}<view xmlns="https://hyperview.org/hyperview" id="bottom-navigation" style="bottom-navigation">
-  <view id="nav-dashboard" href-style="nav-hit-area" style="nav-item{% if active_nav == 'dashboard' %} nav-active{% endif %}" href="/hv/dashboard/" action="navigate">
-    {% if active_nav == 'dashboard' %}<image style="nav-icon" source="{% static 'todo/icons/home-active.png' %}" />{% else %}<image style="nav-icon" source="{% static 'todo/icons/home.png' %}" />{% endif %}
-    <text style="nav-label{% if active_nav == 'dashboard' %} nav-label-active{% endif %}">Home</text>
+{% load i18n static %}<view xmlns="https://hyperview.org/hyperview" id="bottom-navigation" style="bottom-navigation">
+  <view id="nav-dashboard" href-style="nav-hit-area" style="nav-item{% if active_nav == 'dashboard' %} nav-active{% endif %}" href="#root-route" action="navigate">
+    <image style="nav-icon{% if active_nav == 'dashboard' %} nav-icon-active{% endif %}" source="{% static 'todo/icons/home.png' %}" />
+    <text style="nav-label{% if active_nav == 'dashboard' %} nav-label-active{% endif %}">{% translate "Home" %}</text>
   </view>
   <view id="nav-tasks" href-style="nav-hit-area" style="nav-item{% if active_nav == 'tasks' %} nav-active{% endif %}" href="/hv/tasks/" action="navigate">
-    {% if active_nav == 'tasks' %}<image style="nav-icon" source="{% static 'todo/icons/tasks-active.png' %}" />{% else %}<image style="nav-icon" source="{% static 'todo/icons/tasks.png' %}" />{% endif %}
-    <text style="nav-label{% if active_nav == 'tasks' %} nav-label-active{% endif %}">Tasks</text>
+    <image style="nav-icon{% if active_nav == 'tasks' %} nav-icon-active{% endif %}" source="{% static 'todo/icons/tasks.png' %}" />
+    <text style="nav-label{% if active_nav == 'tasks' %} nav-label-active{% endif %}">{% translate "Tasks" %}</text>
   </view>
-  <view id="nav-add-task" href-style="nav-hit-area" style="nav-add" href="/hv/tasks/new/" action="new">
+  <view id="nav-add-task" href-style="nav-hit-area" style="nav-add" href="/hv/tasks/new/" action="navigate">
     <text style="nav-add-symbol">+</text>
   </view>
   <view id="nav-categories" href-style="nav-hit-area" style="nav-item{% if active_nav == 'categories' %} nav-active{% endif %}" href="/hv/categories/" action="navigate">
-    {% if active_nav == 'categories' %}<image style="nav-icon" source="{% static 'todo/icons/categories-active.png' %}" />{% else %}<image style="nav-icon" source="{% static 'todo/icons/categories.png' %}" />{% endif %}
-    <text style="nav-label{% if active_nav == 'categories' %} nav-label-active{% endif %}">Categories</text>
+    <image style="nav-icon{% if active_nav == 'categories' %} nav-icon-active{% endif %}" source="{% static 'todo/icons/categories.png' %}" />
+    <text style="nav-label{% if active_nav == 'categories' %} nav-label-active{% endif %}">{% translate "Categories" %}</text>
   </view>
-  <view id="open-side-menu" href-style="nav-hit-area" style="nav-item" href="/hv/menu/?active={{ active_nav }}" action="replace" target="side-menu-host">
-    <image style="nav-icon" source="{% static 'todo/icons/menu.png' %}" />
-    <text style="nav-label">Menu</text>
+  <view id="nav-settings" href-style="nav-hit-area" style="nav-item{% if active_nav == 'settings' %} nav-active{% endif %}" href="/hv/settings/" action="navigate">
+    <image style="nav-icon{% if active_nav == 'settings' %} nav-icon-active{% endif %}" source="{% static 'todo/icons/settings.png' %}" />
+    <text style="nav-label{% if active_nav == 'settings' %} nav-label-active{% endif %}">{% translate "Settings" %}</text>
   </view>
 </view>

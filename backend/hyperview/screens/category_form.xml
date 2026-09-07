@@ -1,39 +1,52 @@
 {% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
-    <style id="screen" backgroundColor="#F7F8FC" flex="1" />
-    <style id="screen-content" flex="1" padding="24" />
-    <style id="screen-header" alignItems="center" backgroundColor="#278CFF" flexDirection="row" height="44" paddingHorizontal="8" />
+    <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
+    <style id="screen-content" flex="1" />
+    <style id="screen-content-inner" paddingBottom="40" paddingHorizontal="24" paddingTop="20" />
+    <style id="screen-header" alignItems="center" backgroundColor="{{ theme.brand }}" flexDirection="row" height="44" paddingHorizontal="8" />
     <style id="back-button" alignItems="center" flexDirection="row" height="44" width="84" />
-    <style id="back-chevron" color="#FFFFFF" fontSize="34" lineHeight="36" marginRight="2" />
-    <style id="back-label" color="#FFFFFF" fontSize="19" fontWeight="700" />
+    <style id="back-chevron" color="{{ theme.on_brand }}" fontSize="34" lineHeight="36" marginRight="2" />
+    <style id="back-label" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
     <style id="screen-header-title-slot" alignItems="center" flex="1" justifyContent="center" />
     <style id="screen-header-spacer" width="84" />
-    <style id="screen-header-title" color="#FFFFFF" fontSize="19" fontWeight="700" />
-    <style id="card" backgroundColor="#FFFFFF" borderRadius="28" padding="20" />
-    <style id="label" color="#4C526B" fontSize="13" fontWeight="600" marginTop="12" marginBottom="6" />
-    <style id="field" backgroundColor="#F1F4FC" borderRadius="16" padding="13" />
-    <style id="color-select" backgroundColor="#F7F8FC" borderRadius="18" padding="8" />
-    <style id="color-option" alignItems="center" borderRadius="14" flexDirection="row" marginBottom="4" padding="11">
-      <modifier selected="true"><style backgroundColor="#E7EEFF" /></modifier>
+    <style id="screen-header-title" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
+    <style id="card" backgroundColor="{{ theme.surface }}" borderRadius="24" marginBottom="16" padding="20" />
+    <style id="section" color="{{ theme.ink }}" fontSize="18" fontWeight="700" marginBottom="12" />
+    <style id="label" color="{{ theme.ink_label }}" fontSize="13" fontWeight="600" marginTop="12" marginBottom="6" />
+    <style id="field" backgroundColor="{{ theme.field }}" borderColor="{{ theme.field_border }}" borderRadius="16" borderWidth="1" color="{{ theme.ink }}" fontSize="16" minHeight="48" padding="13">
+      <modifier pressed="true"><style backgroundColor="{{ theme.field_pressed }}" /></modifier>
+      <modifier focused="true"><style borderColor="{{ theme.brand_ink }}" /></modifier>
     </style>
-    <style id="color-option-text" color="#4C526B" fontSize="15" fontWeight="600">
-      <modifier selected="true"><style color="#1F6FD1" /></modifier>
+    <style id="field-invalid" backgroundColor="{{ theme.danger_field }}" borderColor="{{ theme.danger_border }}" borderWidth="1" />
+    <style id="color-select" flexDirection="row" flexWrap="wrap" />
+    <style id="color-option" alignItems="center" backgroundColor="{{ theme.surface }}" borderColor="{{ theme.field_border }}" borderRadius="14" borderWidth="1" flexDirection="row" justifyContent="center" marginBottom="8" marginRight="8" minHeight="44" paddingHorizontal="12" paddingVertical="8">
+      <modifier selected="true"><style backgroundColor="{{ theme.select_fill }}" borderColor="{{ theme.brand_ink }}" /></modifier>
+      <modifier pressed="true"><style backgroundColor="{{ theme.field }}" /></modifier>
     </style>
-    <style id="color-swatch" borderColor="#FFFFFF" borderRadius="10" borderWidth="2" height="20" marginRight="10" width="20" />
-    <style id="lavender" backgroundColor="#AEBBFA" />
-    <style id="yellow" backgroundColor="#FFF27B" />
-    <style id="mint" backgroundColor="#C9F0E7" />
-    <style id="pink" backgroundColor="#F6B5E8" />
-    <style id="green" backgroundColor="#3B9B70" />
-    <style id="button" backgroundColor="#278CFF" borderRadius="18" padding="16" marginTop="22" />
-    <style id="button-text" color="#FFFFFF" fontWeight="700" textAlign="center" />
-    <style id="error" color="#B42318" marginBottom="10" />
+    <style id="color-option-text" color="{{ theme.ink_label }}" fontSize="15" fontWeight="600">
+      <modifier selected="true"><style color="{{ theme.select_ink }}" fontWeight="700" /></modifier>
+    </style>
+    <style id="color-swatch" borderColor="{{ theme.border_strong }}" borderRadius="9" borderWidth="1" height="18" marginRight="8" width="18" />
+    <style id="lavender" backgroundColor="{{ theme.cat_lavender }}" />
+    <style id="yellow" backgroundColor="{{ theme.cat_yellow }}" />
+    <style id="mint" backgroundColor="{{ theme.cat_mint }}" />
+    <style id="pink" backgroundColor="{{ theme.cat_pink }}" />
+    <style id="green" backgroundColor="{{ theme.cat_green }}" />
+    <style id="button" alignItems="center" backgroundColor="{{ theme.brand }}" borderRadius="18" justifyContent="center" marginTop="8" minHeight="56">
+      <modifier pressed="true"><style backgroundColor="{{ theme.brand_pressed }}" /></modifier>
+    </style>
+    <style id="button-text" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" textAlign="center">
+      <modifier pressed="true"><style color="{{ theme.on_brand }}" /></modifier>
+    </style>
+    <style id="error-card" backgroundColor="{{ theme.danger_surface }}" borderColor="{{ theme.danger_surface_border }}" borderRadius="12" borderWidth="1" marginBottom="16" padding="12" />
+    <style id="error-text" color="{{ theme.danger }}" fontSize="14" fontWeight="600" lineHeight="20" />
+    <style id="field-error" color="{{ theme.danger }}" fontSize="13" marginTop="6" />
   </styles>
   <screen id="category-form-screen">
     <body style="screen">
       {% include "partials/screen_header.xml" with header_title=header_title back_id="category-back" %}
-      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false">
+      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false" content-container-style="screen-content-inner" keyboard-dismiss-mode="on-drag">
         {% include "fragments/category_form_panel.xml" %}
       </view>
     </body>

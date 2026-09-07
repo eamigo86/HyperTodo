@@ -1,5 +1,8 @@
 <view xmlns="https://hyperview.org/hyperview" id="category-transition">
   <behavior trigger="load" action="show-snackbar" message="{{ notice_message }}" tone="success" once="true" />
+  <!-- See task_transition.xml for the reasoning: `back` pops the screen this
+       fragment just emptied, and carries no delay because the blank panel is
+       already committed by the time a timer would fire. -->
   <behavior trigger="load" action="dispatch-event" event-name="categories-changed" once="true" />
-  <behavior trigger="load" action="close" delay="350" />
+  <behavior trigger="load" action="back" />
 </view>

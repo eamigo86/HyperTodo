@@ -1,0 +1,49 @@
+{% load dj_hyperview i18n %}<view xmlns="https://hyperview.org/hyperview" id="settings-form-panel">
+  {% if form.errors or avatar_error %}<behavior trigger="load" action="show-snackbar" message="{% translate "Please review the highlighted profile details." %}" tone="error" once="true" />{% endif %}
+  <form id="settings-form">
+    <!-- No id on an error <text>. HvText builds its props with createProps
+         (elements/hv-text/index.tsx:15) and createProps spreads createTestProps
+         LAST (services/index.ts:161), so on every non-iOS platform the id lands
+         as accessibilityLabel (:81-84) and TalkBack reads the SLUG instead of the
+         sentence saying why the save was refused. Tests select these by style. -->
+    {% if form.errors %}<view style="error-card"><text style="error-text">{% translate "Review the fields marked in red." %}</text></view>{% endif %}
+    <view style="card">
+      <text style="section">{% translate "Photo" %}</text>
+      {% include "partials/avatar_panel.xml" %}
+      {% if avatar_upload_supported %}<!-- Rule 12: a hidden text-field DOES serialise. getFormData walks the DOM,
+           not the render tree, and getNameValueFormInputValues reads the value
+           ATTRIBUTE (services/index.ts:292-300), which is the same transport the
+           CSRF token already uses. It sits inside settings-form so the ONE Save
+           posts it with everything else.
+           The caption is the only honest mitigation for the one loss this design
+           cannot prevent: picking and navigating away drops the pick, and
+           Hyperview has no unsaved-changes hook to warn at the moment it
+           happens. It is server-rendered and translated, so it costs no client
+           string. -->
+      <text-field hide="true" id="avatar-data" name="avatar_data" value="{{ pending_avatar|default:'' }}" />
+      <text style="meta">{% translate "Your photo is saved when you tap Save settings." %}</text>{% endif %}
+    </view>
+    <view style="card">
+      <text style="section">{% translate "Profile" %}</text>
+      {% if form.non_field_errors %}<text style="field-error">{{ form.non_field_errors|join:', ' }}</text>{% endif %}
+      <text style="label">{% translate "First name" %}</text>
+      <text-field name="first_name" value="{{ form.first_name.value|default:'' }}" placeholder="{% translate "Optional" %}" placeholderTextColor="{{ theme.ink_muted }}" accessibilityLabel="{% translate "First name" %}" style="field{% if form.first_name.errors %} field-invalid{% endif %}" />
+      {% if form.first_name.errors %}<text style="field-error">{{ form.first_name.errors|join:', ' }}</text>{% endif %}
+      <text style="label">{% translate "Last name" %}</text>
+      <text-field name="last_name" value="{{ form.last_name.value|default:'' }}" placeholder="{% translate "Optional" %}" placeholderTextColor="{{ theme.ink_muted }}" accessibilityLabel="{% translate "Last name" %}" style="field{% if form.last_name.errors %} field-invalid{% endif %}" />
+      {% if form.last_name.errors %}<text style="field-error">{{ form.last_name.errors|join:', ' }}</text>{% endif %}
+      <text style="label">{% translate "Email" %}</text>
+      <text-field name="email" value="{{ form.email.value|default:'' }}" placeholder="{% translate "Optional" %}" placeholderTextColor="{{ theme.ink_muted }}" keyboard-type="email-address" accessibilityLabel="{% translate "Email" %}" style="field{% if form.email.errors %} field-invalid{% endif %}" />
+      {% if form.email.errors %}<text style="field-error">{{ form.email.errors|join:', ' }}</text>{% endif %}
+    </view>
+    {% include "partials/security_card.xml" %}
+    {% hv_csrf_token %}
+    <!-- LAST, and it names its whole scope. It used to sit inside the Profile
+         card and say "Save name and email", because the card boundary was the
+         only honest statement of what it could write while the photo, the
+         preferences and the biometric row each committed on their own tap. Now
+         there is one writer: everything above this line is a field of this form,
+         and one request either commits all of it or commits none of it. -->
+    <view id="settings-submit" style="button" href="/hv/settings/" verb="post" action="replace" target="settings-form-panel"><text style="button-text">{% translate "Save settings" %}</text></view>
+  </form>
+</view>

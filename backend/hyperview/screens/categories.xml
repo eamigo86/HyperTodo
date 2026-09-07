@@ -1,64 +1,113 @@
-{% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
+{% load dj_hyperview i18n %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
-    <style id="screen" backgroundColor="#F7F8FC" flex="1" />
+    <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
     <style id="screen-content" flex="1" padding="24" />
-    <style id="screen-header" alignItems="center" backgroundColor="#278CFF" flexDirection="row" height="44" paddingHorizontal="8" />
+    <style id="screen-header" alignItems="center" backgroundColor="{{ theme.brand }}" flexDirection="row" height="44" paddingHorizontal="8" />
     <style id="back-button" alignItems="center" flexDirection="row" height="44" width="84" />
-    <style id="back-chevron" color="#FFFFFF" fontSize="34" lineHeight="36" marginRight="2" />
-    <style id="back-label" color="#FFFFFF" fontSize="19" fontWeight="700" />
+    <style id="back-chevron" color="{{ theme.on_brand }}" fontSize="34" lineHeight="36" marginRight="2" />
+    <style id="back-label" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
     <style id="screen-header-title-slot" alignItems="center" flex="1" justifyContent="center" />
     <style id="screen-header-spacer" width="84" />
-    <style id="screen-header-title" color="#FFFFFF" fontSize="19" fontWeight="700" />
+    <style id="screen-header-title" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
     <style id="category-list" flex="1" />
     <style id="empty-item" paddingVertical="24" />
     <style id="list-spinner" alignItems="center" height="28" justifyContent="center" />
-    <style id="card" borderRadius="24" padding="20" marginBottom="12" />
-    <style id="lavender" backgroundColor="#AEBBFA" />
-    <style id="yellow" backgroundColor="#FFF27B" />
-    <style id="mint" backgroundColor="#C9F0E7" />
-    <style id="pink" backgroundColor="#F6B5E8" />
-    <style id="green" backgroundColor="#3B9B70" />
-    <style id="name" color="#161A35" fontSize="20" fontWeight="700" />
-    <style id="meta" color="#4C526B" marginTop="7" />
+    <!-- The colour is the card. The fill sits on the swipe-row root, which is the
+         View SwipeRow spreads createStyleProp into, and the padding CANNOT come with
+         it: the action tray is absolutely inset from that View's padding box, so
+         padding here would leave a coloured gutter around the tray. Same split as
+         screens/tasks.xml. Both ink colours are #161A35, the one value that clears
+         4.5:1 on all five fills (4.95 on green, the binding constraint). -->
+    <style id="card-fill" borderRadius="24" marginBottom="12" overflow="hidden" />
+    <style id="card-inner" padding="20" />
+    <style id="meta-on-fill" color="{{ theme.on_category }}" fontSize="13" fontWeight="600" marginTop="4" />
+    <!-- Below here: the pre-1.1.0 white card, kept whole for clients that predate the
+         swipe-row component. Delete it, the {% templatetag openblock %} else {% templatetag closeblock %} branch in
+         partials/category_items.xml and _supports_swipe_actions together, once 1.0.0
+         is off the floor. -->
+    <style id="card" backgroundColor="{{ theme.surface }}" borderRadius="24" padding="20" marginBottom="12" />
+    <style id="card-head" alignItems="center" flexDirection="row" />
+    <style id="card-body" flex="1" />
+    <style id="swatch" borderRadius="10" height="20" marginRight="12" width="20" />
+    <style id="lavender" backgroundColor="{{ theme.cat_lavender }}" />
+    <style id="yellow" backgroundColor="{{ theme.cat_yellow }}" />
+    <style id="mint" backgroundColor="{{ theme.cat_mint }}" />
+    <style id="pink" backgroundColor="{{ theme.cat_pink }}" />
+    <style id="green" backgroundColor="{{ theme.cat_green }}" />
+    <style id="name" color="{{ theme.ink }}" fontSize="20" fontWeight="700" />
+    <style id="meta" color="{{ theme.ink_muted }}" fontSize="13" marginTop="4" />
     <style id="actions" flexDirection="row" marginTop="14" />
-    <style id="action" color="#161A35" fontWeight="600" marginRight="20" />
-    <style id="danger" color="#8F1D17" fontWeight="600" />
-    <style id="primary" backgroundColor="#278CFF" borderRadius="24" padding="16" marginTop="12" />
-    <style id="primary-text" color="#FFFFFF" textAlign="center" fontWeight="700" />
-    <style id="bottom-navigation" alignItems="center" backgroundColor="#F7F8FC" borderTopColor="#E9ECF5" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
+    <!-- These four had no pressed rule at all, so holding Edit or Delete dropped
+         the whole box to opacity 0.7, React Native nested the layers, and the
+         label landed at 0.49: #1F6FD1 composited to 2.05:1 in light against an
+         idle 4.94, and Delete's #B42318 to 2.46:1 against 6.57. The dark palette
+         was no better at 2.96 and 3.02. The fill suppresses the box's fallback,
+         the re-declared ink suppresses the label's, and the ink DARKENS because
+         link_ink on the pressed fill would only be 3.69:1 in light. This is the
+         pre-1.1.0 category card, so it ships to the oldest installed binaries and
+         nothing else guards it. Adding modifier blocks only ADDS rule keys, so the
+         light golden is untouched. -->
+    <style id="action-button" alignItems="center" borderColor="{{ theme.border_strong }}" borderRadius="12" borderWidth="1" justifyContent="center" marginRight="10" minHeight="44" paddingHorizontal="16">
+      <modifier pressed="true"><style backgroundColor="{{ theme.select_press }}" /></modifier>
+    </style>
+    <style id="action-button-danger" borderColor="{{ theme.danger_outline }}">
+      <modifier pressed="true"><style backgroundColor="{{ theme.danger_press_fill }}" /></modifier>
+    </style>
+    <style id="action" color="{{ theme.link_ink }}" fontSize="15" fontWeight="600">
+      <modifier pressed="true"><style color="{{ theme.chip_ink_active }}" /></modifier>
+    </style>
+    <style id="danger" color="{{ theme.danger }}" fontSize="15" fontWeight="600">
+      <modifier pressed="true"><style color="{{ theme.danger }}" /></modifier>
+    </style>
+    <style id="empty-card" alignItems="center" backgroundColor="{{ theme.surface }}" borderRadius="24" padding="24" />
+    <style id="empty-title" color="{{ theme.ink }}" fontSize="16" fontWeight="700" marginBottom="6" />
+    <style id="empty-copy" color="{{ theme.ink_muted }}" fontSize="14" textAlign="center" />
+    <style id="primary" alignItems="center" backgroundColor="{{ theme.brand }}" borderRadius="18" justifyContent="center" marginTop="16" minHeight="56">
+      <modifier pressed="true"><style backgroundColor="{{ theme.brand_pressed }}" /></modifier>
+    </style>
+    <style id="primary-text" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" textAlign="center">
+      <modifier pressed="true"><style color="{{ theme.on_brand }}" /></modifier>
+    </style>
+    <style id="bottom-navigation" alignItems="center" backgroundColor="{{ theme.canvas }}" borderTopColor="{{ theme.hairline }}" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
     <style id="nav-hit-area" alignItems="center" flex="1" justifyContent="center" />
     <style id="nav-item" alignItems="center" height="52" justifyContent="center" width="64" />
     <style id="nav-active" opacity="1" />
-    <style id="nav-icon" height="24" width="24" />
-    <style id="nav-label" color="#68708B" fontSize="10" fontWeight="600" marginTop="3" />
-    <style id="nav-label-active" color="#278CFF" fontWeight="700" />
-    <style id="nav-add" alignItems="center" backgroundColor="#278CFF" borderRadius="24" height="48" justifyContent="center" width="48" />
-    <style id="nav-add-symbol" color="#FFFFFF" fontSize="29" fontWeight="400" lineHeight="31" />
-    <style id="side-menu" bottom="0" flexDirection="row" left="0" position="absolute" right="0" top="0" zIndex="50" />
-    <style id="side-menu-panel" backgroundColor="#FFFFFF" flex="1" padding="24" width="286" />
-    <style id="side-menu-header" alignItems="center" flexDirection="row" justifyContent="space-between" marginBottom="16" />
-    <style id="side-menu-eyebrow" color="#278CFF" fontSize="11" fontWeight="700" letterSpacing="1.5" />
-    <style id="side-menu-title" color="#161A35" fontSize="22" fontWeight="700" marginTop="3" />
-    <style id="side-menu-user" color="#7B8097" fontSize="13" marginBottom="28" />
-    <style id="side-menu-links" flex="1" />
-    <style id="side-menu-link" borderRadius="16" marginBottom="8" padding="15" />
-    <style id="side-menu-link-active" backgroundColor="#EEF3FF" />
-    <style id="side-menu-link-text" color="#20243D" fontSize="16" fontWeight="600" />
-    <style id="side-menu-logout-panel" borderTopColor="#E7EAF3" borderTopWidth="1" paddingTop="16" />
-    <style id="side-menu-logout" borderRadius="16" padding="15" />
-    <style id="side-menu-logout-text" color="#B42318" fontSize="16" fontWeight="600" />
+    <!-- One glyph per shape, tinted by style. tintColor is a colour filter the
+         native RCTImageView applies AFTER decoding (it is declared in both the
+         Android and the iOS validAttributes of ImageViewNativeComponent), so it
+         reaches a static file served over the network exactly as it reaches a
+         bundled asset and the baked pixels no longer carry the colour. That is
+         what retired the four *-active.png twins: they differed from their idle
+         file in nothing but a hex the stylesheet now owns. -->
+    <style id="nav-icon" height="24" tintColor="{{ theme.ink_nav }}" width="24" />
+    <style id="nav-icon-active" tintColor="{{ theme.ink_nav_active }}" />
+    <style id="nav-label" color="{{ theme.ink_nav }}" fontSize="10" fontWeight="600" marginTop="3" />
+    <style id="nav-label-active" color="{{ theme.ink_nav_active }}" fontWeight="700" />
+    <style id="nav-add" alignItems="center" backgroundColor="{{ theme.brand }}" borderRadius="24" height="48" justifyContent="center" width="48" />
+    <style id="nav-add-symbol" color="{{ theme.on_brand }}" fontSize="29" fontWeight="400" lineHeight="31" />
   </styles>
   <screen id="categories-screen">
     <body style="screen">
-      {% include "partials/screen_header.xml" with header_title="Categories" back_id="category-list-back" %}
+      {% include "partials/screen_header.xml" with header_title=_("Categories") back_id="category-list-back" %}
       <view id="screen-content" style="screen-content">
+        <!-- The listener has to sit OUTSIDE the element it replaces and on a tag that
+             opts into HyperRef. HvList does neither: it never sets supportsHyperRef
+             (components/hv-element/utils.tsx:16), so a listener parked on the <list>
+             is never registered, and the replace would destroy it anyway. -->
+        <behavior trigger="on-event" event-name="categories-changed" href="/hv/categories/?fragment=list" action="replace" target="category-list" />
+        <!-- Every row shows "{{ category.task_count }} tasks", which the task screens
+             and the task form own. Same replace: it is the counts inside the list
+             that go stale, not the chrome around it. -->
+        <behavior trigger="on-event" event-name="tasks-changed" href="/hv/categories/?fragment=list" action="replace" target="category-list" />
+        <!-- A sign-in or sign-out reached from a modal on top of this screen leaves
+             it parked with the old account's categories. -->
+        <behavior trigger="on-event" event-name="session-changed" action="reload" />
         {% include "fragments/category_list.xml" %}
-        <view id="category-list-spinner" style="list-spinner" hide="true"><spinner /></view>
-        <view style="primary" href="/hv/categories/new/" action="new"><text style="primary-text">+ Add category</text></view>
+        <view id="category-list-spinner" style="list-spinner" hide="true"><spinner color="{{ theme.spinner }}" /></view>
+        <view style="primary" href="/hv/categories/new/" action="navigate"><text style="primary-text">{% translate "+ Add category" %}</text></view>
       </view>
       {% include "fragments/bottom_navigation.xml" with active_nav="categories" %}
-      {% include "fragments/side_menu_host.xml" %}
     </body>
   </screen>
 </doc>

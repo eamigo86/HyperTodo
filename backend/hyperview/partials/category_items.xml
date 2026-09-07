@@ -1,15 +1,33 @@
-{% load dj_hyperview %}{% for category in categories %}
-<item key="category-{{ category.id }}" style="card {{ category.color }}">
-  <text style="name">{{ category.name }}</text>
-  <text style="meta">{{ category.task_count }} tasks</text>
-  <view style="actions">
-    <view href="/hv/categories/{{ category.id }}/edit/" action="new"><text style="action">Edit</text></view>
-    <form>{% hv_csrf_token %}<view href="/hv/categories/{{ category.id }}/delete/" verb="post" action="replace"><text style="danger">Delete</text></view></form>
+{% load dj_hyperview i18n %}{% for category in categories %}
+<item key="category-{{ category.id }}"{% if not swipe_actions %} style="card"{% endif %}>
+  {% if swipe_actions %}
+  <form>{% hv_csrf_token %}
+    <app:swipe-row xmlns:app="https://hypertodo.app/components" id="category-swipe-{{ category.id }}" style="card-fill {{ category.color }}">
+      <view style="card-inner">
+        <text style="name">{{ category.name }}</text>
+        <text style="meta-on-fill">{% blocktranslate count counter=category.task_count %}{{ counter }} task{% plural %}{{ counter }} tasks{% endblocktranslate %}</text>
+      </view>
+      <app:swipe-action href="/hv/categories/{{ category.id }}/edit/" action="navigate" verb="get" label="{% translate "Edit" %}" a11y-label="{% translate "Edit category" %}" tone="primary" />
+      <app:swipe-action href="/hv/categories/{{ category.id }}/delete/" action="replace" verb="post" label="{% translate "Delete" %}" a11y-label="{% translate "Delete category" %}" tone="danger" confirm-title="{% translate "Delete category?" %}" confirm-body="{% translate "Its tasks stay, without a category." %}" confirm-label="{% translate "Delete" %}" />
+    </app:swipe-row>
+  </form>
+  {% else %}
+  <view style="card-head">
+    <view style="swatch {{ category.color }}" />
+    <view style="card-body">
+      <text style="name">{{ category.name }}</text>
+      <text style="meta">{% blocktranslate count counter=category.task_count %}{{ counter }} task{% plural %}{{ counter }} tasks{% endblocktranslate %}</text>
+    </view>
   </view>
+  <view style="actions">
+    <view style="action-button" href="/hv/categories/{{ category.id }}/edit/" action="navigate"><text style="action">{% translate "Edit" %}</text></view>
+    <form>{% hv_csrf_token %}<view style="action-button action-button-danger" href="/hv/categories/{{ category.id }}/delete/" verb="post" action="replace"><text style="danger">{% translate "Delete" %}</text></view></form>
+  </view>
+  {% endif %}
   {% if forloop.last and page_obj.has_next %}
   <behavior trigger="visible" href="/hv/categories/?page={{ page_obj.next_page_number }}&amp;fragment=items" action="append" target="category-list" once="true" show-during-load="category-list-spinner" />
   {% endif %}
 </item>
 {% empty %}
-{% if page_obj.number == 1 %}<item key="category-empty" style="empty-item"><text style="meta">Create a category to organize your tasks.</text></item>{% endif %}
+{% if page_obj.number == 1 %}<item key="category-empty" style="empty-item"><view style="empty-card"><text style="empty-title">{% translate "No categories yet" %}</text><text style="empty-copy">{% translate "Create a category to organize your tasks." %}</text></view></item>{% endif %}
 {% endfor %}

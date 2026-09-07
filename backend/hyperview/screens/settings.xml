@@ -1,0 +1,134 @@
+{% load dj_hyperview i18n %}<?xml version="1.0" encoding="UTF-8"?>
+<doc xmlns="https://hyperview.org/hyperview">
+  <styles>
+    <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
+    <style id="screen-content" flex="1" />
+    <style id="screen-content-inner" paddingBottom="40" paddingHorizontal="24" paddingTop="20" />
+    <style id="screen-header" alignItems="center" backgroundColor="{{ theme.brand }}" flexDirection="row" height="44" paddingHorizontal="8" />
+    <style id="back-button" alignItems="center" flexDirection="row" height="44" width="84" />
+    <style id="back-chevron" color="{{ theme.on_brand }}" fontSize="34" lineHeight="36" marginRight="2" />
+    <style id="back-label" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
+    <style id="screen-header-title-slot" alignItems="center" flex="1" justifyContent="center" />
+    <style id="screen-header-spacer" width="84" />
+    <style id="screen-header-title" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
+    <style id="card" backgroundColor="{{ theme.surface }}" borderRadius="24" marginBottom="16" padding="20" />
+    <style id="section" color="{{ theme.ink }}" fontSize="18" fontWeight="700" marginBottom="12" />
+    <style id="label" color="{{ theme.ink_label }}" fontSize="13" fontWeight="600" marginTop="12" marginBottom="6" />
+    <style id="field" backgroundColor="{{ theme.field }}" borderColor="{{ theme.field_border }}" borderRadius="16" borderWidth="1" color="{{ theme.ink }}" fontSize="16" minHeight="48" padding="13">
+      <modifier pressed="true"><style backgroundColor="{{ theme.field_pressed }}" /></modifier>
+      <modifier focused="true"><style borderColor="{{ theme.brand_ink }}" /></modifier>
+    </style>
+    <style id="field-invalid" backgroundColor="{{ theme.danger_field }}" borderColor="{{ theme.danger_border }}" borderWidth="1" />
+    <style id="field-error" color="{{ theme.danger }}" fontSize="13" marginTop="6" />
+    <style id="error-card" backgroundColor="{{ theme.danger_surface }}" borderColor="{{ theme.danger_surface_border }}" borderRadius="12" borderWidth="1" marginBottom="16" padding="12" />
+    <style id="error-text" color="{{ theme.danger }}" fontSize="14" fontWeight="600" lineHeight="20" />
+    <style id="button" alignItems="center" backgroundColor="{{ theme.brand }}" borderRadius="18" justifyContent="center" marginTop="8" minHeight="56">
+      <modifier pressed="true"><style backgroundColor="{{ theme.brand_pressed }}" /></modifier>
+    </style>
+    <style id="button-text" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" textAlign="center">
+      <modifier pressed="true"><style color="{{ theme.on_brand }}" /></modifier>
+    </style>
+    <!-- Same defect class as the side-menu rows on screens/dashboard.xml. `pressed`
+         reaches every descendant and each styled one declaring no pressed rule falls
+         back to opacity 0.7 (services/index.ts:33-41); RN nests the layers, so this
+         label landed at 0.49 and #20243D composited to 2.92:1 on #F1F4FC while the
+         row was held. The fill suppresses the row's fallback and the re-declared
+         colour suppresses the label's; #D0DAF2 is 1.27:1 on the idle fill, so the
+         press is visible rather than merely present. -->
+    <style id="action-row" backgroundColor="{{ theme.field }}" borderRadius="16" justifyContent="center" marginTop="4" minHeight="48" padding="14">
+      <modifier pressed="true"><style backgroundColor="{{ theme.row_press }}" /></modifier>
+    </style>
+    <style id="action-row-text" color="{{ theme.ink_body }}" flex="1" fontSize="16" fontWeight="600" paddingRight="12">
+      <modifier pressed="true"><style color="{{ theme.ink_body }}" /></modifier>
+    </style>
+    <!-- Composed ON TOP of action-row rather than replacing it. The light golden
+         pins action-row's justifyContent="center", and moving a pinned attribute
+         fails there while adding an id does not; createStyleProp concatenates the
+         composed rules in order and the LAST one wins (services/index.ts:33-41),
+         so this flips the row to a labelled control with the switch on the right.
+         action-row keeps its own pressed rule and that rule is now dead code the
+         golden requires: this row carries no href, so nothing ever presses it.
+         No modifier of this OWN, because there is nothing to override.
+         The native Switch is roughly 51x31pt, under the 44pt AAA target, and the
+         row's minHeight cannot enlarge the control's own hit area. That is a
+         property of the platform control, the same ceiling the sign-in opt-in
+         already ships, and it is the price of a real announced role and state,
+         which a view-built pill can never have because accessibilityState is
+         unreachable from HXML. -->
+    <style id="switch-row" alignItems="center" flexDirection="row" justifyContent="space-between" />
+    <!-- Same two-attribute shape the sign-in opt-in declares: HvSwitch reads
+         `backgroundColor` for the track and `color` for the thumb, from the plain
+         rule and from its selected=true modifier (hv-switch/index.tsx:40-49 and
+         :70-94). No other attribute on this id is reachable. -->
+    <style id="optin-switch" backgroundColor="{{ theme.switch_off }}" color="{{ theme.on_brand }}">
+      <modifier selected="true"><style backgroundColor="{{ theme.brand }}" color="{{ theme.on_brand }}" /></modifier>
+    </style>
+    <!-- One id for both shapes the panel can take. As a <view> the fill is the
+         disc behind the initials; as an <image> the same fill is the placeholder
+         that holds the circle while the photo loads over the network, so a slow
+         connection never punches a hole in the card. -->
+    <style id="avatar-disc" alignItems="center" backgroundColor="{{ theme.field }}" borderRadius="36" height="72" justifyContent="center" marginBottom="12" width="72" />
+    <style id="avatar-initials" color="{{ theme.ink }}" fontSize="26" fontWeight="700" />
+    <!-- The photo row. avatar-disc keeps its own marginBottom because the light
+         golden pins it; avatar-disc-row is composed on top to clear it, which is
+         an ADD and therefore allowed. The button reuses the ONE compact secondary
+         shape this app already declares, screens/categories.xml's Edit/Delete box:
+         radius 12, 1pt border, 44pt minHeight, 16pt of horizontal padding, 15/600
+         link ink. The border is brand_ink and NOT categories' border_strong,
+         because border_strong is 1.63:1 on white and is already a recorded light
+         exemption; brand_ink is 3.34 light and 8.05 dark and clears the floor in
+         both. The ink DARKENS under the finger rather than staying put, because
+         link_ink on the pressed fill would be 3.69:1 in light: the same move
+         screens/login.xml already documents for biometric-icon.
+         avatar-gate is the same box drawn as a disabled control. Its fill and
+         border sit far below the graphic floor on purpose, and nothing pins them:
+         that faintness is the affordance, WCAG 1.4.3 and 1.4.11 both exempt an
+         inactive component, and pinning them would force the box to look enabled.
+         The TEXT inside it still owes AA, and clears it. -->
+    <style id="avatar-row" alignItems="center" flexDirection="row" justifyContent="space-between" />
+    <style id="avatar-disc-row" marginBottom="0" />
+    <style id="avatar-action" alignItems="center" borderColor="{{ theme.brand_ink }}" borderRadius="12" borderWidth="1" justifyContent="center" minHeight="44" paddingHorizontal="16">
+      <modifier pressed="true"><style backgroundColor="{{ theme.select_press }}" /></modifier>
+    </style>
+    <style id="avatar-action-text" color="{{ theme.link_ink }}" fontSize="15" fontWeight="600">
+      <modifier pressed="true"><style color="{{ theme.chip_ink_active }}" /></modifier>
+    </style>
+    <style id="avatar-gate" alignItems="center" backgroundColor="{{ theme.field }}" borderColor="{{ theme.field_border }}" borderRadius="12" borderWidth="1" justifyContent="center" minHeight="44" paddingHorizontal="16" />
+    <style id="avatar-gate-text" color="{{ theme.ink_muted }}" fontSize="15" fontWeight="600" />
+    <style id="avatar-gate-note" color="{{ theme.ink_muted }}" fontSize="13" marginTop="10" />
+    <style id="meta" color="{{ theme.ink_muted }}" fontSize="13" marginTop="5" />
+    <style id="version" color="{{ theme.ink_muted }}" fontSize="13" marginTop="8" textAlign="center" />
+    <style id="bottom-navigation" alignItems="center" backgroundColor="{{ theme.canvas }}" borderTopColor="{{ theme.hairline }}" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
+    <style id="nav-hit-area" alignItems="center" flex="1" justifyContent="center" />
+    <style id="nav-item" alignItems="center" height="52" justifyContent="center" width="64" />
+    <style id="nav-active" opacity="1" />
+    <!-- One glyph per shape, tinted by style. tintColor is a colour filter the
+         native RCTImageView applies AFTER decoding (it is declared in both the
+         Android and the iOS validAttributes of ImageViewNativeComponent), so it
+         reaches a static file served over the network exactly as it reaches a
+         bundled asset and the baked pixels no longer carry the colour. That is
+         what retired the four *-active.png twins: they differed from their idle
+         file in nothing but a hex the stylesheet now owns. -->
+    <style id="nav-icon" height="24" tintColor="{{ theme.ink_nav }}" width="24" />
+    <style id="nav-icon-active" tintColor="{{ theme.ink_nav_active }}" />
+    <style id="nav-label" color="{{ theme.ink_nav }}" fontSize="10" fontWeight="600" marginTop="3" />
+    <style id="nav-label-active" color="{{ theme.ink_nav_active }}" fontWeight="700" />
+    <style id="nav-add" alignItems="center" backgroundColor="{{ theme.brand }}" borderRadius="24" height="48" justifyContent="center" width="48" />
+    <style id="nav-add-symbol" color="{{ theme.on_brand }}" fontSize="29" fontWeight="400" lineHeight="31" />
+  </styles>
+  <screen id="settings-screen">
+    <body style="screen">
+      {% include "partials/screen_header.xml" with header_title=_("Settings") back_id="settings-back" %}
+      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false" content-container-style="screen-content-inner" keyboard-dismiss-mode="on-drag">
+        <!-- A sign-in or sign-out reached from a modal on top of this screen leaves
+             it parked with the old account's name and email in the form. -->
+        <behavior trigger="on-event" event-name="session-changed" action="reload" />
+        <!-- One column, in the order the owner asked for: photo, first name, last
+             name, email, biometrics, Save. -->
+        {% include "fragments/settings_form_panel.xml" %}
+        <text id="app-version" style="version">{% blocktranslate %}Version {{ app_version }}{% endblocktranslate %}</text>
+      </view>
+      {% include "fragments/bottom_navigation.xml" with active_nav="settings" %}
+    </body>
+  </screen>
+</doc>

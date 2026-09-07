@@ -1,54 +1,78 @@
-{% load dj_hyperview static %}<view xmlns="https://hyperview.org/hyperview" id="dashboard-content">
+{% load dj_hyperview i18n static %}<view xmlns="https://hyperview.org/hyperview" id="dashboard-content">
   <view id="dashboard-hero" style="hero">
     <view style="hero-row">
-      <view style="hero-avatar"><text style="hero-initials">{{ initials }}</text></view>
+      <!-- The disc alone is the control, and at 52pt it is its own hit area, so it
+           needs no href-style wrapper. Neither the disc nor any <view> can be given
+           a server-set accessible name: HvView.getCommonProps copies only style, the
+           id-derived test props and collapsable (hv-view/index.tsx:69-86). The name
+           rides the initials instead, because HvText builds its props with
+           createProps, which copies EVERY attribute verbatim onto RN's <Text>
+           (services/index.ts:139-157). Neither element takes an id: createProps
+           spreads testProps LAST (:161) so an id on the <text> would overwrite the
+           label with the slug on Android, and an id on the disc would put that slug
+           on the TouchableOpacity as a contentDescription that can swallow it. -->
+      {% if request.user.profile.avatar %}<!-- The photo IS the control. HvImage.supportsHyperRef is true, so it needs no
+           wrapper. The 0.7 press dim is asked for BY NAME through hero-avatar-photo:
+           hero-avatar already declares a pressed rule, which suppresses the fallback
+           (services/index.ts:33-41), and that rule is a fill the photo covers.
+           `alt` reaches RN's Image
+           because HvImage builds its props with createProps; still no id, which
+           would be spread over that label on Android. The style id is reused verbatim.
+           hero-avatar already carries the 52pt box and the 26pt radius, and its fill
+           is now the placeholder while the photo loads. `request.user.profile` is
+           safe on an account with no row, because
+           RelatedObjectDoesNotExist inherits from AttributeError and the template
+           engine resolves that to nothing. -->
+      <image style="hero-avatar hero-avatar-photo" source="{{ request.user.profile.avatar.url }}" href="/hv/menu/?active=dashboard" action="replace" target="side-menu-host" alt="{% translate "Open the menu" %}" accessibilityRole="button" />{% else %}<view style="hero-avatar" href="/hv/menu/?active=dashboard" action="replace" target="side-menu-host">
+        <text style="hero-initials" accessibilityLabel="{% translate "Open the menu" %}" accessibilityRole="button">{{ initials }}</text>
+      </view>{% endif %}
       <view style="hero-identity">
         <text style="hero-greeting">{{ greeting }}</text>
         <text style="hero-name" ellipsizeMode="tail" numberOfLines="1">{{ request.user.first_name|default:request.user.username }}</text>
       </view>
     </view>
-    <text id="dashboard-progress-label" style="hero-headline">{{ summary.done_today }} of {{ summary.total_today }} done today</text>
+    <text id="dashboard-progress-label" style="hero-headline">{% blocktranslate with done=summary.done_today total=summary.total_today %}{{ done }} of {{ total }} done today{% endblocktranslate %}</text>
     <view id="dashboard-progress" style="progress-track">
       <view style="progress-fill progress-{% widthratio summary.progress_percent 100 10 %}" />
     </view>
-    <text style="hero-caption">{{ summary.today|date:'l, M j' }} · {% if summary.progress_percent >= 50 or not summary.total_today %}you're on track{% else %}let's get moving{% endif %}</text>
+    <text style="hero-caption">{{ summary.today|date:'l, M j' }} · {% if summary.progress_percent >= 50 or not summary.total_today %}{% translate "you're on track" %}{% else %}{% translate "let's get moving" %}{% endif %}</text>
   </view>
   <view id="dashboard-stats" style="stat-row" scroll="true" scroll-orientation="horizontal" shows-scroll-indicator="false" content-container-style="stat-row-content">
     <view id="dashboard-all" style="stat-card" href="/hv/tasks/?status=all" action="navigate">
       <view style="stat-badge mint"><image style="stat-icon" source="{% static 'todo/icons/list.png' %}" /></view>
-      <text style="stat-label">All</text>
+      <text style="stat-label">{% translate "All" %}</text>
       <text style="stat-count">{{ counts.all }}</text>
-      <text style="stat-note">{{ counts.all }} total</text>
+      <text style="stat-note">{% blocktranslate count counter=counts.all %}{{ counter }} total{% plural %}{{ counter }} total{% endblocktranslate %}</text>
     </view>
     <view id="dashboard-today" style="stat-card" href="/hv/tasks/?status=today" action="navigate">
       <view style="stat-badge lavender"><image style="stat-icon" source="{% static 'todo/icons/sun.png' %}" /></view>
-      <text style="stat-label">Today</text>
+      <text style="stat-label">{% translate "Today" %}</text>
       <text style="stat-count">{{ counts.today }}</text>
-      {% if summary.week_completed_total %}<text style="stat-note stat-note-good">+{{ summary.week_completed_total }} done last 7 days</text>{% else %}<text style="stat-note">nothing done yet</text>{% endif %}
+      {% if summary.week_completed_total %}<text style="stat-note stat-note-good">{% blocktranslate count counter=summary.week_completed_total %}+{{ counter }} done last 7 days{% plural %}+{{ counter }} done last 7 days{% endblocktranslate %}</text>{% else %}<text style="stat-note">{% translate "nothing done yet" %}</text>{% endif %}
     </view>
     <view id="dashboard-overdue" style="stat-card" href="/hv/tasks/?status=overdue" action="navigate">
       <view style="stat-badge pink"><image style="stat-icon" source="{% static 'todo/icons/alert.png' %}" /></view>
-      <text style="stat-label">Overdue</text>
+      <text style="stat-label">{% translate "Overdue" %}</text>
       <text style="stat-count">{{ counts.overdue }}</text>
-      {% if counts.overdue %}<text style="stat-note stat-note-alert">needs attention</text>{% else %}<text style="stat-note">all clear</text>{% endif %}
+      {% if counts.overdue %}<text style="stat-note stat-note-alert">{% translate "needs attention" %}</text>{% else %}<text style="stat-note">{% translate "all clear" %}</text>{% endif %}
     </view>
     <view id="dashboard-scheduled" style="stat-card" href="/hv/tasks/?status=scheduled" action="navigate">
       <view style="stat-badge yellow"><image style="stat-icon" source="{% static 'todo/icons/calendar.png' %}" /></view>
-      <text style="stat-label">Scheduled</text>
+      <text style="stat-label">{% translate "Scheduled" %}</text>
       <text style="stat-count">{{ counts.scheduled }}</text>
-      <text style="stat-note">{% if summary.next_scheduled_label %}next: {{ summary.next_scheduled_label }}{% else %}nothing planned{% endif %}</text>
+      <text style="stat-note">{% if summary.next_scheduled_label %}{% blocktranslate with label=summary.next_scheduled_label %}next: {{ label }}{% endblocktranslate %}{% else %}{% translate "nothing planned" %}{% endif %}</text>
     </view>
   </view>
   {% if counts.overdue %}
   <view id="dashboard-overdue-card" style="alert-card">
-    <text style="alert-title">{{ counts.overdue }} overdue</text>
-    <view style="alert-action" href="/hv/tasks/?status=overdue" action="navigate"><text style="alert-action-text">Review</text></view>
+    <text style="alert-title">{% blocktranslate count counter=counts.overdue %}{{ counter }} overdue{% plural %}{{ counter }} overdue{% endblocktranslate %}</text>
+    <view style="alert-action" href="/hv/tasks/?status=overdue" action="navigate"><text style="alert-action-text">{% translate "Review" %}</text></view>
   </view>
   {% endif %}
   <view id="dashboard-up-next" style="section-block">
     <view style="section-head">
-      <text style="section">Up next</text>
-      <view style="section-link" href="/hv/tasks/?status=active" action="navigate"><text style="section-link-text">See all</text></view>
+      <text style="section">{% translate "Up next" %}</text>
+      <view style="section-link" href="/hv/tasks/?status=active" action="navigate"><text style="section-link-text">{% translate "See all" %}</text></view>
     </view>
     {% for task in summary.next_tasks %}
     <view id="dashboard-task-{{ task.id }}" style="row" href="/hv/tasks/{{ task.id }}/edit/" action="navigate">
@@ -63,13 +87,13 @@
       <image style="row-chevron" source="{% static 'todo/icons/chevron-right.png' %}" />
     </view>
     {% empty %}
-    <text style="meta">Nothing due next. Plan your week from the Tasks tab.</text>
+    <text style="meta">{% translate "Nothing due next. Plan your week from the Tasks tab." %}</text>
     {% endfor %}
   </view>
   <view id="dashboard-week" style="section-block">
     <view style="week-card">
-      <text style="section">Last 7 days</text>
-      <text style="meta">{{ summary.week_completed_total }} done · {{ summary.streak_days }}-day streak</text>
+      <text style="section">{% translate "Last 7 days" %}</text>
+      <text style="meta">{% blocktranslate with done=summary.week_completed_total streak=summary.streak_days %}{{ done }} done · {{ streak }}-day streak{% endblocktranslate %}</text>
       <view style="bar-track">
         {% for day in summary.week %}<view id="dashboard-bar-{{ forloop.counter }}" style="bar bar-{% widthratio day.height 48 8 %}{% if not day.completed %} bar-idle{% endif %}{% if day.is_today %} bar-today{% endif %}" />{% endfor %}
       </view>

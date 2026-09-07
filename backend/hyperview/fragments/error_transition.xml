@@ -1,0 +1,4 @@
+<item xmlns="https://hyperview.org/hyperview" id="error-transition" key="error-transition">
+  <behavior trigger="load" action="show-snackbar" message="{{ message }}" tone="error" once="true" />
+  <behavior trigger="load" action="reload" />
+</item>

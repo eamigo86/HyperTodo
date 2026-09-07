@@ -1,0 +1,20 @@
+{% load i18n %}<view xmlns="https://hyperview.org/hyperview" id="preference-panel">
+  <!-- No style id anywhere in this fragment. `replace` does not rebuild stylesheets,
+       and the switcher has ONE host now: the side menu, opened from the dashboard.
+       Settings dropped it when it became a single deferred form, since a control
+       that commits on tap cannot share a screen with unsaved text. Keeping this
+       fragment style free is what lets a second host be added without touching it.
+       The host set is derived and pinned by
+       tests/test_preferences.py::test_the_preference_switcher_declares_its_styles
+       _on_every_screen_that_can_host_it. -->
+  <behavior trigger="load" action="show-snackbar" message="{{ notice_message }}" tone="success" once="true" />
+  <!-- The repaint has to reach every screen that is already mounted, not just this
+       one: dashboard, tasks, categories and settings all already listen for
+       session-changed, so reusing it beats inventing a fourth event name and four
+       more listeners that say the same thing. It is also the ONLY reload this
+       fragment needs: Events.dispatch reaches the dispatching screen too
+       (hyperview.tsx:291-299), so the host is in that listener set already and an
+       href-less reload beside it would just fire a second concurrent GET of the
+       same url. Add one back only for a host that does not listen, and say so. -->
+  <behavior trigger="load" action="dispatch-event" event-name="session-changed" once="true" />
+</view>

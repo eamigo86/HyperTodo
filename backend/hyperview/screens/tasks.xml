@@ -1,73 +1,85 @@
-{% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
+{% load dj_hyperview i18n %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
-    <style id="screen" backgroundColor="#F7F8FC" flex="1" />
+    <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
     <style id="screen-content" flex="1" padding="24" />
-    <style id="screen-header" alignItems="center" backgroundColor="#278CFF" flexDirection="row" height="44" paddingHorizontal="8" />
+    <style id="screen-header" alignItems="center" backgroundColor="{{ theme.brand }}" flexDirection="row" height="44" paddingHorizontal="8" />
     <style id="back-button" alignItems="center" flexDirection="row" height="44" width="84" />
-    <style id="back-chevron" color="#FFFFFF" fontSize="34" lineHeight="36" marginRight="2" />
-    <style id="back-label" color="#FFFFFF" fontSize="19" fontWeight="700" />
+    <style id="back-chevron" color="{{ theme.on_brand }}" fontSize="34" lineHeight="36" marginRight="2" />
+    <style id="back-label" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
     <style id="screen-header-title-slot" alignItems="center" flex="1" justifyContent="center" />
     <style id="screen-header-spacer" width="84" />
-    <style id="screen-header-title" color="#FFFFFF" fontSize="19" fontWeight="700" />
-    <style id="filter-summary" color="#6D728A" fontSize="13" marginBottom="10" />
+    <style id="screen-header-title" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
+    <style id="filter-summary" color="{{ theme.ink_muted }}" fontSize="13" fontWeight="600" marginBottom="12" />
     <style id="filters" flexDirection="row" flexWrap="wrap" marginBottom="10" />
-    <style id="chip" backgroundColor="#EEF2FC" borderRadius="16" marginBottom="8" marginRight="8" paddingHorizontal="12" paddingVertical="9" />
-    <style id="chip-active" backgroundColor="#DDE7FF" />
-    <style id="chip-text" color="#4C526B" fontSize="13" />
+    <style id="chip" backgroundColor="{{ theme.chip }}" borderRadius="16" justifyContent="center" marginBottom="8" marginRight="8" minHeight="44" paddingHorizontal="14" paddingVertical="9" />
+    <style id="chip-active" backgroundColor="{{ theme.chip_active }}" />
+    <style id="chip-text" color="{{ theme.ink_label }}" fontSize="13" />
+    <style id="chip-text-active" color="{{ theme.chip_ink_active }}" fontWeight="700" />
     <style id="task-list" flex="1" />
     <style id="empty-item" paddingVertical="24" />
     <style id="list-spinner" alignItems="center" height="28" justifyContent="center" />
     <style id="swipe-row" borderRadius="22" marginBottom="12" overflow="hidden" />
-    <style id="task" backgroundColor="#FFFFFF" borderRadius="22" padding="16" />
-    <style id="task-title" color="#20243D" fontSize="17" fontWeight="600" />
-    <style id="meta" color="#7B8097" fontSize="13" marginTop="5" />
-    <style id="bottom-navigation" alignItems="center" backgroundColor="#F7F8FC" borderTopColor="#E9ECF5" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
+    <style id="task" backgroundColor="{{ theme.surface }}" borderRadius="22" padding="16" />
+    <style id="task-title" color="{{ theme.ink_body }}" fontSize="17" fontWeight="600" />
+    <style id="meta" color="{{ theme.ink_muted }}" fontSize="13" marginTop="5" />
+    <style id="empty-card" alignItems="center" backgroundColor="{{ theme.surface }}" borderRadius="24" padding="24" />
+    <style id="empty-title" color="{{ theme.ink }}" fontSize="16" fontWeight="700" marginBottom="6" />
+    <style id="empty-copy" color="{{ theme.ink_muted }}" fontSize="14" textAlign="center" />
+    <style id="bottom-navigation" alignItems="center" backgroundColor="{{ theme.canvas }}" borderTopColor="{{ theme.hairline }}" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
     <style id="nav-hit-area" alignItems="center" flex="1" justifyContent="center" />
     <style id="nav-item" alignItems="center" height="52" justifyContent="center" width="64" />
     <style id="nav-active" opacity="1" />
-    <style id="nav-icon" height="24" width="24" />
-    <style id="nav-label" color="#68708B" fontSize="10" fontWeight="600" marginTop="3" />
-    <style id="nav-label-active" color="#278CFF" fontWeight="700" />
-    <style id="nav-add" alignItems="center" backgroundColor="#278CFF" borderRadius="24" height="48" justifyContent="center" width="48" />
-    <style id="nav-add-symbol" color="#FFFFFF" fontSize="29" fontWeight="400" lineHeight="31" />
-    <style id="side-menu" bottom="0" flexDirection="row" left="0" position="absolute" right="0" top="0" zIndex="50" />
-    <style id="side-menu-panel" backgroundColor="#FFFFFF" flex="1" padding="24" width="286" />
-    <style id="side-menu-header" alignItems="center" flexDirection="row" justifyContent="space-between" marginBottom="16" />
-    <style id="side-menu-eyebrow" color="#278CFF" fontSize="11" fontWeight="700" letterSpacing="1.5" />
-    <style id="side-menu-title" color="#161A35" fontSize="22" fontWeight="700" marginTop="3" />
-    <style id="side-menu-user" color="#7B8097" fontSize="13" marginBottom="28" />
-    <style id="side-menu-links" flex="1" />
-    <style id="side-menu-link" borderRadius="16" marginBottom="8" padding="15" />
-    <style id="side-menu-link-active" backgroundColor="#EEF3FF" />
-    <style id="side-menu-link-text" color="#20243D" fontSize="16" fontWeight="600" />
-    <style id="side-menu-logout-panel" borderTopColor="#E7EAF3" borderTopWidth="1" paddingTop="16" />
-    <style id="side-menu-logout" borderRadius="16" padding="15" />
-    <style id="side-menu-logout-text" color="#B42318" fontSize="16" fontWeight="600" />
+    <!-- One glyph per shape, tinted by style. tintColor is a colour filter the
+         native RCTImageView applies AFTER decoding (it is declared in both the
+         Android and the iOS validAttributes of ImageViewNativeComponent), so it
+         reaches a static file served over the network exactly as it reaches a
+         bundled asset and the baked pixels no longer carry the colour. That is
+         what retired the four *-active.png twins: they differed from their idle
+         file in nothing but a hex the stylesheet now owns. -->
+    <style id="nav-icon" height="24" tintColor="{{ theme.ink_nav }}" width="24" />
+    <style id="nav-icon-active" tintColor="{{ theme.ink_nav_active }}" />
+    <style id="nav-label" color="{{ theme.ink_nav }}" fontSize="10" fontWeight="600" marginTop="3" />
+    <style id="nav-label-active" color="{{ theme.ink_nav_active }}" fontWeight="700" />
+    <style id="nav-add" alignItems="center" backgroundColor="{{ theme.brand }}" borderRadius="24" height="48" justifyContent="center" width="48" />
+    <style id="nav-add-symbol" color="{{ theme.on_brand }}" fontSize="29" fontWeight="400" lineHeight="31" />
   </styles>
   <screen id="tasks-screen">
     <body style="screen">
-      {% include "partials/screen_header.xml" with header_title="Tasks" back_id="task-list-back" %}
+      {% include "partials/screen_header.xml" with header_title=_("Tasks") back_id="task-list-back" %}
       <view id="screen-content" style="screen-content">
-        <text id="filter-summary" style="filter-summary">{{ status_filter|title }} tasks{% if selected_category %} · {{ selected_category.name }}{% endif %}</text>
+        <!-- Fires when a task form closes. It must sit here, not on the <list>: HvList
+             never sets supportsHyperRef (components/hv-element/utils.tsx:16) so it
+             registers no on-event listener, and this element is also the replace
+             target, which would destroy the listener with it. -->
+        <behavior trigger="on-event" event-name="tasks-changed" href="/hv/tasks/?status={{ status_filter }}{% if selected_category %}&amp;category={{ selected_category.id }}{% endif %}&amp;fragment=list" action="replace" target="task-list" />
+        <!-- A sign-in or sign-out reached from a modal on top of this screen leaves
+             it parked with the old account's tasks. An href-less reload re-requests
+             this screen's own url, filter and all (hyperview.tsx:74-82). -->
+        <behavior trigger="on-event" event-name="session-changed" action="reload" />
+        <!-- One filter chip per category is rendered by name and id below, OUTSIDE
+             the task-list replace target, so the tasks-changed listener above never
+             refreshes them. A rename left the old label on a parked screen, and a
+             delete left a chip whose tap 404s on a category that is gone. -->
+        <behavior trigger="on-event" event-name="categories-changed" action="reload" />
+        <text id="filter-summary" style="filter-summary">{% if status_filter == 'active' %}{% translate "Active tasks" %}{% elif status_filter == 'completed' %}{% translate "Completed tasks" %}{% elif status_filter == 'today' %}{% translate "Today's tasks" %}{% elif status_filter == 'scheduled' %}{% translate "Scheduled tasks" %}{% elif status_filter == 'overdue' %}{% translate "Overdue tasks" %}{% else %}{% translate "All tasks" %}{% endif %}{% if selected_category %} · {{ selected_category.name }}{% endif %}</text>
         <view style="filters">
-          <view id="filter-all" style="chip{% if status_filter == 'all' %} chip-active{% endif %}" href="/hv/tasks/?status=all" action="reload"><text style="chip-text">All</text></view>
-          <view id="filter-active" style="chip{% if status_filter == 'active' %} chip-active{% endif %}" href="/hv/tasks/?status=active" action="reload"><text style="chip-text">Active</text></view>
-          <view id="filter-completed" style="chip{% if status_filter == 'completed' %} chip-active{% endif %}" href="/hv/tasks/?status=completed" action="reload"><text style="chip-text">Done</text></view>
-          <view id="filter-today" style="chip{% if status_filter == 'today' %} chip-active{% endif %}" href="/hv/tasks/?status=today" action="reload"><text style="chip-text">Today</text></view>
-          <view id="filter-scheduled" style="chip{% if status_filter == 'scheduled' %} chip-active{% endif %}" href="/hv/tasks/?status=scheduled" action="reload"><text style="chip-text">Scheduled</text></view>
-          <view id="filter-overdue" style="chip{% if status_filter == 'overdue' %} chip-active{% endif %}" href="/hv/tasks/?status=overdue" action="reload"><text style="chip-text">Overdue</text></view>
+          <view id="filter-all" style="chip{% if status_filter == 'all' %} chip-active{% endif %}" href="/hv/tasks/?status=all" action="reload"><text style="chip-text{% if status_filter == 'all' %} chip-text-active{% endif %}">{% translate "All" %}</text></view>
+          <view id="filter-active" style="chip{% if status_filter == 'active' %} chip-active{% endif %}" href="/hv/tasks/?status=active" action="reload"><text style="chip-text{% if status_filter == 'active' %} chip-text-active{% endif %}">{% translate "Active" %}</text></view>
+          <view id="filter-completed" style="chip{% if status_filter == 'completed' %} chip-active{% endif %}" href="/hv/tasks/?status=completed" action="reload"><text style="chip-text{% if status_filter == 'completed' %} chip-text-active{% endif %}">{% translate "Done" %}</text></view>
+          <view id="filter-today" style="chip{% if status_filter == 'today' %} chip-active{% endif %}" href="/hv/tasks/?status=today" action="reload"><text style="chip-text{% if status_filter == 'today' %} chip-text-active{% endif %}">{% translate "Today" %}</text></view>
+          <view id="filter-scheduled" style="chip{% if status_filter == 'scheduled' %} chip-active{% endif %}" href="/hv/tasks/?status=scheduled" action="reload"><text style="chip-text{% if status_filter == 'scheduled' %} chip-text-active{% endif %}">{% translate "Scheduled" %}</text></view>
+          <view id="filter-overdue" style="chip{% if status_filter == 'overdue' %} chip-active{% endif %}" href="/hv/tasks/?status=overdue" action="reload"><text style="chip-text{% if status_filter == 'overdue' %} chip-text-active{% endif %}">{% translate "Overdue" %}</text></view>
         </view>
         {% if categories %}
         <view style="filters">
-          {% for category in categories %}<view style="chip{% if selected_category.id == category.id %} chip-active{% endif %}" href="/hv/tasks/?status={{ status_filter }}&amp;category={{ category.id }}" action="reload"><text style="chip-text">{{ category.name }}</text></view>{% endfor %}
+          {% for category in categories %}<view style="chip{% if selected_category.id == category.id %} chip-active{% endif %}" href="/hv/tasks/?status={{ status_filter }}&amp;category={{ category.id }}" action="reload"><text style="chip-text{% if selected_category.id == category.id %} chip-text-active{% endif %}">{{ category.name }}</text></view>{% endfor %}
         </view>
         {% endif %}
         {% include "fragments/task_list.xml" %}
-        <view id="task-list-spinner" style="list-spinner" hide="true"><spinner /></view>
+        <view id="task-list-spinner" style="list-spinner" hide="true"><spinner color="{{ theme.spinner }}" /></view>
       </view>
       {% include "fragments/bottom_navigation.xml" with active_nav="tasks" %}
-      {% include "fragments/side_menu_host.xml" %}
     </body>
   </screen>
 </doc>

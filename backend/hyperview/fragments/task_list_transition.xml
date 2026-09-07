@@ -1,4 +1,11 @@
 <view xmlns="https://hyperview.org/hyperview" id="task-list-transition">
   <behavior trigger="load" action="show-snackbar" message="{{ notice_message }}" tone="success" once="true" />
-  <behavior trigger="load" href="/hv/tasks/" action="reload" />
+  <!-- NOT `reload href="/hv/tasks/"`. That re-requests the list with no query string,
+       and task_list defaults status to "all" with no category, so a swipe-toggle or
+       swipe-delete silently threw away the filter the user was looking at and the
+       dashboard behind it was never refreshed at all. This is the same announcement
+       task_transition.xml makes, so form-save, toggle and delete now share one shape:
+       the tasks screen's listener re-requests the list WITH the filter still on it,
+       and the dashboard's listener reloads its own url. -->
+  <behavior trigger="load" action="dispatch-event" event-name="tasks-changed" once="true" />
 </view>

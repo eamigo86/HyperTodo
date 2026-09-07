@@ -1,0 +1,37 @@
+{% load i18n %}<view xmlns="https://hyperview.org/hyperview" style="card">
+  <text style="section">{% translate "Security" %}</text>
+  <!-- OFF-ONLY, by ABSENCE rather than by a disabled control. HvSwitch builds its
+       props from a fixed literal (hv-switch/index.tsx:53-76) and never calls
+       createProps, so `disabled` is unreachable from HXML: a "disabled" switch
+       would still flip under the finger and still serialise: a live control
+       that silently does nothing, which is the rule-9 dead control in a costume.
+       And there is nothing to turn ON here: with no credential the ON position
+       would mean "enrol", which the password-sign-in-only model exists to forbid.
+       A real <switch> and not the custom pill the appearance toggle uses. Rule 11
+       forbids a <switch> with <behavior trigger="change">, whose onChange clones
+       the element before triggering so getFormData walks up to nothing
+       (hv-switch/index.tsx:58-61). This one has no change behavior: onValueChange
+       swaps the LIVE element for a clone carrying the new value (:63-67), so the
+       DOM holds the pending state and the Save button posts it. Exactly the shape
+       fragments/login_panel.xml already ships for the sign-in opt-in.
+       The id is the accessible name ON ANDROID ONLY, ugly as that reads and
+       incomplete as it is: HvSwitch takes only createTestProps (:51), so an alt or
+       accessibilityLabel attribute is dropped, and createTestPropsFromId returns
+       {accessibilityLabel: id} off iOS but {testID: id} ON iOS
+       (services/index.ts:81-84). So VoiceOver reaches this control with NO NAME at
+       all; the <text> beside it is a sibling and is never associated. The STATE
+       is fine on both: React Native's Switch supplies accessibilityRole="switch"
+       and the checked state itself (Switch.js:255 and :287). Closing the iOS gap
+       needs a client change, not a template one; there is no HXML channel for it.
+       The value is SERVER-SET and not a literal: a 422 rebuilds this panel while
+       the credential still exists, so a hardcoded "on" repainted the switch over a
+       pending revocation and the next Save kept the credential. See
+       _settings_context in todo/views.py. -->
+  {% if biometric_enrolled %}<view id="biometric-panel" style="action-row switch-row">
+    <text style="action-row-text">{% translate "Unlock with biometrics" %}</text>
+    <switch id="{% translate "Unlock with biometrics on this phone" %}" name="biometric_unlock" value="{{ biometric_switch_value }}" style="optin-switch" />
+  </view>{% else %}<view id="biometric-panel">
+    <text style="meta">{% translate "Biometric unlock is off on this phone." %}</text>
+    <text style="meta">{% translate "Sign out, then sign in with your password and turn on 'Unlock with biometrics next time'." %}</text>
+  </view>{% endif %}
+</view>

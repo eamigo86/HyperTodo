@@ -49,3 +49,40 @@ def test_task_rejects_category_owned_by_another_user(user, other_user):
     task = Task(user=user, category=category, title="Invalid")
     with pytest.raises(ValidationError, match="same user"):
         task.clean()
+
+
+def test_a_user_without_a_profile_row_resolves_to_none(user):
+    # The whole preference stack leans on this: RelatedObjectDoesNotExist inherits
+    # from AttributeError, so getattr swallows it and every pre-migration account
+    # falls through to the defaults instead of raising on the dashboard.
+    assert getattr(user, "profile", None) is None
+
+    from django.contrib.auth.models import AnonymousUser
+
+    assert getattr(AnonymousUser(), "profile", None) is None
+
+
+def test_a_new_profile_states_no_preference_at_all(user):
+    # Three preferences share ONE row, so a non-empty default on any field would be
+    # written the moment a sibling field is set. A Spanish phone that switches to
+    # dark mode must not silently acquire language="en".
+    from todo.models import Profile
+
+    profile = Profile.objects.create(user=user)
+
+    assert (profile.theme, profile.language) == ("", "")
+    assert profile.avatar.name in ("", None)
+
+
+def test_one_user_cannot_hold_two_profiles(user):
+    from todo.models import Profile
+
+    Profile.objects.create(user=user)
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Profile.objects.create(user=user)
+
+
+def test_a_profile_names_the_user_it_belongs_to(user):
+    from todo.models import Profile
+
+    assert str(Profile.objects.create(user=user)) == f"Preferences for {user}"

@@ -1,0 +1,720 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-07 03:52-0400\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: hyperview/fragments/avatar_panel.xml:13 hyperview/fragments/side_menu.xml:8
+msgid "Your profile photo"
+msgstr "Tu foto de perfil"
+
+#: hyperview/fragments/avatar_panel.xml:30
+msgid "Update HyperTodo to change your photo."
+msgstr "Actualiza HyperTodo para cambiar tu foto."
+
+#: hyperview/fragments/biometric_forget.xml:3
+#: hyperview/screens/settings.xml:112
+msgid "Biometric unlock is off on this phone."
+msgstr "El desbloqueo biométrico está desactivado en este teléfono."
+
+#: hyperview/fragments/bottom_navigation.xml:4
+#: hyperview/fragments/side_menu.xml:32
+msgid "Home"
+msgstr "Inicio"
+
+#: hyperview/fragments/bottom_navigation.xml:8
+#: hyperview/fragments/side_menu.xml:37 hyperview/screens/tasks.xml:49
+msgid "Tasks"
+msgstr "Tareas"
+
+#: hyperview/fragments/bottom_navigation.xml:15
+#: hyperview/fragments/side_menu.xml:42 hyperview/screens/categories.xml:74
+msgid "Categories"
+msgstr "Categorías"
+
+#: hyperview/fragments/bottom_navigation.xml:19
+#: hyperview/fragments/side_menu.xml:47 hyperview/screens/settings.xml:88
+msgid "Settings"
+msgstr "Ajustes"
+
+#: hyperview/fragments/category_form_panel.xml:2
+msgid "Please review the highlighted category details."
+msgstr "Revisa los datos de la categoría marcados."
+
+#: hyperview/fragments/category_form_panel.xml:4
+#: hyperview/fragments/settings_form_panel.xml:4
+#: hyperview/fragments/task_form_panel.xml:4
+msgid "Review the fields marked in red."
+msgstr "Revisa los campos marcados en rojo."
+
+#: hyperview/fragments/category_form_panel.xml:6
+#: hyperview/fragments/task_form_panel.xml:6
+msgid "Details"
+msgstr "Detalles"
+
+#: hyperview/fragments/category_form_panel.xml:8
+msgid "Name"
+msgstr "Nombre"
+
+#: hyperview/fragments/category_form_panel.xml:9
+msgid "Category name"
+msgstr "Nombre de la categoría"
+
+#: hyperview/fragments/category_form_panel.xml:11
+msgid "Color"
+msgstr "Color"
+
+#: hyperview/fragments/category_form_panel.xml:23
+msgid "Save category"
+msgstr "Guardar categoría"
+
+#: hyperview/fragments/dashboard_content.xml:24
+#: hyperview/fragments/dashboard_content.xml:25
+msgid "Open the menu"
+msgstr "Abrir el menú"
+
+#: hyperview/fragments/dashboard_content.xml:32
+#, python-format
+msgid "%(done)s of %(total)s done today"
+msgstr "%(done)s de %(total)s hechas hoy"
+
+#: hyperview/fragments/dashboard_content.xml:36
+msgid "you're on track"
+msgstr "vas bien"
+
+#: hyperview/fragments/dashboard_content.xml:36
+msgid "let's get moving"
+msgstr "a moverse"
+
+#: hyperview/fragments/dashboard_content.xml:41 hyperview/screens/tasks.xml:67
+msgid "All"
+msgstr "Todas"
+
+#: hyperview/fragments/dashboard_content.xml:43
+#, python-format
+msgid "%(counter)s total"
+msgid_plural "%(counter)s total"
+msgstr[0] "%(counter)s en total"
+msgstr[1] "%(counter)s en total"
+
+#: hyperview/fragments/dashboard_content.xml:47 hyperview/screens/tasks.xml:70
+msgid "Today"
+msgstr "Hoy"
+
+#: hyperview/fragments/dashboard_content.xml:49
+#, python-format
+msgid "+%(counter)s done last 7 days"
+msgid_plural "+%(counter)s done last 7 days"
+msgstr[0] "+%(counter)s hecha en 7 días"
+msgstr[1] "+%(counter)s hechas en 7 días"
+
+#: hyperview/fragments/dashboard_content.xml:49
+msgid "nothing done yet"
+msgstr "nada hecho aún"
+
+#: hyperview/fragments/dashboard_content.xml:53 hyperview/screens/tasks.xml:72
+msgid "Overdue"
+msgstr "Vencidas"
+
+#: hyperview/fragments/dashboard_content.xml:55
+msgid "needs attention"
+msgstr "necesita atención"
+
+#: hyperview/fragments/dashboard_content.xml:55
+msgid "all clear"
+msgstr "todo en orden"
+
+#: hyperview/fragments/dashboard_content.xml:59 hyperview/screens/tasks.xml:71
+msgid "Scheduled"
+msgstr "Programadas"
+
+#: hyperview/fragments/dashboard_content.xml:61
+#, python-format
+msgid "next: %(label)s"
+msgstr "próxima: %(label)s"
+
+#: hyperview/fragments/dashboard_content.xml:61
+msgid "nothing planned"
+msgstr "nada planeado"
+
+#: hyperview/fragments/dashboard_content.xml:66
+#, python-format
+msgid "%(counter)s overdue"
+msgid_plural "%(counter)s overdue"
+msgstr[0] "%(counter)s vencida"
+msgstr[1] "%(counter)s vencidas"
+
+#: hyperview/fragments/dashboard_content.xml:67
+msgid "Review"
+msgstr "Revisar"
+
+#: hyperview/fragments/dashboard_content.xml:72
+msgid "Up next"
+msgstr "A continuación"
+
+#: hyperview/fragments/dashboard_content.xml:73
+msgid "See all"
+msgstr "Ver todas"
+
+#: hyperview/fragments/dashboard_content.xml:88
+msgid "Nothing due next. Plan your week from the Tasks tab."
+msgstr "No hay nada pendiente. Planifica tu semana desde la pestaña Tareas."
+
+#: hyperview/fragments/dashboard_content.xml:93
+msgid "Last 7 days"
+msgstr "Últimos 7 días"
+
+#: hyperview/fragments/dashboard_content.xml:94
+#, python-format
+msgid "%(done)s done · %(streak)s-day streak"
+msgstr "%(done)s hechas · racha de %(streak)s días"
+
+#: hyperview/fragments/login_panel.xml:5
+msgid "Welcome back"
+msgstr "Hola de nuevo"
+
+#: hyperview/fragments/login_panel.xml:6
+msgid "Sign in to see your tasks and categories."
+msgstr "Inicia sesión para ver tus tareas y categorías."
+
+#: hyperview/fragments/login_panel.xml:8
+msgid "Enter your username and password."
+msgstr "Escribe tu usuario y contraseña."
+
+#: hyperview/fragments/login_panel.xml:9
+msgid "Username"
+msgstr "Usuario"
+
+#: hyperview/fragments/login_panel.xml:10
+msgid "Enter your username"
+msgstr "Escribe tu usuario"
+
+#: hyperview/fragments/login_panel.xml:11
+msgid "Password"
+msgstr "Contraseña"
+
+#: hyperview/fragments/login_panel.xml:12
+msgid "Enter your password"
+msgstr "Escribe tu contraseña"
+
+#: hyperview/fragments/login_panel.xml:14
+#: hyperview/fragments/login_panel.xml:22
+msgid "Unlock with biometrics next time"
+msgstr "Desbloquear con biometría la próxima vez"
+
+#: hyperview/fragments/login_panel.xml:26
+msgid "Sign in"
+msgstr "Iniciar sesión"
+
+#: hyperview/fragments/login_panel.xml:34
+msgid "Sign in to HyperTodo"
+msgstr "Inicia sesión en HyperTodo"
+
+#: hyperview/fragments/login_panel.xml:40
+msgid "Sign in with face recognition"
+msgstr "Iniciar sesión con reconocimiento facial"
+
+#: hyperview/fragments/login_panel.xml:41
+msgid "Sign in with your fingerprint"
+msgstr "Iniciar sesión con tu huella"
+
+#: hyperview/fragments/login_panel.xml:44
+msgid "Your tasks stay private to your account."
+msgstr "Tus tareas son privadas de tu cuenta."
+
+#: hyperview/fragments/settings_form_panel.xml:2
+msgid "Please review the highlighted profile details."
+msgstr "Revisa los datos de perfil marcados."
+
+#: hyperview/fragments/settings_form_panel.xml:6
+msgid "Profile"
+msgstr "Perfil"
+
+#: hyperview/fragments/settings_form_panel.xml:8
+#: hyperview/fragments/settings_form_panel.xml:9
+msgid "First name"
+msgstr "Nombre"
+
+#: hyperview/fragments/settings_form_panel.xml:9
+#: hyperview/fragments/settings_form_panel.xml:12
+#: hyperview/fragments/settings_form_panel.xml:15
+msgid "Optional"
+msgstr "Opcional"
+
+#: hyperview/fragments/settings_form_panel.xml:11
+#: hyperview/fragments/settings_form_panel.xml:12
+msgid "Last name"
+msgstr "Apellido"
+
+#: hyperview/fragments/settings_form_panel.xml:14
+#: hyperview/fragments/settings_form_panel.xml:15
+msgid "Email"
+msgstr "Correo"
+
+#: hyperview/fragments/side_menu.xml:61
+msgid "Sign out"
+msgstr "Cerrar sesión"
+
+#: hyperview/fragments/task_form_panel.xml:2
+msgid "Please review the highlighted task details."
+msgstr "Revisa los datos de la tarea marcados."
+
+#: hyperview/fragments/task_form_panel.xml:8
+#: hyperview/fragments/task_form_panel.xml:9
+msgid "Title"
+msgstr "Título"
+
+#: hyperview/fragments/task_form_panel.xml:9
+msgid "What needs doing?"
+msgstr "¿Qué hay que hacer?"
+
+#: hyperview/fragments/task_form_panel.xml:11
+#: hyperview/fragments/task_form_panel.xml:12
+msgid "Notes"
+msgstr "Notas"
+
+#: hyperview/fragments/task_form_panel.xml:12
+msgid "Optional details"
+msgstr "Detalles opcionales"
+
+#: hyperview/fragments/task_form_panel.xml:14
+msgid "Category"
+msgstr "Categoría"
+
+#: hyperview/fragments/task_form_panel.xml:15
+#: hyperview/fragments/task_form_panel.xml:24
+msgid "Cancel"
+msgstr "Cancelar"
+
+#: hyperview/fragments/task_form_panel.xml:15
+#: hyperview/fragments/task_form_panel.xml:24 hyperview/screens/tasks.xml:69
+msgid "Done"
+msgstr "Listo"
+
+#: hyperview/fragments/task_form_panel.xml:15
+#: hyperview/fragments/task_form_panel.xml:16
+msgid "No category"
+msgstr "Sin categoría"
+
+#: hyperview/fragments/task_form_panel.xml:22
+msgid "Schedule"
+msgstr "Programación"
+
+#: hyperview/fragments/task_form_panel.xml:23
+msgid "Due date"
+msgstr "Fecha límite"
+
+#: hyperview/fragments/task_form_panel.xml:24
+msgid "Select due date"
+msgstr "Elegir fecha límite"
+
+#: hyperview/fragments/task_form_panel.xml:26
+#: hyperview/fragments/task_form_panel.xml:27
+msgid "Due time"
+msgstr "Hora límite"
+
+#: hyperview/fragments/task_form_panel.xml:31
+msgid "Save task"
+msgstr "Guardar tarea"
+
+#: hyperview/partials/category_items.xml:8
+#: hyperview/partials/category_items.xml:19
+#, python-format
+msgid "%(counter)s task"
+msgid_plural "%(counter)s tasks"
+msgstr[0] "%(counter)s tarea"
+msgstr[1] "%(counter)s tareas"
+
+#: hyperview/partials/category_items.xml:10
+#: hyperview/partials/category_items.xml:23
+#: hyperview/partials/task_items.xml:17
+msgid "Edit"
+msgstr "Editar"
+
+#: hyperview/partials/category_items.xml:10 todo/views.py:1030
+msgid "Edit category"
+msgstr "Editar categoría"
+
+#: hyperview/partials/category_items.xml:11
+#: hyperview/partials/category_items.xml:24
+#: hyperview/partials/task_items.xml:19
+msgid "Delete"
+msgstr "Eliminar"
+
+#: hyperview/partials/category_items.xml:11
+msgid "Delete category"
+msgstr "Eliminar categoría"
+
+#: hyperview/partials/category_items.xml:11
+msgid "Delete category?"
+msgstr "¿Eliminar la categoría?"
+
+#: hyperview/partials/category_items.xml:11
+msgid "Its tasks stay, without a category."
+msgstr "Sus tareas se conservan, sin categoría."
+
+#: hyperview/partials/category_items.xml:32
+msgid "No categories yet"
+msgstr "Todavía no hay categorías"
+
+#: hyperview/partials/category_items.xml:32
+msgid "Create a category to organize your tasks."
+msgstr "Crea una categoría para organizar tus tareas."
+
+#: hyperview/partials/preference_switcher.xml:12
+msgid "Appearance"
+msgstr "Apariencia"
+
+#: hyperview/partials/preference_switcher.xml:26
+msgid "Language"
+msgstr "Idioma"
+
+#: hyperview/partials/preference_switcher.xml:34
+msgid "English, current language"
+msgstr "English, idioma actual"
+
+#: hyperview/partials/preference_switcher.xml:34
+msgid "Switch to English"
+msgstr "Cambiar a English"
+
+#: hyperview/partials/preference_switcher.xml:37
+msgid "Español, current language"
+msgstr "Español, idioma actual"
+
+#: hyperview/partials/preference_switcher.xml:37
+msgid "Switch to Español"
+msgstr "Cambiar a Español"
+
+#: hyperview/partials/screen_header.xml:2
+msgid "Back"
+msgstr "Atrás"
+
+#: hyperview/partials/task_items.xml:15
+#, python-format
+msgid "Due %(due)s"
+msgstr "Vence %(due)s"
+
+#: hyperview/partials/task_items.xml:17 todo/views.py:838
+msgid "Edit task"
+msgstr "Editar tarea"
+
+#: hyperview/partials/task_items.xml:18
+msgid "Reopen"
+msgstr "Reabrir"
+
+#: hyperview/partials/task_items.xml:18
+msgid "Complete"
+msgstr "Completar"
+
+#: hyperview/partials/task_items.xml:18
+msgid "Reopen task"
+msgstr "Reabrir tarea"
+
+#: hyperview/partials/task_items.xml:18
+msgid "Complete task"
+msgstr "Completar tarea"
+
+#: hyperview/partials/task_items.xml:19
+msgid "Delete task"
+msgstr "Eliminar tarea"
+
+#: hyperview/partials/task_items.xml:19
+msgid "Delete task?"
+msgstr "¿Eliminar la tarea?"
+
+#: hyperview/partials/task_items.xml:19
+msgid "This action cannot be undone."
+msgstr "Esta acción no se puede deshacer."
+
+#: hyperview/partials/task_items.xml:27
+msgid "Nothing here yet"
+msgstr "Todavía no hay nada"
+
+#: hyperview/partials/task_items.xml:27
+msgid "No tasks match these filters."
+msgstr "Ninguna tarea coincide con estos filtros."
+
+#: hyperview/screens/categories.xml:90
+msgid "+ Add category"
+msgstr "+ Añadir categoría"
+
+#: hyperview/screens/error.xml:18
+msgid "Something went wrong"
+msgstr "Algo salió mal"
+
+#: hyperview/screens/error.xml:20
+msgid "Return home"
+msgstr "Volver al inicio"
+
+#: hyperview/screens/session_expired.xml:18
+msgid "Your session expired"
+msgstr "Tu sesión caducó"
+
+#: hyperview/screens/session_expired.xml:19
+msgid "Sign in again to keep your tasks private."
+msgstr "Inicia sesión de nuevo para mantener tus tareas privadas."
+
+#: hyperview/screens/session_expired.xml:20
+msgid "Return to sign in"
+msgstr "Volver a iniciar sesión"
+
+#: hyperview/screens/settings.xml:102
+msgid "Photo"
+msgstr "Foto"
+
+#: hyperview/screens/settings.xml:106
+msgid "Security"
+msgstr "Seguridad"
+
+#: hyperview/screens/settings.xml:115
+#, python-format
+msgid "Version %(app_version)s"
+msgstr "Versión %(app_version)s"
+
+#: hyperview/screens/tasks.xml:65
+msgid "Active tasks"
+msgstr "Tareas activas"
+
+#: hyperview/screens/tasks.xml:65
+msgid "Completed tasks"
+msgstr "Tareas completadas"
+
+#: hyperview/screens/tasks.xml:65
+msgid "Today's tasks"
+msgstr "Tareas de hoy"
+
+#: hyperview/screens/tasks.xml:65
+msgid "Scheduled tasks"
+msgstr "Tareas programadas"
+
+#: hyperview/screens/tasks.xml:65
+msgid "Overdue tasks"
+msgstr "Tareas vencidas"
+
+#: hyperview/screens/tasks.xml:65
+msgid "All tasks"
+msgstr "Todas las tareas"
+
+#: hyperview/screens/tasks.xml:68
+msgid "Active"
+msgstr "Activas"
+
+#: todo/forms.py:34
+msgid "That file is not an image."
+msgstr "Ese archivo no es una imagen."
+
+#: todo/forms.py:35
+msgid "That photo is too large. Pick a smaller one."
+msgstr "Esa foto es demasiado grande. Elige una más pequeña."
+
+#: todo/forms.py:77
+msgid "A category with this name already exists."
+msgstr "Ya existe una categoría con este nombre."
+
+#: todo/forms.py:116
+msgid "This email is already in use."
+msgstr "Este correo ya está en uso."
+
+#: todo/forms.py:161
+msgid "A due date is required when a time is set."
+msgstr "Se necesita una fecha límite cuando se indica una hora."
+
+#: todo/models.py:18
+msgid "Lavender"
+msgstr "Lavanda"
+
+#: todo/models.py:19
+msgid "Yellow"
+msgstr "Amarillo"
+
+#: todo/models.py:20
+msgid "Mint"
+msgstr "Menta"
+
+#: todo/models.py:21
+msgid "Pink"
+msgstr "Rosa"
+
+#: todo/models.py:22
+msgid "Green"
+msgstr "Verde"
+
+#: todo/models.py:105
+msgid "Category must belong to the same user."
+msgstr "La categoría debe pertenecer al mismo usuario."
+
+#: todo/views.py:151
+msgid "The requested item was not found."
+msgstr "No se encontró el elemento solicitado."
+
+#: todo/views.py:173
+msgid "Your session expired. Sign in again."
+msgstr "Tu sesión caducó. Inicia sesión de nuevo."
+
+#: todo/views.py:181
+msgid "This action does not support the requested method."
+msgstr "Esta acción no admite el método solicitado."
+
+#: todo/views.py:197
+msgid "Good morning"
+msgstr "Buenos días"
+
+#: todo/views.py:199
+msgid "Good afternoon"
+msgstr "Buenas tardes"
+
+#: todo/views.py:200
+msgid "Good evening"
+msgstr "Buenas noches"
+
+#: todo/views.py:303
+msgid "The username or password is incorrect."
+msgstr "El usuario o la contraseña son incorrectos."
+
+#: todo/views.py:398
+msgid "Too many attempts. Sign in with your password."
+msgstr "Demasiados intentos. Inicia sesión con tu contraseña."
+
+#: todo/views.py:409
+msgid "This device is no longer recognised. Sign in to enable it again."
+msgstr "Este dispositivo ya no se reconoce. Inicia sesión para volver a activarlo."
+
+#: todo/views.py:636
+msgid "Name exactly one preference."
+msgstr "Indica exactamente una preferencia."
+
+#: todo/views.py:640
+msgid "Unknown preference value."
+msgstr "Valor de preferencia desconocido."
+
+#: todo/views.py:648
+msgid "Language updated."
+msgstr "Idioma actualizado."
+
+#: todo/views.py:650
+msgid "Appearance updated."
+msgstr "Apariencia actualizada."
+
+#: todo/views.py:786
+msgid "Unknown task filter."
+msgstr "Filtro de tareas desconocido."
+
+#: todo/views.py:797
+msgid "Unknown category filter."
+msgstr "Filtro de categorías desconocido."
+
+#: todo/views.py:806
+msgid "Unknown task-list fragment."
+msgstr "Fragmento de lista de tareas desconocido."
+
+#: todo/views.py:813
+msgid "Unknown task-list page."
+msgstr "Página de lista de tareas desconocida."
+
+#: todo/views.py:838
+msgid "New task"
+msgstr "Nueva tarea"
+
+#: todo/views.py:870
+msgid "Task created."
+msgstr "Tarea creada."
+
+#: todo/views.py:907
+msgid "Task updated."
+msgstr "Tarea actualizada."
+
+#: todo/views.py:938
+msgid "Task completed."
+msgstr "Tarea completada."
+
+#: todo/views.py:938
+msgid "Task reopened."
+msgstr "Tarea reabierta."
+
+#: todo/views.py:965
+msgid "Task deleted."
+msgstr "Tarea eliminada."
+
+#: todo/views.py:991
+msgid "Unknown category-list fragment."
+msgstr "Fragmento de lista de categorías desconocido."
+
+#: todo/views.py:1000
+msgid "Unknown category-list page."
+msgstr "Página de lista de categorías desconocida."
+
+#: todo/views.py:1030
+msgid "New category"
+msgstr "Nueva categoría"
+
+#: todo/views.py:1060
+msgid "Category created."
+msgstr "Categoría creada."
+
+#: todo/views.py:1095
+msgid "Category updated."
+msgstr "Categoría actualizada."
+
+#: todo/views.py:1124
+msgid "Category deleted."
+msgstr "Categoría eliminada."
+
+#: todo/views.py:1149
+msgid "Security validation failed. Reload and try again."
+msgstr "Falló la validación de seguridad. Recarga e inténtalo de nuevo."
+
+#: hyperview/fragments/avatar_panel.xml
+msgid "Your initials. Update HyperTodo to change your photo."
+msgstr "Tus iniciales. Actualiza HyperTodo para cambiar tu foto."
+
+#: hyperview/fragments/avatar_panel.xml
+msgid "Update the app"
+msgstr "Actualiza la app"
+
+#: hyperview/partials/preference_switcher.xml
+msgid "Dark theme, on. Activate to use the light theme."
+msgstr "Tema oscuro, activado. Activa para usar el tema claro."
+
+#: hyperview/partials/preference_switcher.xml
+msgid "Dark theme, off. Activate to use the dark theme."
+msgstr "Tema oscuro, desactivado. Activa para usar el tema oscuro."
+
+#: hyperview/partials/preference_switcher.xml
+msgid "Dark theme"
+msgstr "Tema oscuro"
+
+msgid "Choose photo"
+msgstr "Elegir foto"
+
+msgid "Save settings"
+msgstr "Guardar ajustes"
+
+msgid "Settings saved."
+msgstr "Ajustes guardados."
+
+msgid "Unlock with biometrics"
+msgstr "Desbloqueo biométrico"
+
+msgid "Unlock with biometrics on this phone"
+msgstr "Desbloqueo biométrico en este teléfono"
+
+msgid "Your photo is saved when you tap Save settings."
+msgstr "Tu foto se guarda al tocar Guardar ajustes."
+
+msgid "Sign out, then sign in with your password and turn on 'Unlock with biometrics next time'."
+msgstr "Cierra sesión, inicia sesión con tu contraseña y activa 'Desbloquear con biometría la próxima vez'."
+

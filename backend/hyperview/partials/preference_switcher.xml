@@ -1,0 +1,69 @@
+{% load i18n %}<view xmlns="https://hyperview.org/hyperview" id="preference-panel">
+  <!-- No <form> of its own: the HOST supplies the form ancestor, because
+       getFormData walks up to the closest one and whatever it finds there is the
+       whole POST body. The drawer is the single host now, and it has no fields, so
+       it supplies a form holding only the CSRF token. A control with NO form
+       ancestor posts a null body and Django rejects it at the CSRF check, which is
+       precisely why a <switch> cannot be used here at all. Both controls carry
+       their TARGET value in the href, so the server writes absolute state and a
+       double tap cannot flip anything back.
+       HISTORY, not a live constraint: this partial also sat on Settings, where the
+       ancestor was settings-form so a theme tap carried the first name the user had
+       just typed. Settings became one deferred form with one Save button and a
+       tap-commits control could not stay on it. A future second host owes the same
+       form ancestor, for the CSRF reason above. -->
+  <text style="preference-label">{% translate "Appearance" %}</text>
+  <!-- A pill built from views, because the binary control the design asks for
+       cannot be a <switch> here at all: HvSwitch clones the element before it
+       triggers, the clone has no parentNode, getFormData walks up to nothing and
+       the POST body is null, no csrfmiddlewaretoken, so Django rejects the tap.
+       The href names the OPPOSITE theme, so the server still writes absolute
+       state. The whole row is the target, not just the pill.
+       The knob does NOT animate, and it cannot: Hyperview has no style
+       transition and `replace` is a DOM swap, so the thumb moves in one frame
+       between the two justifyContent positions. The only motion here for free is
+       the pressed row fill under the finger. Making it slide needs a native
+       component, a store release and a rule-9 fallback for every older binary.
+       The label carries the NAME and the STATE, because accessibilityState is
+       unreachable: createProps copies attributes verbatim, so a string can never
+       become React Native's {checked: boolean}. accessibilityRole="switch" with
+       no state announces "switch" and nothing else, so the role is "button".
+       No id on that text: createTestProps is spread LAST and on Android an id
+       overwrites accessibilityLabel with the slug. No id on the ROW either, for
+       the same reason one step up: HyperRef passes its own TouchableOpacity
+       createTestProps (hyper-ref.tsx:299 and 343), which is accessibilityLabel=id
+       on every non-iOS platform (services/index.ts:81-84), and a wrapper carrying
+       a contentDescription is the node TalkBack focuses, so the row would say
+       "theme-toggle" instead of the state on the label below it. Nothing outside
+       tests ever read these ids and the replace target is the PANEL, not the
+       control, so they select by style or href now. Same rule, same reason, as
+       the dashboard hero trigger in tests/test_settings.py. -->
+  <view style="pref-toggle-row" href="/hv/preferences/?theme={% if theme_name == 'dark' %}light{% else %}dark{% endif %}" verb="post" action="replace" target="preference-panel">
+    <text style="pref-toggle-label" accessibilityRole="button" accessibilityLabel="{% if theme_name == 'dark' %}{% translate "Dark theme, on. Activate to use the light theme." %}{% else %}{% translate "Dark theme, off. Activate to use the dark theme." %}{% endif %}">{% translate "Dark theme" %}</text>
+    <view style="pref-toggle-track{% if theme_name == 'dark' %} pref-toggle-track-on{% endif %}"><view style="pref-toggle-knob" /></view>
+  </view>
+  <text style="preference-label">{% translate "Language" %}</text>
+  <view style="preference-row">
+    <!-- The option labels are NOT translated: a language is named in its own
+         language, because that is the one string a speaker looking for it can
+         read. The flag DECORATES that word and never replaces it, which is what
+         answers the country-versus-language objection: alone, the stars and
+         stripes would tell a British user this app has no English and the
+         Spanish flag would exclude every Latin American speaker, but beside the
+         word it is only a landmark for the eye. It is also hidden from the
+         accessibility tree on both platforms, so no screen reader ever says a
+         country name; and on a ROM whose emoji font lacks flag sequences it
+         degrades to two boxed letters next to a word that already carries the
+         whole meaning. Emoji rather than PNGs on purpose: a colour flag file
+         would have to break the 72x72 monochrome icon convention and grow the
+         untinted-glyph allowlist, for a shape both platforms already draw. -->
+    <view style="preference-option{% if request.LANGUAGE_CODE == 'en' %} preference-option-current{% endif %}" href="/hv/preferences/?language=en" verb="post" action="replace" target="preference-panel">
+      <text style="preference-option-flag" accessibilityElementsHidden="true" importantForAccessibility="no">🇬🇧</text>
+      <text style="preference-option-text{% if request.LANGUAGE_CODE == 'en' %} preference-option-text-current{% endif %}" accessibilityRole="button" accessibilityLabel="{% if request.LANGUAGE_CODE == 'en' %}{% translate "English, current language" %}{% else %}{% translate "Switch to English" %}{% endif %}">English</text>
+    </view>
+    <view style="preference-option{% if request.LANGUAGE_CODE == 'es' %} preference-option-current{% endif %}" href="/hv/preferences/?language=es" verb="post" action="replace" target="preference-panel">
+      <text style="preference-option-flag" accessibilityElementsHidden="true" importantForAccessibility="no">🇪🇸</text>
+      <text style="preference-option-text{% if request.LANGUAGE_CODE == 'es' %} preference-option-text-current{% endif %}" accessibilityRole="button" accessibilityLabel="{% if request.LANGUAGE_CODE == 'es' %}{% translate "Español, current language" %}{% else %}{% translate "Switch to Español" %}{% endif %}">Español</text>
+    </view>
+  </view>
+</view>

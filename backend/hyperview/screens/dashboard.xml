@@ -1,21 +1,41 @@
 {% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
-    <style id="screen" backgroundColor="#F7F8FC" flex="1" />
+    <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
     <style id="screen-content" flex="1" />
-    <style id="hero" backgroundColor="#278CFF" paddingBottom="56" paddingHorizontal="24" paddingTop="18" />
-    <style id="hero-row" alignItems="center" flexDirection="row" marginBottom="18" />
-    <style id="hero-avatar" alignItems="center" backgroundColor="#FFFFFF" borderRadius="18" height="36" justifyContent="center" marginRight="12" width="36" />
-    <style id="hero-initials" color="#278CFF" fontSize="14" fontWeight="700" />
+    <style id="hero" backgroundColor="{{ theme.brand }}" paddingBottom="56" paddingHorizontal="24" paddingTop="18" />
+    <!-- `gap`, not a margin on the disc: the disc is the side-menu touchable and has
+         no href-style, so HyperRef wraps it in an unstyled TouchableOpacity that
+         sizes to the child's MARGIN box (hyper-ref.tsx:198-205, :343). A margin would
+         hang off the disc as tappable dead space; `gap` lives outside every child. -->
+    <style id="hero-row" alignItems="center" flexDirection="row" gap="12" marginBottom="18" />
+    <!-- 52pt disc = its own 44pt-plus hit area. `pressed` propagates to every
+         descendant and each one WITHOUT a pressed rule of its own falls back to
+         opacity 0.7 (services/index.ts:20-41). The disc must not take that: white
+         at 0.7 over the band composites to #BEDCFF, 2.37:1 against it, and the disc
+         is the control's entire visual identification. Re-declaring the same fill is
+         what suppresses the fallback; the press still reads, because the initials
+         below DO dim (#5C5F72 on white, 6.3:1). The band's own blue as a fill would
+         read 1.8:1 pressed. -->
+    <style id="hero-avatar" alignItems="center" backgroundColor="{{ theme.on_brand_disc }}" borderRadius="26" height="52" justifyContent="center" width="52">
+      <modifier pressed="true"><style backgroundColor="{{ theme.on_brand_disc }}" /></modifier>
+    </style>
+    <!-- Carries no box of its own: it rides ALONGSIDE hero-avatar on the photo
+         branch, so the 52pt disc stays declared once. The fill hero-avatar dims to
+         is invisible under an opaque JPEG, and its mere presence suppresses the
+         0.7 fallback (services/index.ts:33-41), so the photo has to ask for that
+         dim by name or the control does not react at all. -->
+    <style id="hero-avatar-photo"><modifier pressed="true"><style opacity="0.7" /></modifier></style>
+    <style id="hero-initials" color="{{ theme.on_brand_disc_ink }}" fontSize="20" fontWeight="700" />
     <style id="hero-identity" flex="1" />
-    <style id="hero-greeting" color="#D9EAFF" fontSize="13" />
-    <style id="hero-name" color="#FFFFFF" fontSize="16" fontWeight="600" marginTop="2" />
-    <style id="hero-headline" color="#FFFFFF" fontSize="26" fontWeight="700" marginBottom="14" />
-    <style id="hero-caption" color="#D9EAFF" fontSize="13" marginTop="10" />
-    <style id="progress-track" backgroundColor="#5FA8FF" borderRadius="4" flexDirection="row" height="8" overflow="hidden" />
+    <style id="hero-greeting" color="{{ theme.on_brand_muted }}" fontSize="13" />
+    <style id="hero-name" color="{{ theme.on_brand }}" fontSize="16" fontWeight="600" marginTop="2" />
+    <style id="hero-headline" color="{{ theme.on_brand }}" fontSize="26" fontWeight="700" marginBottom="14" />
+    <style id="hero-caption" color="{{ theme.on_brand_muted }}" fontSize="13" marginTop="10" />
+    <style id="progress-track" backgroundColor="{{ theme.progress_track }}" borderRadius="4" flexDirection="row" height="8" overflow="hidden" />
     <!-- Hyperview resolves styles from the screen document only, so dynamic
          widths ship as a fixed vocabulary of tenths that fragments select. -->
-    <style id="progress-fill" backgroundColor="#FFFFFF" borderRadius="4" height="8" />
+    <style id="progress-fill" backgroundColor="{{ theme.progress_fill }}" borderRadius="4" height="8" />
     <style id="progress-0" width="0%" />
     <style id="progress-1" width="10%" />
     <style id="progress-2" width="20%" />
@@ -29,46 +49,46 @@
     <style id="progress-10" width="100%" />
     <style id="stat-row" marginTop="-34" paddingBottom="4" />
     <style id="stat-row-content" flexDirection="row" gap="12" paddingHorizontal="24" />
-    <style id="stat-card" backgroundColor="#FFFFFF" borderColor="#E9ECF5" borderRadius="16" borderWidth="1" padding="14" width="132" />
+    <style id="stat-card" backgroundColor="{{ theme.surface }}" borderColor="{{ theme.hairline }}" borderRadius="16" borderWidth="1" padding="14" width="132" />
     <style id="stat-badge" alignItems="center" borderRadius="8" height="28" justifyContent="center" marginBottom="10" width="28" />
     <style id="stat-icon" height="16" width="16" />
-    <style id="lavender" backgroundColor="#AEBBFA" />
-    <style id="yellow" backgroundColor="#FFF27B" />
-    <style id="mint" backgroundColor="#C9F0E7" />
-    <style id="pink" backgroundColor="#F6B5E8" />
-    <style id="green" backgroundColor="#3B9B70" />
-    <style id="stat-label" color="#6D728A" fontSize="13" fontWeight="600" />
-    <style id="stat-count" color="#161A35" fontSize="22" fontWeight="700" marginTop="2" />
-    <style id="stat-note" color="#7B8097" fontSize="12" marginTop="6" />
-    <style id="stat-note-good" color="#1D9E75" />
-    <style id="stat-note-alert" color="#B42318" />
-    <style id="alert-card" alignItems="center" backgroundColor="#FCE7F6" borderRadius="16" flexDirection="row" justifyContent="space-between" marginHorizontal="24" marginTop="16" padding="16" />
-    <style id="alert-title" color="#9F1239" fontSize="15" fontWeight="700" />
-    <style id="alert-action" backgroundColor="#FFFFFF" borderRadius="14" paddingHorizontal="14" paddingVertical="7" />
-    <style id="alert-action-text" color="#9F1239" fontSize="13" fontWeight="600" />
+    <style id="lavender" backgroundColor="{{ theme.cat_lavender }}" />
+    <style id="yellow" backgroundColor="{{ theme.cat_yellow }}" />
+    <style id="mint" backgroundColor="{{ theme.cat_mint }}" />
+    <style id="pink" backgroundColor="{{ theme.cat_pink }}" />
+    <style id="green" backgroundColor="{{ theme.cat_green }}" />
+    <style id="stat-label" color="{{ theme.ink_muted_alt }}" fontSize="13" fontWeight="600" />
+    <style id="stat-count" color="{{ theme.ink }}" fontSize="22" fontWeight="700" marginTop="2" />
+    <style id="stat-note" color="{{ theme.ink_faint }}" fontSize="12" marginTop="6" />
+    <style id="stat-note-good" color="{{ theme.success }}" />
+    <style id="stat-note-alert" color="{{ theme.danger }}" />
+    <style id="alert-card" alignItems="center" backgroundColor="{{ theme.alert_surface }}" borderRadius="16" flexDirection="row" justifyContent="space-between" marginHorizontal="24" marginTop="16" padding="16" />
+    <style id="alert-title" color="{{ theme.alert_ink }}" fontSize="15" fontWeight="700" />
+    <style id="alert-action" backgroundColor="{{ theme.surface }}" borderRadius="14" paddingHorizontal="14" paddingVertical="7" />
+    <style id="alert-action-text" color="{{ theme.alert_ink }}" fontSize="13" fontWeight="600" />
     <style id="section-block" marginTop="24" paddingHorizontal="24" />
     <style id="section-head" alignItems="center" flexDirection="row" justifyContent="space-between" />
-    <style id="section" color="#161A35" fontSize="18" fontWeight="700" marginBottom="12" />
+    <style id="section" color="{{ theme.ink }}" fontSize="18" fontWeight="700" marginBottom="12" />
     <style id="section-link" marginBottom="12" />
-    <style id="section-link-text" color="#278CFF" fontSize="13" fontWeight="600" />
-    <style id="row" alignItems="center" backgroundColor="#FFFFFF" borderRadius="16" flexDirection="row" marginBottom="10" padding="14" />
-    <style id="toggle" alignItems="center" borderColor="#C4CBDC" borderRadius="11" borderWidth="2" height="22" justifyContent="center" width="22" />
+    <style id="section-link-text" color="{{ theme.brand_ink }}" fontSize="13" fontWeight="600" />
+    <style id="row" alignItems="center" backgroundColor="{{ theme.surface }}" borderRadius="16" flexDirection="row" marginBottom="10" padding="14" />
+    <style id="toggle" alignItems="center" borderColor="{{ theme.border_strong }}" borderRadius="11" borderWidth="2" height="22" justifyContent="center" width="22" />
     <style id="toggle-hit-area" alignItems="center" height="44" justifyContent="center" marginRight="12" width="44" />
     <style id="row-body" flex="1" />
-    <style id="row-title" color="#20243D" fontSize="15" fontWeight="600" />
-    <style id="row-meta" color="#7B8097" fontSize="12" marginTop="4" />
-    <style id="lavender-text" color="#5B6ACD" />
-    <style id="yellow-text" color="#9A7B0A" />
-    <style id="mint-text" color="#1D9E75" />
-    <style id="pink-text" color="#B4479E" />
-    <style id="green-text" color="#1D7A4E" />
-    <style id="row-chevron" height="14" marginLeft="10" width="14" />
-    <style id="meta" color="#7B8097" fontSize="13" marginTop="5" />
-    <style id="week-card" backgroundColor="#FFFFFF" borderColor="#E9ECF5" borderRadius="16" borderWidth="1" padding="16" />
+    <style id="row-title" color="{{ theme.ink_body }}" fontSize="15" fontWeight="600" />
+    <style id="row-meta" color="{{ theme.ink_faint }}" fontSize="12" marginTop="4" />
+    <style id="lavender-text" color="{{ theme.cat_lavender_ink }}" />
+    <style id="yellow-text" color="{{ theme.cat_yellow_ink }}" />
+    <style id="mint-text" color="{{ theme.cat_mint_ink }}" />
+    <style id="pink-text" color="{{ theme.cat_pink_ink }}" />
+    <style id="green-text" color="{{ theme.cat_green_ink }}" />
+    <style id="row-chevron" height="14" marginLeft="10" tintColor="{{ theme.chevron }}" width="14" />
+    <style id="meta" color="{{ theme.ink_faint }}" fontSize="13" marginTop="5" />
+    <style id="week-card" backgroundColor="{{ theme.surface }}" borderColor="{{ theme.hairline }}" borderRadius="16" borderWidth="1" padding="16" />
     <style id="bar-track" alignItems="flex-end" flexDirection="row" height="52" justifyContent="space-between" marginTop="16" />
-    <style id="bar" backgroundColor="#AEBBFA" borderRadius="5" width="26" />
-    <style id="bar-idle" backgroundColor="#E9ECF5" />
-    <style id="bar-today" backgroundColor="#278CFF" />
+    <style id="bar" backgroundColor="{{ theme.bar }}" borderRadius="5" width="26" />
+    <style id="bar-idle" backgroundColor="{{ theme.hairline }}" />
+    <style id="bar-today" backgroundColor="{{ theme.brand }}" />
     <style id="bar-1" height="6" />
     <style id="bar-2" height="12" />
     <style id="bar-3" height="18" />
@@ -78,38 +98,200 @@
     <style id="bar-7" height="42" />
     <style id="bar-8" height="48" />
     <style id="bar-labels" flexDirection="row" justifyContent="space-between" marginTop="8" />
-    <style id="bar-label" color="#7B8097" fontSize="11" textAlign="center" width="26" />
-    <style id="bar-label-today" color="#278CFF" fontWeight="700" />
+    <style id="bar-label" color="{{ theme.ink_faint }}" fontSize="11" textAlign="center" width="26" />
+    <style id="bar-label-today" color="{{ theme.brand_ink }}" fontWeight="700" />
     <style id="chip-row" marginTop="20" paddingBottom="8" />
     <style id="chip-row-content" flexDirection="row" gap="8" paddingHorizontal="24" />
-    <style id="chip" borderRadius="16" paddingHorizontal="14" paddingVertical="9" />
-    <style id="chip-text" color="#20243D" fontSize="13" fontWeight="600" />
-    <style id="bottom-navigation" alignItems="center" backgroundColor="#F7F8FC" borderTopColor="#E9ECF5" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
+    <!-- minHeight, like the identical chip on the tasks screen: paddingVertical="9"
+         around 13px text draws about 34pt, and every chip here is a live navigate
+         target. -->
+    <style id="chip" borderRadius="16" justifyContent="center" minHeight="44" paddingHorizontal="14" paddingVertical="9" />
+    <!-- on_category and NOT ink: every chip here is drawn on one of the five
+         category fills, which are deliberately IDENTICAL in both palettes, so an
+         ink that flips with the theme puts near-white text on an unchanged pastel.
+         Same value as light shipped with, so the light stylesheet does not move. -->
+    <style id="chip-text" color="{{ theme.on_category }}" fontSize="13" fontWeight="600" />
+    <style id="bottom-navigation" alignItems="center" backgroundColor="{{ theme.canvas }}" borderTopColor="{{ theme.hairline }}" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
     <style id="nav-hit-area" alignItems="center" flex="1" justifyContent="center" />
     <style id="nav-item" alignItems="center" height="52" justifyContent="center" width="64" />
     <style id="nav-active" opacity="1" />
-    <style id="nav-icon" height="24" width="24" />
-    <style id="nav-label" color="#68708B" fontSize="10" fontWeight="600" marginTop="3" />
-    <style id="nav-label-active" color="#278CFF" fontWeight="700" />
-    <style id="nav-add" alignItems="center" backgroundColor="#278CFF" borderRadius="24" height="48" justifyContent="center" width="48" />
-    <style id="nav-add-symbol" color="#FFFFFF" fontSize="29" fontWeight="400" lineHeight="31" />
+    <!-- One glyph per shape, tinted by style. tintColor is a colour filter the
+         native RCTImageView applies AFTER decoding (it is declared in both the
+         Android and the iOS validAttributes of ImageViewNativeComponent), so it
+         reaches a static file served over the network exactly as it reaches a
+         bundled asset and the baked pixels no longer carry the colour. That is
+         what retired the four *-active.png twins: they differed from their idle
+         file in nothing but a hex the stylesheet now owns. -->
+    <style id="nav-icon" height="24" tintColor="{{ theme.ink_nav }}" width="24" />
+    <style id="nav-icon-active" tintColor="{{ theme.ink_nav_active }}" />
+    <style id="nav-label" color="{{ theme.ink_nav }}" fontSize="10" fontWeight="600" marginTop="3" />
+    <style id="nav-label-active" color="{{ theme.ink_nav_active }}" fontWeight="700" />
+    <style id="nav-add" alignItems="center" backgroundColor="{{ theme.brand }}" borderRadius="24" height="48" justifyContent="center" width="48" />
+    <style id="nav-add-symbol" color="{{ theme.on_brand }}" fontSize="29" fontWeight="400" lineHeight="31" />
     <style id="side-menu" bottom="0" flexDirection="row" left="0" position="absolute" right="0" top="0" zIndex="50" />
-    <style id="side-menu-panel" backgroundColor="#FFFFFF" flex="1" padding="24" width="286" />
-    <style id="side-menu-header" alignItems="center" flexDirection="row" justifyContent="space-between" marginBottom="16" />
-    <style id="side-menu-eyebrow" color="#278CFF" fontSize="11" fontWeight="700" letterSpacing="1.5" />
-    <style id="side-menu-title" color="#161A35" fontSize="22" fontWeight="700" marginTop="3" />
-    <style id="side-menu-user" color="#7B8097" fontSize="13" marginBottom="28" />
-    <style id="side-menu-links" flex="1" />
-    <style id="side-menu-link" borderRadius="16" marginBottom="8" padding="15" />
-    <style id="side-menu-link-active" backgroundColor="#EEF3FF" />
-    <style id="side-menu-link-text" color="#20243D" fontSize="16" fontWeight="600" />
-    <style id="side-menu-logout-panel" borderTopColor="#E7EAF3" borderTopWidth="1" paddingTop="16" />
-    <style id="side-menu-logout" borderRadius="16" padding="15" />
-    <style id="side-menu-logout-text" color="#B42318" fontSize="16" fontWeight="600" />
+    <!-- No padding and no width. The width is server-set: side_menu.xml sends
+         panel-width="80" and the client resolves it as a PERCENTAGE of the window
+         (AnimatedSideMenu.tsx:23-35), falling back to 286pt only when the attribute
+         is absent or unparseable. The panel is a child of that Animated.View, so
+         `flex=1` already fills it and a width here would only fight the client; the
+         header and the footer bleed edge to edge instead. -->
+    <style id="side-menu-panel" backgroundColor="{{ theme.surface }}" flex="1" />
+    <!-- #1F6FD1, not the brand #278CFF: white on the brand is 3.34:1 and NOTHING
+         clears 4.5:1 on it, not even white, so an identity block there would have to
+         be two 19/700 banners. On #1F6FD1 plain white is 4.94:1 at any size.
+         paddingRight is 76 because the client pins a 44pt close chip at top:20
+         right:20 (AnimatedSideMenu.tsx:120-130) that the server cannot see: 20 inset
+         plus 44 chip plus 12 gap. Move the chip there and move this with it. -->
+    <style id="side-menu-header" alignItems="center" backgroundColor="{{ theme.brand_deep }}" flexDirection="row" gap="14" paddingBottom="20" paddingLeft="20" paddingRight="76" paddingTop="20" />
+    <style id="side-menu-avatar" alignItems="center" backgroundColor="{{ theme.on_brand_disc }}" borderRadius="28" height="56" justifyContent="center" width="56" />
+    <style id="side-menu-initials" color="{{ theme.on_brand_disc_ink }}" fontSize="20" fontWeight="700" />
+    <style id="side-menu-identity" flex="1" />
+    <style id="side-menu-name" color="{{ theme.on_brand }}" fontSize="16" fontWeight="700" />
+    <style id="side-menu-email" color="{{ theme.on_brand }}" fontSize="13" marginTop="2" />
+    <style id="side-menu-links" flex="1" paddingHorizontal="12" paddingTop="12" />
+    <!-- The same insets with NO flex, and that is the whole point. Yoga expands
+         `flex: 1` to grow 1 / shrink 1 / basis 0, so two flex="1" siblings split
+         the panel in half whatever they hold: the four nav rows would have been
+         given the same ~381pt as the switcher on a large phone, leaving a dead gap
+         under Settings, and at large OS text sizes on a small phone the rows would
+         overflow their half onto the block below, which neither clips nor
+         scrolls. Only the nav block absorbs the free height. -->
+    <style id="side-menu-preferences" paddingHorizontal="12" paddingTop="12" />
+    <!-- Every id used inside a pressed row needs its own pressed rule. `pressed`
+         reaches every descendant and each styled one whose ids declare none falls
+         back to opacity 0.7 (services/index.ts:33-41); RN nests the layers, so a
+         label inside a dimmed row lands at 0.49 and #20243D composites to #9294A0,
+         3.01:1. A fill is the press feedback here, not an opacity.
+         #D4DFF8 and not the #EEF3FF this used to hold: that was 1.11:1 on the white
+         panel and IDENTICAL to side-menu-link-active, so holding the row you are
+         already on changed nothing whatsoever. #D4DFF8 reads 1.34:1 on the panel
+         and 1.20:1 on the active fill, so both states move. -->
+    <style id="side-menu-link" alignItems="center" borderRadius="14" flexDirection="row" gap="14" minHeight="48" paddingHorizontal="12" paddingVertical="12">
+      <modifier pressed="true"><style backgroundColor="{{ theme.select_press }}" /></modifier>
+    </style>
+    <!-- No pressed rule of its own: createStyleProp maps BOTH ids of the composed
+         list and keeps any non-empty result, so side-menu-link's rule already
+         suppresses the fallback for `side-menu-link side-menu-link-active`. -->
+    <style id="side-menu-link-active" backgroundColor="{{ theme.select_fill }}" />
+    <!-- The pressed modifier re-declares BOTH properties. `pressed` reaches every
+         descendant and a styled one with no pressed rule falls back to opacity
+         0.7 (services/index.ts:33-41); the tint has to come with it, or a future
+         pressed-only tint would be dropped the moment this rule is edited. -->
+    <style id="side-menu-icon" height="24" tintColor="{{ theme.ink_nav }}" width="24">
+      <modifier pressed="true"><style opacity="1" tintColor="{{ theme.ink_nav }}" /></modifier>
+    </style>
+    <style id="side-menu-icon-active" tintColor="{{ theme.ink_nav_active }}">
+      <modifier pressed="true"><style opacity="1" tintColor="{{ theme.ink_nav_active }}" /></modifier>
+    </style>
+    <!-- Sign out is the one row whose glyph is not navigation: it tracks the
+         danger ink of the label beside it, which is what the retired
+         PNG-decoding guard used to pin. -->
+    <style id="side-menu-logout-icon" height="24" tintColor="{{ theme.danger }}" width="24">
+      <modifier pressed="true"><style opacity="1" tintColor="{{ theme.danger }}" /></modifier>
+    </style>
+    <style id="side-menu-link-text" color="{{ theme.ink_body }}" flex="1" fontSize="16" fontWeight="600">
+      <modifier pressed="true"><style color="{{ theme.ink_body }}" /></modifier>
+    </style>
+    <!-- The switcher reuses the tasks screen's fill-only chip shape rather than a
+         bordered control: the light palette has no grey that clears 3:1 on white,
+         so any new border would have shipped below its floor on arrival.
+         BOTH chip compositions are measured, not just the plain one.
+         createStyleProp concatenates the pressed rules of every composed id and
+         the LAST one wins (services/index.ts:33-41), so without a pressed rule of
+         its own the CURRENT chip inherited preference-option's row_press over an
+         idle chip_active: 1.13 in light and 1.17 in dark, both under the house
+         1.2 press floor, with the held chip_ink_active at 4.489 on it, under AA.
+         The current chip therefore goes solid brand_deep while it is held and its
+         label goes on_brand: 3.99 / 1.54 fill against the idle fill and 4.94 /
+         7.59 for the ink, in light and dark. The PRESSED ledger names this
+         composition on both hosts. -->
+    <style id="preference-label" color="{{ theme.ink_label }}" fontSize="13" fontWeight="600" marginBottom="8" marginTop="10" />
+    <!-- The appearance pill. Every value that is a width, a height or a radius
+         lives here because Hyperview only accepts them inside <style>, and
+         stylesheets/index.ts parses radii with parseInt, so 16 and 14 are whole
+         numbers on purpose (track height/2, knob height/2). The 20pt of travel is
+         52 - 2 - 2 - 28 and is produced purely by flipping justifyContent from
+         flex-start to flex-end: no absolute positioning, no percentage, no
+         negative margin. The knob teleports rather than sliding, and nothing here
+         can change that, Hyperview has no style transition and `replace` is a
+         DOM swap. Do not "fix" it by deleting the pressed fill; that fill is the
+         only motion the control has.
+         Track, knob and label each RE-DECLARE their own colour under pressed.
+         createStyleProp concatenates the pressed rules of every composed id in
+         order and only substitutes the opacity-0.7 fallback when the whole list is
+         empty, and React Native nests the layers, so without these the pill would
+         land at 0.49 while it is held. The last composed id wins, which is why
+         pref-toggle-track-on has to state its own fill again.
+         Known and accepted: while the row is held, the TRACK's edge against the
+         pressed fill drops to 2.46 (light off), 2.39 (light on), 2.20 (dark off)
+         and 2.03 (dark on). The house PRESSED ledger checks a pressed FILL at 1.2
+         and the INK at AA, never a graphic boundary mid-press, the finger is
+         physically on the control, and the signal that carries STATE, knob
+         against track, 3.34 to 4.94, never dims. -->
+    <style id="pref-toggle-row" alignItems="center" borderRadius="14" flexDirection="row" justifyContent="space-between" marginTop="4" minHeight="48" paddingHorizontal="12" paddingVertical="8">
+      <modifier pressed="true"><style backgroundColor="{{ theme.row_press }}" /></modifier>
+    </style>
+    <style id="pref-toggle-label" color="{{ theme.ink_body }}" flex="1" fontSize="16" fontWeight="600" paddingRight="12">
+      <modifier pressed="true"><style color="{{ theme.ink_body }}" /></modifier>
+    </style>
+    <style id="pref-toggle-track" alignItems="center" backgroundColor="{{ theme.switch_off }}" borderRadius="16" flexDirection="row" height="32" justifyContent="flex-start" paddingHorizontal="2" width="52">
+      <modifier pressed="true"><style backgroundColor="{{ theme.switch_off }}" /></modifier>
+    </style>
+    <style id="pref-toggle-track-on" backgroundColor="{{ theme.brand }}" justifyContent="flex-end">
+      <modifier pressed="true"><style backgroundColor="{{ theme.brand }}" /></modifier>
+    </style>
+    <style id="pref-toggle-knob" backgroundColor="{{ theme.switch_knob }}" borderRadius="14" height="28" width="28">
+      <modifier pressed="true"><style backgroundColor="{{ theme.switch_knob }}" /></modifier>
+    </style>
+    <style id="preference-row" flexDirection="row" flexWrap="wrap" gap="8" />
+    <style id="preference-option" alignItems="center" backgroundColor="{{ theme.chip }}" borderRadius="16" flexDirection="row" gap="6" justifyContent="center" minHeight="44" paddingHorizontal="14" paddingVertical="9">
+      <modifier pressed="true"><style backgroundColor="{{ theme.row_press }}" /></modifier>
+    </style>
+    <style id="preference-option-current" backgroundColor="{{ theme.chip_active }}">
+      <modifier pressed="true"><style backgroundColor="{{ theme.brand_deep }}" /></modifier>
+    </style>
+    <!-- The glyph states its own colour. A <text> inside a <view> inherits
+         nothing, so with no `color` React Native paints its default BLACK, and on
+         a ROM whose emoji font has no flag sequences the documented two-letter
+         fallback would render #000000 on the dark chip at 1.42:1. -->
+    <style id="preference-option-flag" color="{{ theme.ink_label }}" fontSize="18" />
+    <style id="preference-option-text" color="{{ theme.ink_label }}" fontSize="15" fontWeight="600">
+      <modifier pressed="true"><style color="{{ theme.ink_label }}" /></modifier>
+    </style>
+    <style id="preference-option-text-current" color="{{ theme.chip_ink_active }}" fontWeight="700">
+      <modifier pressed="true"><style color="{{ theme.on_brand }}" /></modifier>
+    </style>
+    <style id="side-menu-footer" backgroundColor="{{ theme.canvas }}" borderTopColor="{{ theme.border_strong }}" borderTopWidth="1" paddingHorizontal="12" paddingVertical="12" />
+    <!-- #F3D8D2 is 1.27:1 on the #F7F8FC footer. The #FFFFFF this used to hold was
+         1.06:1, near-white on near-white: with the glyph pinned to opacity 1 and the
+         label re-declaring its colour, nothing on the row moved when it was held.
+         The tint keeps #B42318 at 4.87:1, so ink and glyph both stay above AA. -->
+    <style id="side-menu-logout" alignItems="center" borderRadius="14" flexDirection="row" gap="14" minHeight="48" paddingHorizontal="12" paddingVertical="12">
+      <modifier pressed="true"><style backgroundColor="{{ theme.danger_press_fill }}" /></modifier>
+    </style>
+    <style id="side-menu-logout-text" color="{{ theme.danger }}" flex="1" fontSize="16" fontWeight="600">
+      <modifier pressed="true"><style color="{{ theme.danger }}" /></modifier>
+    </style>
   </styles>
   <screen id="dashboard-screen">
     <body style="screen">
-      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false">
+      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false" over-scroll="false">
+        <!-- A task form opened from a dashboard row is a modal ON TOP of this screen;
+             `close` pops it without refetching anything (hv-doc.tsx:178-194), so
+             without this the user comes back to the old title. An href-less reload
+             re-requests this screen's own url (hyperview.tsx:74-82). -->
+        <behavior trigger="on-event" event-name="tasks-changed" action="reload" />
+        <!-- This screen is the one that sits at index 0 of the root stack, so a
+             sign-in or sign-out that happens inside a pushed route leaves it
+             mounted with the previous account's document. The same href-less
+             reload re-requests it under the new session (or 401s to
+             session_expired), which is what keeps it off an iOS swipe-back. -->
+        <behavior trigger="on-event" event-name="session-changed" action="reload" />
+        <!-- The category chips are rendered from summary.category_counts, which the
+             Categories screen owns. Home is now a truncation back to this route
+             rather than a fresh push, and StackRouter leaves params.url untouched,
+             so nothing refetches this screen on its own (hv-doc.tsx:186-193). -->
+        <behavior trigger="on-event" event-name="categories-changed" action="reload" />
         {% include "fragments/dashboard_content.xml" %}
       </view>
       {% include "fragments/bottom_navigation.xml" with active_nav="dashboard" %}

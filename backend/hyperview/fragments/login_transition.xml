@@ -1,3 +1,16 @@
 <view xmlns="https://hyperview.org/hyperview" id="login-transition">
-  <behavior trigger="load" href="/hv/dashboard/" action="navigate" />
+  <behavior trigger="load" action="store-biometric-token" token="{{ biometric_token }}" once="true" immediate="true" />
+  <!-- This fragment `replace`s the whole login sheet, so the login screen is now
+       empty and `reload` has to repoint THAT ROUTE at a new document. It names the
+       dashboard SCREEN, not /hv/: a navigator document arriving on a screen route
+       cannot be merged, so HvDoc keeps it whole and HvRouteInner renders a nested
+       stack inside this route (hv-doc.tsx:120-131, hv-route.tsx:119-127). That
+       nesting grew by one level on every login and left the inner routes outside the
+       outer stack's reach. `navigate` is not an option either: it used to push the
+       dashboard as a `card` ON TOP of the emptied login route, which stayed alive at
+       index 0 and was one iOS swipe-back away.
+       `session-changed` makes any screen still parked below refetch under the new
+       identity. Dispatch BEFORE the reload: this fragment is about to be replaced. -->
+  <behavior trigger="load" action="dispatch-event" event-name="session-changed" once="true" />
+  <behavior trigger="load" href="/hv/dashboard/" action="reload" />
 </view>

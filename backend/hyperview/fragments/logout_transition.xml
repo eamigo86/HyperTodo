@@ -1,3 +1,14 @@
 <view xmlns="https://hyperview.org/hyperview" id="logout-panel">
-  <behavior trigger="load" href="/hv/" action="reload" />
+  <!-- Same shape as login_transition.xml. `reload` swaps THIS route's own document,
+       so the href has to name a SCREEN: /hv/ answers with the root navigator
+       document, which HvDoc cannot merge into a screen route and instead renders as
+       a whole stack nested inside it (hv-doc.tsx:120-131, hv-route.tsx:119-127),
+       one level deeper on every sign-in and sign-out. /hv/login/ is a plain screen
+       document, so it replaces this route outright.
+       The dispatch stays: it is the belt for any screen still parked below. Home is
+       `#root-route`, so signing out happens on the root route with an empty stack
+       above it, but a screen reached before that can still be holding this user's
+       data if anything ever pushes above the dashboard again. -->
+  <behavior trigger="load" action="dispatch-event" event-name="session-changed" once="true" />
+  <behavior trigger="load" href="/hv/login/" action="reload" />
 </view>

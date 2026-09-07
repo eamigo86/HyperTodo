@@ -1,4 +1,15 @@
 <view xmlns="https://hyperview.org/hyperview" id="task-transition">
   <behavior trigger="load" action="show-snackbar" message="{{ notice_message }}" tone="success" once="true" />
-  <behavior trigger="load" href="/hv/tasks/" action="navigate" />
+  <!-- Mirrors category_transition.xml. This fragment `replace`s the whole form panel,
+       so the form screen renders nothing any more and has to be POPPED. `back` does
+       that from the focused route via routeBackRequest, which falls through to
+       navigation.goBack() (services/navigator/navigator.ts:33-77) whatever the
+       route's presentation; that is what lets the forms open as cards again. The
+       event is what refreshes the screen underneath, which the pop never refetches.
+       No `delay`: the panel is already gone when the timer would start, so a delay
+       is time the user spends looking at a blank screen. Nothing needs it, because
+       SnackbarHost sits outside the NavigationContainer (mobile/App.tsx:72-88) and
+       holds the notice on its own timer. -->
+  <behavior trigger="load" action="dispatch-event" event-name="tasks-changed" once="true" />
+  <behavior trigger="load" action="back" />
 </view>

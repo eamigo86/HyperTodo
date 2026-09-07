@@ -2908,6 +2908,25 @@ expo-font@~57.0.3:
   dependencies:
     fontfaceobserver "^2.1.0"
 
+expo-image-loader@~57.0.1:
+  version "57.0.1"
+  resolved "https://registry.yarnpkg.com/expo-image-loader/-/expo-image-loader-57.0.1.tgz#b031dc3e62ac09004f3e436d7081487236791f53"
+  integrity sha512-uhrZKLT/cTl2mXyR28kPpVkS5O+PK9N1QA/07IFM4f5T4g0lTW1JHT3NEWwEEsGFldPmVX4j7LwUVVZxE+woug==
+
+expo-image-manipulator@~57.0.16:
+  version "57.0.16"
+  resolved "https://registry.yarnpkg.com/expo-image-manipulator/-/expo-image-manipulator-57.0.16.tgz#2acbf2b4d88097833c09149166dfc77bca3bbd37"
+  integrity sha512-8Rib4VOCZpTdt4UYYARPPUEyELaP2uqGuRk7lk31OBG14hB10AcIJdjk/BHKutGxkQysP5EsIDmW7z8gF66RKA==
+  dependencies:
+    expo-image-loader "~57.0.1"
+
+expo-image-picker@~57.0.16:
+  version "57.0.16"
+  resolved "https://registry.yarnpkg.com/expo-image-picker/-/expo-image-picker-57.0.16.tgz#84af82910043e1f94c2192ec59659b68fd2506fc"
+  integrity sha512-9CrY/hoBHI2GsOo/4AWz6cInRHhGhhCmbza3JYr4j3P/NWpthLlIm0IXSWpxadSYJx0a2FAti0f7XWMg95aPEg==
+  dependencies:
+    expo-image-loader "~57.0.1"
+
 expo-json-utils@~57.0.1:
   version "57.0.1"
   resolved "https://registry.yarnpkg.com/expo-json-utils/-/expo-json-utils-57.0.1.tgz#1635b80ccb124e2635765611957ac4e825880130"
@@ -2917,6 +2936,13 @@ expo-keep-awake@~57.0.1:
   version "57.0.1"
   resolved "https://registry.yarnpkg.com/expo-keep-awake/-/expo-keep-awake-57.0.1.tgz#75dfd3d6faeb0f32eb8b670d6b736375fdf2cdb8"
   integrity sha512-28lkFImeXTS+bhAjuCFV7w7tW5bXg27BJVrxv+nC/nyYa86qEa0oFeHwqol6ha5k4pdVDQgBF09GM4A1k76Ssg==
+
+expo-local-authentication@~57.0.2:
+  version "57.0.2"
+  resolved "https://registry.yarnpkg.com/expo-local-authentication/-/expo-local-authentication-57.0.2.tgz#31e24db97002d49a27a972c08cb3d088779f6740"
+  integrity sha512-8K4zcrQ5wZkRS1rwEWY8qHbeGVMNh35e9D1VTVKlMHz1O47itW+pW6iBVuqwGFLozN4fRBeEDQH8hu9Gt58YuQ==
+  dependencies:
+    invariant "^2.2.4"
 
 expo-manifests@~57.0.1:
   version "57.0.1"
@@ -2948,6 +2974,11 @@ expo-modules-jsi@~57.0.8:
   version "57.0.8"
   resolved "https://registry.yarnpkg.com/expo-modules-jsi/-/expo-modules-jsi-57.0.8.tgz#30edf5cccf8fa77d011872cbd96faa1312508399"
   integrity sha512-MFwvKP0FXLkEET27KsKvOh/L7Dpu2d00UgzAlmKozJgtI23WTKSyKPxu+EOSs9peSgkHzKI0vQOhWjOseGBMkQ==
+
+expo-secure-store@~57.0.3:
+  version "57.0.3"
+  resolved "https://registry.yarnpkg.com/expo-secure-store/-/expo-secure-store-57.0.3.tgz#fa09026f3b44c0973e09942b6c23462796a21be2"
+  integrity sha512-w7XkSQeUiYXPoKXo1jSrQqql7pyCSyIzOp2k0apsZZBE+RkoLTQIMjcbqc181y6KgupfNnYxkaKe+4MEg94+SA==
 
 expo-server@^57.0.3:
   version "57.0.3"

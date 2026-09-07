@@ -1,0 +1,20 @@
+{% load i18n %}<view xmlns="https://hyperview.org/hyperview" id="settings-form-panel">
+  <behavior trigger="load" action="show-snackbar" message="{% translate "Settings saved." %}" tone="success" once="true" />
+  {% if biometrics_forgotten %}<!-- The device's own copy of the key, wiped here rather than left to expire.
+       No version gate is needed and the argument is stronger than a header: the
+       switch only renders for an ENROLLED account, and only a client that
+       registers the biometric behaviors can have enrolled one. A second phone
+       holding a stale token self-heals on its next unlock attempt, which 401s
+       with wipe_device=True. -->
+  <behavior trigger="load" action="store-biometric-token" token="" once="true" immediate="true" />{% endif %}
+  <!-- The reload below only refreshes THIS route. Home is `#root-route`, a
+       StackRouter truncation that merges params without touching params.url, so the
+       dashboard never refetches (hv-doc.tsx:178-193) and keeps greeting the profile
+       that was just replaced. dashboard.xml, tasks.xml and categories.xml already
+       listen for `session-changed`, and the dashboard's hero disc and drawer disc
+       are how the newly saved PHOTO reaches the screen that draws it. -->
+  <!-- This screen listens for it too, so the dispatch repaints this route as well;
+       an href-less reload beside it would be a second concurrent GET of the same
+       url whose render is thrown away (hyperview.tsx:291-299). -->
+  <behavior trigger="load" action="dispatch-event" event-name="session-changed" once="true" />
+</view>
