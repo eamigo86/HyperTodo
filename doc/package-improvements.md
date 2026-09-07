@@ -4,18 +4,17 @@ This document records package-level opportunities revealed by HyperTodo. It is a
 candidate backlog, not a promise that every item belongs in dj-hyperview. Each item
 must be reproduced and specified in the package repository before implementation.
 
-## Recommended next investigation
+## Completed in dj-hyperview 0.1.0a8
 
-Start with response-shape primitives. The most repeated integration failure was a
-valid full `doc` being returned to an in-place replacement that required a fragment.
-The package already validates XML and provides template responses, so it is the
-natural layer to make that distinction explicit.
+The package now exports explicit document and fragment response classes, the canonical
+fragment media type, and fragment-root validation. HyperTodo consumes those public
+classes directly so the integration suite exercises the released contract.
 
 ## Candidate backlog
 
 | Priority | Candidate | Evidence from HyperTodo | Proposed package direction |
 | --- | --- | --- | --- |
-| P1 | Explicit document and fragment responses | Several mutations produced `XMLRestrictedElementFound` after returning `doc` to a replacement target. Version 0.1.0a7 recognizes fragment requests in middleware but exports only document-default response classes. | Add `HYPERVIEW_FRAGMENT_MEDIA_TYPE` plus explicit fragment response/template response classes with fragment-root validation. Keep the existing document response backward compatible. |
+| Done in 0.1.0a8 | Explicit document and fragment responses | HyperTodo reproduced `XMLRestrictedElementFound` when a document reached a replacement target. | `HyperviewFragmentResponse` and `HyperviewFragmentTemplateResponse` now apply the canonical media type and validate client-safe roots. |
 | P1 | HXML error-response utilities | Session expiry, CSRF failure, unsupported methods, validation errors, and missing objects all required consumer-owned handlers to prevent HTML or redirects. | Provide opt-in helpers or mixins that preserve status codes and the Hyperview media type while rendering consumer templates. Do not ship product screens. |
 | P1 | Public source capability protocol | Third-party source caching currently depends on private `_dj_hyperview_cacheable` and `_dj_hyperview_cache_safe` hooks. | Replace or complement private hooks with a documented public protocol for source identity, revision, cacheability, and transaction safety. |
 | P2 | Template validation command | Consumer tests validate known screens, but there is no single release gate that enumerates every filesystem and active database template. | Add a management command that validates configured templates and reports canonical name, source, and failure code without rendering business-specific context. |

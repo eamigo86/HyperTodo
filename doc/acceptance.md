@@ -3,10 +3,10 @@
 ## Automated
 
 - [x] Django 6.1.1 installs with Python 3.14 through uv.
-- [x] Published dj-hyperview 0.1.0a7 is the installed package.
+- [x] Published dj-hyperview 0.1.0a8 is the installed package.
 - [x] Backend tests pass above the 95 percent statement-and-branch gate.
 - [x] Source precedence and shared Redis invalidation tests pass without flushing Redis.
-- [x] Every tested response is valid UTF-8 HXML with the package media type.
+- [x] Every tested document and fragment is valid UTF-8 HXML with its explicit package media type.
 - [x] CSRF, session expiry, no-redirect login, and two-user isolation pass.
 - [x] Mobile TypeScript passes.
 - [x] Mobile Jest tests pass.

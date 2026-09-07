@@ -186,3 +186,63 @@ mandatory because native layout and interaction bugs can survive both suites.
 - Record migration and compatibility impact before changing public behavior.
 
 See [Package improvement candidates](package-improvements.md) for the current backlog.
+
+
+## DOM mutation and custom behaviors
+
+A custom behavior may mutate the HXML tree before dispatching another event. When it
+calls `shallowCloneToRoot`, every ancestor receives a new identity and load-triggered
+behaviors can run again. Any load-time behavior that mutates the DOM must therefore
+use `once="true"`; user-triggered retry behaviors must not.
+
+An element ID is not presentation-only on Android. Hyperview can expose an image ID as
+its accessibility label, replacing the intended alternative text. Decorative or
+capability-selected glyphs should avoid IDs and be located through their surrounding
+component or another non-accessibility attribute.
+
+## Navigation transitions must remove emptied routes
+
+A fragment that replaces a screen's only content empties that route before its own
+behaviors execute. Its transition must use `back`, `close`, or a verified screen reload;
+`navigate` leaves the empty route alive. In Hyperview 0.110.0, `close` silently does
+nothing for ordinary card routes and `reload` does not rebuild the navigator. HyperTodo
+uses `back` for form cards and tests every transition for stack-growing actions.
+
+Event listeners also need a mounted component that registers them. A behavior attached
+to list content may never register when the list owns rendering; place cross-screen
+listeners on a stable screen-level host.
+
+## Native form controls need source verification
+
+Hyperview 0.110.0 clones a switch before dispatching its change behavior. The clone has
+no parent form, and React Native reports the event before the new value is written, so
+a switch inside a form cannot reliably submit either the form body or the target state.
+HyperTodo uses explicit server-declared target-value actions instead.
+
+## Failure handling must match the Expo transport
+
+Expo's modern fetch implementation reports unreachable hosts differently from the
+WHATWG fetch messages Hyperview 0.110.0 checks. The shell classifies both forms without
+showing technical strings. Fragment fetch failures can also bypass the list completion
+callback, leaving pull-to-refresh active forever; the custom refresh control listens for
+transport failures and clears only its visual spinner.
+
+React Native renders `console.error` and `console.warn` as development overlays. When a
+designed error surface already exists, forward library diagnostics through a prefixed
+log channel and reserve an error reporter for telemetry.
+
+## Tests must prove writes and native interaction
+
+A rendered form is not evidence that its write path works. Every mutation needs a test
+that submits realistic data and verifies stored ownership and values; this exposed task
+creation with a category against an ownerless unsaved instance.
+
+Gesture tests must verify that the responder actually accepted the event. A testing
+helper may silently discard events sent to a responder view, producing a green test
+that never moved the row. Hidden overflow also does not prune the accessibility tree,
+so off-screen swipe actions must be hidden explicitly and exposed as accessible custom
+actions while closed.
+
+Translations need content assertions, not only catalog compilation. HyperTodo tests the
+rendered language labels, localized dates, and representative translated sentences so
+a duplicated or stale message cannot pass merely because the MO file exists.

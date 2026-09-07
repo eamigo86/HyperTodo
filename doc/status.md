@@ -10,11 +10,14 @@
 - Expo 57 and Hyperview 0.110.0 shell for iOS and Android.
 - Automated backend, mobile, type, lint, and Expo compatibility checks.
 - Architecture, setup, testing, decision, acceptance, and findings documents.
+- Animated splash handoff, native safe areas, themed error handling, and offline recovery feedback.
+- Biometric login lifecycle, profile settings, language/theme preferences, and avatar uploads.
+- Explicit dj-hyperview 0.1.0a8 document and validated-fragment response contracts.
 
 ## Consumer trial in progress
 
-Physical-iPhone testing through Expo Go is actively refining navigation, forms,
-dashboard layout, gestures, and feedback. These findings are tracked in
-[Lessons learned](lessons-learned.md). Android acceptance and final end-to-end
-regression remain pending. Native builds are still reserved for validating native
-configuration or dependencies that Expo Go cannot exercise.
+Physical-iPhone testing has refined navigation, forms, dashboard layout, gestures,
+feedback, biometrics, themes, and avatar handling. These findings are tracked in
+[Lessons learned](lessons-learned.md). Formal iOS and Android regression evidence,
+including a live database-template override, remains pending. Native builds remain
+required for store configuration and capabilities Expo Go cannot exercise fully.

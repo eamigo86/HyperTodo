@@ -17,10 +17,9 @@
 - Jest must transform Expo, React Native, React Navigation, and Hyperview modules rather than applying the default node_modules exclusion.
 - Hyperview's published peer ranges describe its previous demo stack and produce expected warnings with Expo 57. The selected matrix still passes Expo Doctor 21 of 21 checks.
 
-## Package findings for a later dj-hyperview release
+## Package findings
 
-No confirmed dj-hyperview defect has been isolated by the consumer suite. The trial
-has revealed several package-level opportunities, especially explicit fragment
-responses, public source cache capabilities, and operational diagnostics. They are
-tracked as hypotheses in [Package improvement candidates](package-improvements.md)
-and require package-level reproduction before implementation.
+The response-shape finding was promoted into dj-hyperview 0.1.0a8, which now provides
+explicit validated fragment responses. Remaining source-cache and operational ideas
+stay as candidates until they are independently reproduced in the package repository.
+See [Package improvement candidates](package-improvements.md).

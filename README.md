@@ -4,7 +4,7 @@ HyperTodo is a real consumer application for [dj-hyperview](https://github.com/e
 
 The project intentionally keeps both sides visible:
 
-- `backend/`: Django 6.1.1, dj-hyperview 0.1.0a7, SQLite, and optional Redis caching.
+- `backend/`: Django 6.1.1, dj-hyperview 0.1.0a8, SQLite, and optional Redis caching.
 - `mobile/`: Expo 57, React Native 0.86, and Hyperview 0.110.0.
 - `doc/`: architecture, setup, testing, and acceptance records.
 
