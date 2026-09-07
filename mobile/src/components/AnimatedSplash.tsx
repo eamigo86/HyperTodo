@@ -4,6 +4,8 @@ import LottieView from "lottie-react-native";
 import React, { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, StyleSheet, View } from "react-native";
 
+import { THEME_TOKENS, useThemeName } from "../theme";
+
 type Props = {
   children: React.ReactNode;
 };
@@ -16,6 +18,10 @@ function hideNativeSplash(): void {
 }
 
 export default function AnimatedSplash({ children }: Props): React.JSX.Element {
+  // The overlay is the first frame of a cold start, long before any response has
+  // landed, which is why the theme store seeds itself synchronously from the
+  // keystore rather than awaiting the entrypoint fetch.
+  const themeName = useThemeName();
   const [finished, setFinished] = useState(false);
   const player = useRef<LottieView>(null);
   const started = useRef(false);
@@ -68,10 +74,13 @@ export default function AnimatedSplash({ children }: Props): React.JSX.Element {
           accessibilityLabel="HyperTodo splash"
           accessibilityViewIsModal
           onLayout={handleLayout}
-          style={styles.overlay}
+          style={[styles.overlay, { backgroundColor: THEME_TOKENS[themeName].canvas }]}
           testID="animated-splash"
         >
-          <StatusBar style="dark" />
+          {/* Dark glyphs would be invisible on the dark canvas. The Lottie itself
+              needs no variant: assets/splash.json uses only cat_lavender and
+              on_category, which are byte-identical in both server palettes. */}
+          <StatusBar style={themeName === "dark" ? "light" : "dark"} />
           <LottieView
             autoPlay={false}
             loop={false}
@@ -98,7 +107,6 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFill,
     alignItems: "center",
-    backgroundColor: "#F7F8FC",
     justifyContent: "center",
   },
   lottie: {

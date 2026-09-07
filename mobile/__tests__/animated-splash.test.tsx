@@ -1,14 +1,21 @@
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { AccessibilityInfo, Text } from "react-native";
+import { AccessibilityInfo, StyleSheet, Text } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
 
 const mockPlay = jest.fn();
 const mockReset = jest.fn();
 
+jest.mock("expo-secure-store", () => ({ getItem: () => null, setItem: () => undefined }));
 jest.mock("expo-splash-screen", () => ({ preventAutoHideAsync: jest.fn(), hideAsync: jest.fn() }));
-// The overlay renders its own StatusBar; keep React Native's global StatusBar props stack out of these tests.
-jest.mock("expo-status-bar", () => ({ StatusBar: () => null }));
+// The overlay renders its own StatusBar; keep React Native's global StatusBar props
+// stack out of these tests, while still recording the bar style it asked for.
+jest.mock("expo-status-bar", () => {
+  const { View } = require("react-native");
+  return {
+    StatusBar: ({ style }: { style: string }) => <View testID="status-bar" barStyle={style} />,
+  };
+});
 jest.mock("lottie-react-native", () => {
   const { forwardRef, useImperativeHandle } = require("react");
   const { View } = require("react-native");
@@ -22,6 +29,7 @@ jest.mock("lottie-react-native", () => {
 });
 
 import AnimatedSplash from "../src/components/AnimatedSplash";
+import { publishTheme } from "../src/theme";
 
 function renderSplash() {
   return render(
@@ -112,5 +120,28 @@ describe("AnimatedSplash", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+// The overlay is the FIRST frame the user sees, before any response has landed.
+// That is the whole reason the theme store seeds itself synchronously from the
+// keystore instead of waiting for the entrypoint fetch.
+describe("the splash overlay follows the stored palette", () => {
+  afterEach(() => act(() => publishTheme("light")));
+
+  it("paints the canvas and picks a status bar that is visible on it", () => {
+    const screen = renderSplash();
+
+    expect(StyleSheet.flatten(screen.getByTestId("animated-splash").props.style).backgroundColor)
+      .toBe("#F7F8FC");
+    expect(screen.getByTestId("status-bar").props.barStyle).toBe("dark");
+
+    act(() => publishTheme("dark"));
+
+    expect(StyleSheet.flatten(screen.getByTestId("animated-splash").props.style).backgroundColor)
+      .toBe("#0F1118");
+    // Dark glyphs on #0F1118 would be invisible, so this one DOES flip -- unlike
+    // App.tsx's bar, which sits on `brand` and stays light in both palettes.
+    expect(screen.getByTestId("status-bar").props.barStyle).toBe("light");
   });
 });

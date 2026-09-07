@@ -12,3 +12,7 @@ export function getApiUrl(): string {
   const configured = Constants.expoConfig?.extra?.apiUrl;
   return normalizeApiUrl(typeof configured === "string" ? configured : DEFAULT_API_URL);
 }
+
+export function getAppVersion(): string {
+  return Constants.expoConfig?.version ?? "";
+}

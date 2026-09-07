@@ -14,3 +14,7 @@ node_modules/
 .expo/
 ios/
 android/
+coverage/
+
+# User uploads served from MEDIA_ROOT in development.
+backend/media/

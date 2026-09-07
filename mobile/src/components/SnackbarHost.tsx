@@ -114,8 +114,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 10,
   },
+  // Both fills stay palette-independent, and both are deep on purpose: they carry a
+  // white 14/600 label. #147DEB was 4.07:1 against that label -- an AA failure in
+  // the shipped LIGHT theme. #1F6FD1 is 4.94:1, and 4.65/3.82 against the two
+  // canvases, so one fill serves both palettes.
   success: {
-    backgroundColor: "#147DEB",
+    backgroundColor: "#1F6FD1",
   },
   error: {
     backgroundColor: "#D92D20",
