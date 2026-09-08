@@ -1,0 +1,12 @@
+{
+  "screens/about.xml": "c95c78a9a4067ff51824b01ce1449592c0a9a42fc3d82289586c0e435514c075",
+  "screens/categories.xml": "87fa1734223658c008ecca2464e2d8b7ba09d9b8eb6f016ced70c602d15a718f",
+  "screens/category_form.xml": "3f45b5799f97e9b3fe9cc9c327b2c153e7199f165c12832635ffba831b1ef9da",
+  "screens/dashboard.xml": "104d8826b6be8d6bbf6983f08dd5c3ae208c40f5ade416fda432351918f8a98d",
+  "screens/error.xml": "da79f277cd588e68bd67e1b469f0c635eb1dbe7c02d06e757acbcc705a19606b",
+  "screens/login.xml": "1fd6431321b94cc8aa70f63a186f74a386f61cf79b7f50e56295860f5b9c24eb",
+  "screens/session_expired.xml": "36467fa765b04341183c523d98709a48d615a17ece3820e0903576c59c80a094",
+  "screens/settings.xml": "41ee0381daac374c7079bb4402f7e859ae01f97bf87e1f87cd050245fc95ba06",
+  "screens/task_form.xml": "d5cc6d92775ea8c016c4e78f899dde461ea39624cdc0a6203eaa1b5e6efe7bfb",
+  "screens/tasks.xml": "9d17dbdb3f60a55706f997ecc80f00c0b2b7395edc0314e59b92c488e186ba87"
+}

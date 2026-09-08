@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from .environment import csv_setting
+from .schema import schema_extensions
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "development-only-secret-key")
@@ -122,7 +123,7 @@ HYPERVIEW = {
     ],
     "ADMIN": {"EDITOR": True},
     "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
-    "VALIDATION": {"MODE": "publish_and_render"},
+    "SCHEMA_EXTENSIONS": schema_extensions(),
 }
 if ENABLE_REDIS_CACHE:
     HYPERVIEW["CACHE"] = {

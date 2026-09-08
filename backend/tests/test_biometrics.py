@@ -525,9 +525,9 @@ def test_the_biometric_opt_in_switch_is_visible_in_its_off_state(client):
     # first-time signer-in has to find in order to turn biometrics on at all; #C4CBDC
     # was 1.53:1 against the sheet and 1.63:1 against its own white thumb.
     root = _login_screen(client)
-    switch = root.find("./hv:styles/hv:style[@id='optin-switch']", NS)
+    switch = root.find("./hv:screen/hv:styles/hv:style[@id='optin-switch']", NS)
     selected = switch.find("./hv:modifier[@selected='true']/hv:style", NS)
-    sheet = root.find("./hv:styles/hv:style[@id='login-sheet']", NS)
+    sheet = root.find("./hv:screen/hv:styles/hv:style[@id='login-sheet']", NS)
     backdrop = sheet.attrib["backgroundColor"]
 
     for label, pair in {
@@ -545,8 +545,8 @@ def test_the_privacy_hint_is_readable_body_text(client):
     # 13px is not WCAG large text, so the hint owes 4.5:1 against the sheet it closes.
     # #6E738A was 4.41:1 - the same near-miss the settings version line carried.
     root = _login_screen(client)
-    hint = root.find("./hv:styles/hv:style[@id='hint']", NS)
-    backdrop = root.find("./hv:styles/hv:style[@id='login-sheet']", NS)
+    hint = root.find("./hv:screen/hv:styles/hv:style[@id='hint']", NS)
+    backdrop = root.find("./hv:screen/hv:styles/hv:style[@id='login-sheet']", NS)
 
     assert int(hint.attrib["fontSize"]) < 18
     assert (
@@ -596,10 +596,10 @@ def test_the_icon_only_biometric_button_is_a_tappable_circle(client):
     # 44pt target: padding plus a 28pt glyph is not a contract. It is a fixed-size
     # circle now rather than a full-width slab, so it cannot be mistaken for a
     # second primary button sitting under the real one.
-    # `./hv:styles/hv:style` and not `.//hv:style`: the latter also matches the
+    # Screen styles only, not `.//hv:style`: the latter also matches the
     # <style> nested in a <modifier>, which carries no id.
     style = _login_screen(client).find(
-        "./hv:styles/hv:style[@id='biometric-button']", NS
+        "./hv:screen/hv:styles/hv:style[@id='biometric-button']", NS
     )
 
     assert int(style.attrib["height"]) >= 44
@@ -622,8 +622,8 @@ def test_the_biometric_glyph_is_tinted_to_read_as_actionable(client):
     # supported list (stylesheets/index.ts:195), so one attribute tints both
     # modality variants without shipping a second pair of PNGs.
     root = _login_screen(client)
-    icon = root.find("./hv:styles/hv:style[@id='biometric-icon']", NS)
-    button = root.find("./hv:styles/hv:style[@id='biometric-button']", NS)
+    icon = root.find("./hv:screen/hv:styles/hv:style[@id='biometric-icon']", NS)
+    button = root.find("./hv:screen/hv:styles/hv:style[@id='biometric-button']", NS)
 
     assert icon.attrib["tintColor"] == "#278CFF"
     # Every icon in the directory ships at 72x72, which is exactly 3x of 24pt. Drawing
@@ -648,8 +648,8 @@ def test_the_biometric_glyph_clears_the_graphical_floor_in_both_press_states(cli
     # Read out of the stylesheet rather than pinned to literals, so recolouring
     # either style is what this catches.
     root = _login_screen(client)
-    icon = root.find("./hv:styles/hv:style[@id='biometric-icon']", NS)
-    button = root.find("./hv:styles/hv:style[@id='biometric-button']", NS)
+    icon = root.find("./hv:screen/hv:styles/hv:style[@id='biometric-icon']", NS)
+    button = root.find("./hv:screen/hv:styles/hv:style[@id='biometric-button']", NS)
     icon_pressed = icon.find("./hv:modifier[@pressed='true']/hv:style", NS)
     button_pressed = button.find("./hv:modifier[@pressed='true']/hv:style", NS)
 
@@ -752,7 +752,8 @@ def test_reset_panels_are_bare_fragments_using_only_screen_styles(client, status
         assert root.find(f".//hv:{forbidden}", NS) is None
 
     defined = {
-        style.attrib["id"] for style in screen.findall("./hv:styles/hv:style", NS)
+        style.attrib["id"]
+        for style in screen.findall("./hv:screen/hv:styles/hv:style", NS)
     }
     used = {
         style_id
@@ -791,7 +792,10 @@ def test_the_logout_transition_is_bare_and_touches_no_device_key(client, user):
 
 def _screen_styles(client, route):
     screen = ElementTree.fromstring(client.get(route).content)
-    return {style.attrib["id"] for style in screen.findall("./hv:styles/hv:style", NS)}
+    return {
+        style.attrib["id"]
+        for style in screen.findall("./hv:screen/hv:styles/hv:style", NS)
+    }
 
 
 def _used_styles(root):

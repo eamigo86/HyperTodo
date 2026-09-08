@@ -384,33 +384,31 @@ FLAGS = {"en": "\U0001f1ec\U0001f1e7", "es": "\U0001f1ea\U0001f1f8"}
 def test_a_language_option_wears_a_flag_that_no_screen_reader_ever_announces(
     host, language, user
 ):
-    # A flag names a COUNTRY, so it may decorate the language name and must never
-    # replace it: with the word beside it, a ROM whose emoji font has no flag
-    # sequences degrades to "GB English" rather than to nothing. Hiding it from the
-    # accessibility tree is the other half, or VoiceOver announces "flag: United
-    # Kingdom" as its own element before the language. Both hiding attributes ship
-    # because the two platforms read different ones, and createProps copies both to
-    # <text> verbatim; an attribute a platform ignores is inert, never a crash.
+    # The accessible outer text names the language and state. Nested text is
+    # inline, with role none to prevent an inherited button run on iOS. The
+    # Android hiding prop is a string enum; unsupported boolean strings are gone.
     option = option_of(switcher(user, host), language)
     texts = option.findall("./hv:text", NS)
-    flag, word = texts
-
-    assert len(texts) == 2
+    assert len(texts) == 1
+    word = texts[0]
+    inline = word.find("./hv:text[@accessibilityRole='none']", NS)
+    flag = inline.find("./hv:text", NS)
     assert flag.text == FLAGS[language]
     assert flag.attrib["style"] == "preference-option-flag"
-    assert flag.attrib["accessibilityElementsHidden"] == "true"
     assert flag.attrib["importantForAccessibility"] == "no"
+    assert "accessibilityElementsHidden" not in flag.attrib
     assert "accessibilityLabel" not in flag.attrib
     assert "id" not in flag.attrib
+    language_name = "".join(inline.itertext()).removeprefix(FLAGS[language]).strip()
 
-    assert word.text == {"en": "English", "es": "Español"}[language]
+    assert language_name == {"en": "English", "es": "Español"}[language]
     assert word.attrib["accessibilityRole"] == "button"
     # The accessible name is unchanged by the flag, and it still names the
     # LANGUAGE: a country name reaching it would be the failure the flag risks.
     assert word.attrib["accessibilityLabel"] == (
-        f"{word.text}, current language"
+        f"{language_name}, current language"
         if language == "en"
-        else f"Switch to {word.text}"
+        else f"Switch to {language_name}"
     )
 
 
@@ -484,7 +482,7 @@ def test_the_preference_switcher_declares_its_styles_on_every_screen_that_can_ho
     # SCREEN declares. The host set is DERIVED from the markup, so a second host
     # added by a future edit is checked on arrival instead of shipping missing
     # ids silently -- the exact failure the old test was written for.
-    # ./hv:styles/hv:style, never .//hv:style.
+    # ./hv:screen/hv:styles/hv:style, never .//hv:style.
     wanted = switcher_style_ids(user)
     client = Client()
     client.force_login(user)
@@ -499,7 +497,7 @@ def test_the_preference_switcher_declares_its_styles_on_every_screen_that_can_ho
         declared = {
             style.attrib["id"]
             for style in assert_hxml(client.get(reverse(route))).findall(
-                "./hv:styles/hv:style", NS
+                "./hv:screen/hv:styles/hv:style", NS
             )
         }
         assert wanted <= declared, sorted(wanted - declared)
@@ -530,7 +528,7 @@ def test_appearance_and_language_live_only_in_the_side_menu(user):
     # orphans nothing can catch.
     declared = {
         style.attrib["id"]
-        for style in settings_screen.findall("./hv:styles/hv:style", NS)
+        for style in settings_screen.findall("./hv:screen/hv:styles/hv:style", NS)
     }
     assert not switcher_style_ids(user) & declared
     assert toggle_of(drawer) is not None

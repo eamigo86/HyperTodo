@@ -162,7 +162,6 @@ def test_existing_redis_service_uses_isolated_namespace_without_flushing():
             "NEGATIVE_TTL": 2,
             "FAILURE_MODE": "raise",
         },
-        "VALIDATION": {"MODE": "publish_and_render"},
     }
     with override_settings(CACHES=redis_cache, HYPERVIEW=hyperview):
         try:

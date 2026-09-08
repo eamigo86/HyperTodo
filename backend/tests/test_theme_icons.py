@@ -8,9 +8,13 @@ Android and the iOS RCTImageView config), so the baked pixels are irrelevant and
 the STYLE is the only thing left to hold to account.
 """
 
+from base64 import b64decode
+from io import BytesIO
+
 import pytest
 from django.test import Client
 from django.urls import reverse
+from PIL import Image
 
 from tests.test_forms_ui import (
     NS,
@@ -125,13 +129,17 @@ def test_every_glyph_on_a_themed_surface_declares_a_tint(palette, route, request
 
     for document in documents:
         for image in document.iter(f"{{{NS['hv']}}}image"):
-            # The avatar preview ships with NO source attribute at all until a
-            # photo is picked, on purpose: HvImage only builds a source from a
-            # TRUTHY attribute (hv-image/index.tsx:17-21), but createProps copies
-            # every attribute verbatim (:23), so source="" would reach React
-            # Native as the empty STRING rather than as absent. It draws no glyph,
-            # so it owes no tint.
-            if "source" not in image.attrib:
+            # The prior source-less idle preview is now a required-source,
+            # transparent data URI. It still draws no glyph and owes no tint.
+            # Exempt ONLY that exact hidden target, after verifying every pixel.
+            if image.attrib.get("id") == "avatar-preview":
+                assert image.attrib["hide"] == "true"
+                assert image.attrib["source"].startswith("data:image/png;base64,")
+                pixel = Image.open(
+                    BytesIO(b64decode(image.attrib["source"].split(",", 1)[1]))
+                )
+                assert pixel.size == (1, 1)
+                assert pixel.convert("RGBA").getpixel((0, 0))[3] == 0
                 continue
             source = image.attrib["source"].rsplit("/", 1)[-1]
             if source in UNTINTED:
@@ -156,7 +164,7 @@ def test_every_style_the_side_menu_uses_is_declared_by_the_screen_that_hosts_it(
 ):
     # `replace` does not rebuild stylesheets, so the menu fragment may only name ids
     # its HOST SCREEN declares, and dashboard.xml is the only screen that includes
-    # side_menu_host.xml. Right XPath is ./hv:styles/hv:style, never .//hv:style.
+    # side_menu_host.xml. Select screen-level style rules, never nested modifiers.
     who = request.getfixturevalue(f"{palette}_user")
     root = screen(who, "todo:dashboard")
     client = Client()

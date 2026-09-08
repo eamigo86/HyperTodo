@@ -1,5 +1,6 @@
 {% load i18n %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
+  <screen id="error-screen">
   <styles>
     <style id="screen" backgroundColor="{{ theme.brand }}" justifyContent="center" padding="28" />
     <style id="error-card" backgroundColor="{{ theme.surface }}" borderRadius="28" padding="24" />
@@ -12,7 +13,6 @@
       <modifier pressed="true"><style color="{{ theme.on_brand }}" /></modifier>
     </style>
   </styles>
-  <screen id="error-screen">
     <body style="screen">
       <view style="error-card">
         <text style="error-title">{% translate "Something went wrong" %}</text>

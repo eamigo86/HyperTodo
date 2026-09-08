@@ -1,5 +1,6 @@
 {% load i18n %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
+  <screen id="session-expired-screen">
   <styles>
     <style id="screen" backgroundColor="{{ theme.brand }}" padding="28" justifyContent="center" />
     <style id="card" backgroundColor="{{ theme.surface }}" borderRadius="28" padding="24" />
@@ -12,7 +13,6 @@
       <modifier pressed="true"><style color="{{ theme.on_brand }}" /></modifier>
     </style>
   </styles>
-  <screen id="session-expired-screen">
     <body style="screen">
       <view style="card">
         <text style="title">{% translate "Your session expired" %}</text>

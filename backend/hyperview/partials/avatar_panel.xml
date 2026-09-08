@@ -19,16 +19,15 @@
        (services/render/index.tsx:34-40), so the stored disc is gone from the tree
        rather than merely covered. -->
   <view id="avatar-current"{% if pending_avatar %} hide="true"{% endif %}>{% if request.user.profile.avatar %}<image style="avatar-disc avatar-disc-row" source="{{ request.user.profile.avatar.url }}" alt="{% translate "Your profile photo" %}" />{% else %}<view style="avatar-disc avatar-disc-row"><text style="avatar-initials"{% if not avatar_upload_supported %} accessibilityLabel="{% translate "Your initials. Update HyperTodo to change your photo." %}"{% endif %}>{{ initials }}</text></view>{% endif %}</view>
-  <!-- The instant preview. NO `source` attribute at all while it is idle, and
-       never source="": HvImage only builds imageProps.source from a TRUTHY
-       attribute (hv-image/index.tsx:17-21), but createProps copies every
-       attribute verbatim (:23), so an empty one reaches React Native as the empty
-       STRING rather than as absent. `hide` is what keeps it off the screen.
+  <!-- The instant preview keeps the XSD-required source even while hidden.
+       A transparent 1x1 data URI is nonempty and cannot request an external URL.
+       PickAvatarBehavior replaces it with the selected JPEG BEFORE unhiding.
+       Do not use source="": createProps forwards an empty string verbatim.
        An id and NO alt, deliberately. React Native only makes an Image an
        accessibility node when alt is present (Image.android.js:272-276), so the
        id-derived accessibilityLabel is never focusable and TalkBack never speaks
        the slug; the saved-photo image above keeps its alt and carries no id. -->
-  <image id="avatar-preview" hide="{% if pending_avatar %}false{% else %}true{% endif %}"{% if pending_avatar %} source="data:{{ pending_avatar_mime }};base64,{{ pending_avatar }}"{% endif %} style="avatar-disc avatar-disc-row" />
+  <image id="avatar-preview" hide="{% if pending_avatar %}false{% else %}true{% endif %}"{% if pending_avatar %} source="data:{{ pending_avatar_mime }};base64,{{ pending_avatar }}"{% else %} source="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg=="{% endif %} style="avatar-disc avatar-disc-row" />
   {% if avatar_upload_supported %}<!-- The role rides the <text>, and the box carries no id: HvView copies no
        server attribute and HyperRef's TouchableOpacity is accessible={false}, so
        this <text> is the only announceable node in the control, and without

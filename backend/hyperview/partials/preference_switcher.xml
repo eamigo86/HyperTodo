@@ -50,20 +50,21 @@
          answers the country-versus-language objection: alone, the stars and
          stripes would tell a British user this app has no English and the
          Spanish flag would exclude every Latin American speaker, but beside the
-         word it is only a landmark for the eye. It is also hidden from the
-         accessibility tree on both platforms, so no screen reader ever says a
-         country name; and on a ROM whose emoji font lacks flag sequences it
+         word it is only a landmark for the eye. The accessible label belongs to one outer text; its inline
+         content uses role="none" so the emoji does not inherit a button role.
+         Hyperview does not convert accessibilityElementsHidden to a boolean.
+         Keep the emoji without an id and use Android's string-valued
+         importantForAccessibility="no". Verify VoiceOver and TalkBack with the
+         existing host; and on a ROM whose emoji font lacks flag sequences it
          degrades to two boxed letters next to a word that already carries the
          whole meaning. Emoji rather than PNGs on purpose: a colour flag file
          would have to break the 72x72 monochrome icon convention and grow the
          untinted-glyph allowlist, for a shape both platforms already draw. -->
     <view style="preference-option{% if request.LANGUAGE_CODE == 'en' %} preference-option-current{% endif %}" href="/hv/preferences/?language=en" verb="post" action="replace" target="preference-panel">
-      <text style="preference-option-flag" accessibilityElementsHidden="true" importantForAccessibility="no">🇬🇧</text>
-      <text style="preference-option-text{% if request.LANGUAGE_CODE == 'en' %} preference-option-text-current{% endif %}" accessibilityRole="button" accessibilityLabel="{% if request.LANGUAGE_CODE == 'en' %}{% translate "English, current language" %}{% else %}{% translate "Switch to English" %}{% endif %}">English</text>
+      <text style="preference-option-text{% if request.LANGUAGE_CODE == 'en' %} preference-option-text-current{% endif %}" accessibilityRole="button" accessibilityLabel="{% if request.LANGUAGE_CODE == 'en' %}{% translate "English, current language" %}{% else %}{% translate "Switch to English" %}{% endif %}"><text accessibilityRole="none"><text style="preference-option-flag" importantForAccessibility="no">🇬🇧</text>&#160;English</text></text>
     </view>
     <view style="preference-option{% if request.LANGUAGE_CODE == 'es' %} preference-option-current{% endif %}" href="/hv/preferences/?language=es" verb="post" action="replace" target="preference-panel">
-      <text style="preference-option-flag" accessibilityElementsHidden="true" importantForAccessibility="no">🇪🇸</text>
-      <text style="preference-option-text{% if request.LANGUAGE_CODE == 'es' %} preference-option-text-current{% endif %}" accessibilityRole="button" accessibilityLabel="{% if request.LANGUAGE_CODE == 'es' %}{% translate "Español, current language" %}{% else %}{% translate "Switch to Español" %}{% endif %}">Español</text>
+      <text style="preference-option-text{% if request.LANGUAGE_CODE == 'es' %} preference-option-text-current{% endif %}" accessibilityRole="button" accessibilityLabel="{% if request.LANGUAGE_CODE == 'es' %}{% translate "Español, current language" %}{% else %}{% translate "Switch to Español" %}{% endif %}"><text accessibilityRole="none"><text style="preference-option-flag" importantForAccessibility="no">🇪🇸</text>&#160;Español</text></text>
     </view>
   </view>
 </view>

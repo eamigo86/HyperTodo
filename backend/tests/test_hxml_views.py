@@ -852,7 +852,8 @@ def test_task_toggle_from_the_dashboard_returns_the_content_fragment(user, monke
     # `.//hv:style` also matches a <style> nested in a <modifier>, which has no id
     # and turns this guard into a KeyError instead of a style assertion.
     defined = {
-        style.attrib["id"] for style in screen.findall("./hv:styles/hv:style", NS)
+        style.attrib["id"]
+        for style in screen.findall("./hv:screen/hv:styles/hv:style", NS)
     }
     used = {
         style_id
@@ -1225,7 +1226,7 @@ def test_about_is_an_authenticated_document_linked_only_from_the_side_menu(user)
         "HyperTodo 1.2.0"
     )
     assert root.find(".//hv:text[@id='about-package-version']", NS).text == (
-        "dj-hyperview 0.1.0a14"
+        "dj-hyperview 0.1.0a16"
     )
     technology_names = {
         item.text for item in root.findall(".//hv:text[@style='technology-name']", NS)

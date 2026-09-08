@@ -1,0 +1,119 @@
+{
+  "fragments/bottom_navigation.xml": {
+    "kind": "fragment"
+  },
+  "fragments/category_form_panel.xml": {
+    "kind": "fragment"
+  },
+  "fragments/category_items.xml": {
+    "kind": "fragment"
+  },
+  "fragments/category_list.xml": {
+    "kind": "fragment"
+  },
+  "fragments/category_list_transition.xml": {
+    "kind": "fragment"
+  },
+  "fragments/category_transition.xml": {
+    "kind": "fragment"
+  },
+  "fragments/dashboard_content.xml": {
+    "kind": "fragment"
+  },
+  "fragments/error_transition.xml": {
+    "kind": "fragment"
+  },
+  "fragments/login_panel.xml": {
+    "kind": "fragment"
+  },
+  "fragments/login_transition.xml": {
+    "kind": "fragment"
+  },
+  "fragments/logout_transition.xml": {
+    "kind": "fragment"
+  },
+  "fragments/preference_transition.xml": {
+    "kind": "fragment"
+  },
+  "fragments/settings_form_panel.xml": {
+    "kind": "fragment"
+  },
+  "fragments/settings_transition.xml": {
+    "kind": "fragment"
+  },
+  "fragments/side_menu.xml": {
+    "kind": "fragment"
+  },
+  "fragments/side_menu_host.xml": {
+    "kind": "fragment"
+  },
+  "fragments/task_form_panel.xml": {
+    "kind": "fragment"
+  },
+  "fragments/task_items.xml": {
+    "kind": "fragment"
+  },
+  "fragments/task_list.xml": {
+    "kind": "fragment"
+  },
+  "fragments/task_list_transition.xml": {
+    "kind": "fragment"
+  },
+  "fragments/task_transition.xml": {
+    "kind": "fragment"
+  },
+  "partials/avatar_panel.xml": {
+    "kind": "partial"
+  },
+  "partials/category_items.xml": {
+    "kind": "partial"
+  },
+  "partials/preference_switcher.xml": {
+    "kind": "partial"
+  },
+  "partials/screen_header.xml": {
+    "kind": "partial"
+  },
+  "partials/security_card.xml": {
+    "kind": "partial"
+  },
+  "partials/task_items.xml": {
+    "kind": "partial"
+  },
+  "screens/about.xml": {
+    "kind": "document"
+  },
+  "screens/categories.xml": {
+    "kind": "document"
+  },
+  "screens/category_form.xml": {
+    "kind": "document"
+  },
+  "screens/dashboard.xml": {
+    "kind": "document"
+  },
+  "screens/error.xml": {
+    "kind": "document"
+  },
+  "screens/login.xml": {
+    "kind": "document"
+  },
+  "screens/root.xml": {
+    "kind": "document"
+  },
+  "screens/session_expired.xml": {
+    "kind": "document"
+  },
+  "screens/settings.xml": {
+    "kind": "document"
+  },
+  "screens/source_probe.xml": {
+    "kind": "document"
+  },
+  "screens/task_form.xml": {
+    "kind": "document"
+  },
+  "screens/tasks.xml": {
+    "kind": "document"
+  }
+}

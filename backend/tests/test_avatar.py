@@ -327,7 +327,6 @@ def test_a_failed_profile_save_removes_the_file_written_before_it(user, monkeypa
     assert stored_files() == []
 
 
-
 def test_a_failed_settings_transaction_removes_the_new_avatar(user, monkeypatch):
     """Keep external storage consistent when the surrounding transaction rolls back."""
     from todo import services
@@ -353,7 +352,6 @@ def test_a_failed_settings_transaction_removes_the_new_avatar(user, monkeypatch)
     user.refresh_from_db()
     assert not user.profile.avatar
     assert stored_files() == []
-
 
 
 def test_one_account_cannot_touch_another_accounts_photo(user, other_user):
@@ -515,7 +513,7 @@ def test_a_refused_photo_is_dropped_rather_than_re_armed_and_says_why(user):
     assert root.find(".//hv:text-field[@name='avatar_data']", NS).attrib["value"] == ""
     preview = root.find(".//hv:image[@id='avatar-preview']", NS)
     assert preview.attrib["hide"] == "true"
-    assert "source" not in preview.attrib
+    assert preview.attrib["source"].startswith("data:image/png;base64,")
     # By style, not by id: an id on a <text> becomes accessibilityLabel on Android
     # (services/index.ts:161 then :81-84) and TalkBack would read the slug instead
     # of the sentence.
@@ -797,7 +795,7 @@ def test_the_photo_row_defers_to_the_save_button(user):
     assert preview.attrib["hide"] == "true"
     # NEVER source="": createProps copies the attribute verbatim, so an empty
     # source is the empty STRING on the RN Image rather than absent.
-    assert "source" not in preview.attrib
+    assert preview.attrib["source"].startswith("data:image/png;base64,")
     assert not {"alt", "accessibilityLabel"} & set(preview.attrib)
 
     current = node.find(".//hv:view[@id='avatar-current']", NS)

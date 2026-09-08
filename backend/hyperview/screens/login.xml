@@ -1,5 +1,6 @@
 {% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
+  <screen id="login-screen">
   <styles>
     <style id="login-body" backgroundColor="{{ theme.brand }}" flex="1" />
     <style id="login-scroll" flexGrow="1" justifyContent="flex-end" />
@@ -44,7 +45,6 @@
       <modifier pressed="true"><style tintColor="{{ theme.brand_ink_pressed }}" /></modifier>
     </style>
   </styles>
-  <screen id="login-screen">
     <body style="login-body" scroll="true" over-scroll="false" shows-scroll-indicator="false" content-container-style="login-scroll">
       <view style="login-hero">
         <view style="hero-mark"><text style="hero-mark-check">✓</text></view>

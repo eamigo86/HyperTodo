@@ -122,7 +122,8 @@ def test_installed_package_validates_an_unsaved_hxml_source(admin_client):
     )
 
     assert editor.status_code == 200
-    assert b"djhv-validate-source" in editor.content
+    assert b"djhv-format-validate" in editor.content
+    assert b"Format and Validate" in editor.content
     assert response.status_code == 200
     assert response.json()["ok"] is False
     assert response.json()["diagnostics"][0]["code"] == "django_syntax"

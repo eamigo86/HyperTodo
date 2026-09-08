@@ -1,5 +1,6 @@
 {% load dj_hyperview i18n %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview" xmlns:app="https://hypertodo.app/components">
+  <screen id="categories-screen">
   <styles>
     <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
     <style id="screen-content-style" flex="1" padding="24" />
@@ -91,7 +92,6 @@
     <style id="nav-add" alignItems="center" backgroundColor="{{ theme.brand }}" borderRadius="24" height="48" justifyContent="center" width="48" />
     <style id="nav-add-symbol" color="{{ theme.on_brand }}" fontSize="29" fontWeight="400" lineHeight="31" />
   </styles>
-  <screen id="categories-screen">
     <body style="screen">
       {% include "partials/screen_header.xml" with header_title=_("Categories") back_id="category-list-back" %}
       <view id="screen-content" style="screen-content-style">

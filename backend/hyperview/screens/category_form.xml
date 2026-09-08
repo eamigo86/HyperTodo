@@ -1,5 +1,6 @@
 {% load dj_hyperview %}<?xml version="1.0" encoding="UTF-8"?>
 <doc xmlns="https://hyperview.org/hyperview">
+  <screen id="category-form-screen">
   <styles>
     <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
     <style id="screen-content-style" flex="1" />
@@ -43,7 +44,6 @@
     <style id="error-text" color="{{ theme.danger }}" fontSize="14" fontWeight="600" lineHeight="20" />
     <style id="field-error" color="{{ theme.danger }}" fontSize="13" marginTop="6" />
   </styles>
-  <screen id="category-form-screen">
     <body style="screen">
       {% include "partials/screen_header.xml" with header_title=header_title back_id="category-back" %}
       <view id="screen-content" style="screen-content-style" scroll="true" shows-scroll-indicator="false" content-container-style="screen-content-inner" keyboard-dismiss-mode="on-drag">

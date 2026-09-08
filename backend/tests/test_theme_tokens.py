@@ -78,7 +78,7 @@ def stylesheet_rules(root):
     Returns:
         Mapping of rule key to that rule's attributes.
     """
-    styles = root.find("./hv:styles", NS)
+    styles = root.find("./hv:screen/hv:styles", NS)
     assert styles is not None, "screen declares no stylesheet"
     rules = {}
     for style in styles.findall("./hv:style", NS):

@@ -33,7 +33,11 @@ def test_csv_setting_uses_default_when_environment_value_is_absent(monkeypatch):
 def test_hxml_admin_editor_and_project_catalog_are_enabled():
     assert "django_ace" in settings.INSTALLED_APPS
     assert settings.HYPERVIEW["ADMIN"] == {"EDITOR": True}
-    assert settings.HYPERVIEW["VALIDATION"] == {"MODE": "publish_and_render"}
+    from config.schema import schema_extensions
+
+    assert "SCHEMA_PROFILE" not in settings.HYPERVIEW
+    assert "VALIDATION" not in settings.HYPERVIEW
+    assert settings.HYPERVIEW["SCHEMA_EXTENSIONS"] == schema_extensions()
     schemas = settings.HYPERVIEW["EXTRA_SCHEMAS"]
     assert schemas == [settings.BASE_DIR / "schema" / "hypertodo.xsd"]
     assert all(isinstance(path, Path) and path.is_file() for path in schemas)

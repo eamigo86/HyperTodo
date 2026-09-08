@@ -40,7 +40,7 @@ const PANEL = `<view xmlns="https://hyperview.org/hyperview" id="settings-form-p
       <view id="avatar-panel">
         <view style="avatar-row">
           <view id="avatar-current"><image style="avatar-disc avatar-disc-row" /></view>
-          <image id="avatar-preview" hide="true" style="avatar-disc avatar-disc-row" />
+          <image id="avatar-preview" hide="true" source="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==" style="avatar-disc avatar-disc-row" />
           <view style="avatar-action"><text style="avatar-action-text">Choose photo</text></view>
         </view>
       </view>
