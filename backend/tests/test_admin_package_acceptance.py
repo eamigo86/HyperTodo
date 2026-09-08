@@ -1,5 +1,7 @@
 """Consumer acceptance for the database-template Admin integration."""
 
+import json
+
 import pytest
 from dj_hyperview.contrib.database.models import HyperviewTemplate
 from django.conf import settings
@@ -89,42 +91,41 @@ def test_view_only_user_sees_real_template_without_edit_controls(
 
 
 @pytest.mark.django_db
-def test_installed_package_previews_an_unsaved_hxml_draft(admin_client):
+def test_installed_package_validates_an_unsaved_hxml_source(admin_client):
     source = (
         '<doc xmlns="https://hyperview.org/hyperview">'
-        '<screen id="preview-screen"><body><text>Stored copy</text></body></screen>'
+        '<screen id="draft-screen"><body><text>Stored copy</text></body></screen>'
         "</doc>"
     )
     template = HyperviewTemplate.objects.create(
-        name="screens/admin-preview.xml",
+        name="screens/admin-validation.xml",
         content=source,
     )
     change_url = reverse(
         "admin:dj_hyperview_database_hyperviewtemplate_change",
         args=[template.pk],
     )
-    preview_url = reverse(
-        "admin:dj_hyperview_database_hyperviewtemplate_hxml_preview_change",
-        args=[template.pk],
+    validation_url = reverse(
+        "admin:dj_hyperview_database_hyperviewtemplate_hxml_validate"
     )
 
     editor = admin_client.get(change_url)
     response = admin_client.post(
-        preview_url,
-        {
-            "name": template.name,
-            "content": source.replace("Stored copy", "Unsaved draft"),
-            "scenario": "about-light",
-        },
+        validation_url,
+        data=json.dumps(
+            {
+                "name": template.name,
+                "content": "<view>\n{% if ready %}<text />\n</view>",
+            }
+        ),
         content_type="application/json",
     )
 
     assert editor.status_code == 200
-    assert b"djhv-preview-hxml" in editor.content
-    assert b"About \xc2\xb7 light" in editor.content
+    assert b"djhv-validate-source" in editor.content
     assert response.status_code == 200
-    assert response.json()["ok"] is True, response.json()
-    assert "Unsaved draft" in response.json()["hxml"]
+    assert response.json()["ok"] is False
+    assert response.json()["diagnostics"][0]["code"] == "django_syntax"
     template.refresh_from_db()
     assert template.content == source
     assert template.revision == 1
