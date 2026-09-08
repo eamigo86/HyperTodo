@@ -23,6 +23,7 @@ from django.db.models import Count, QuerySet
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone, translation
+from django.utils.cache import patch_cache_control
 from django.utils.translation import gettext as _
 from django.views.decorators.vary import vary_on_headers
 
@@ -107,7 +108,13 @@ def _template_response(
         if request.hv_fragment
         else HyperviewTemplateResponse
     )
-    return response_class(request, template_name, context, status=status)
+    response = response_class(request, template_name, context, status=status)
+    # React Native delegates GET caching to the platform networking stack. On iOS,
+    # NSURLCache can reuse the response for an identical fragment URL, so editing a
+    # task or category would keep rendering the old row even after pull-to-refresh.
+    # Every HXML response in this application is session-specific or mutable.
+    patch_cache_control(response, private=True, no_store=True)
+    return response
 
 
 def _error_response(

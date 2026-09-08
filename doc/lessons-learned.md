@@ -219,6 +219,20 @@ no parent form, and React Native reports the event before the new value is writt
 a switch inside a form cannot reliably submit either the form body or the target state.
 HyperTodo uses explicit server-declared target-value actions instead.
 
+
+## Mutable HXML must bypass the native HTTP cache
+
+React Native delegates ordinary GET caching to the platform networking stack. On iOS,
+NSURLCache may reuse a response for an identical fragment URL unless the server forbids
+it. The result looks like a failed DOM refresh: the database is already updated, but an
+edit followed by an event refresh or pull-to-refresh keeps rendering the old row until
+the user leaves and re-enters the screen through a different document URL.
+
+HyperTodo marks every HXML document and fragment as `Cache-Control: private, no-store`.
+That policy is appropriate because its responses are both session-specific and mutable;
+dj-hyperview's configured template cache still caches template source resolution, not
+the personalized HTTP response.
+
 ## Failure handling must match the Expo transport
 
 Expo's modern fetch implementation reports unreachable hosts differently from the

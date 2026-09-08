@@ -123,6 +123,22 @@ def test_root_initializes_stack_navigator_for_guest_and_user(user):
     assert authenticated.attrib["href"] == "/hv/dashboard/"
 
 
+@pytest.mark.parametrize("route_name", ["tasks", "categories"])
+def test_mutable_hxml_lists_disable_the_native_http_cache(user, route_name):
+    """Require fresh mutable list data for navigation and fragment refreshes."""
+    client = Client()
+    client.force_login(user)
+
+    document = client.get(reverse(f"todo:{route_name}"))
+    fragment = client.get(reverse(f"todo:{route_name}"), {"fragment": "list"})
+
+    for response in (document, fragment):
+        assert_hxml(response)
+        cache_control = response.headers["Cache-Control"]
+        directives = {directive.strip() for directive in cache_control.split(",")}
+        assert {"private", "no-store"} <= directives
+
+
 def test_login_screen_uses_secure_credentials_and_fragment_submission():
     response = Client().get(reverse("todo:login"))
     root = assert_hxml(response)
