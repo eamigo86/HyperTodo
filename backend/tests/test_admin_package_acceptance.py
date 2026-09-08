@@ -86,3 +86,45 @@ def test_view_only_user_sees_real_template_without_edit_controls(
         in response.content
     )
     assert b"about-app-version" in response.content
+
+
+@pytest.mark.django_db
+def test_installed_package_previews_an_unsaved_hxml_draft(admin_client):
+    source = (
+        '<doc xmlns="https://hyperview.org/hyperview">'
+        '<screen id="preview-screen"><body><text>Stored copy</text></body></screen>'
+        "</doc>"
+    )
+    template = HyperviewTemplate.objects.create(
+        name="screens/admin-preview.xml",
+        content=source,
+    )
+    change_url = reverse(
+        "admin:dj_hyperview_database_hyperviewtemplate_change",
+        args=[template.pk],
+    )
+    preview_url = reverse(
+        "admin:dj_hyperview_database_hyperviewtemplate_hxml_preview_change",
+        args=[template.pk],
+    )
+
+    editor = admin_client.get(change_url)
+    response = admin_client.post(
+        preview_url,
+        {
+            "name": template.name,
+            "content": source.replace("Stored copy", "Unsaved draft"),
+            "scenario": "about-light",
+        },
+        content_type="application/json",
+    )
+
+    assert editor.status_code == 200
+    assert b"djhv-preview-hxml" in editor.content
+    assert b"About \xc2\xb7 light" in editor.content
+    assert response.status_code == 200
+    assert response.json()["ok"] is True, response.json()
+    assert "Unsaved draft" in response.json()["hxml"]
+    template.refresh_from_db()
+    assert template.content == source
+    assert template.revision == 1

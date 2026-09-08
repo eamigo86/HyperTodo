@@ -120,7 +120,22 @@ HYPERVIEW = {
         },
         {"BACKEND": "dj_hyperview.sources.FileSystemSource"},
     ],
-    "ADMIN": {"EDITOR": True},
+    "ADMIN": {
+        "EDITOR": True,
+        "PREVIEW": {
+            "ENABLED": True,
+            "SCENARIOS": {
+                "about-light": {
+                    "LABEL": "About · light",
+                    "CONTEXT": "todo.preview.about_light",
+                },
+                "about-dark": {
+                    "LABEL": "About · dark",
+                    "CONTEXT": "todo.preview.about_dark",
+                },
+            },
+        },
+    },
     "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
     "VALIDATION": {"MODE": "publish_and_render"},
 }
