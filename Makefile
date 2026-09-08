@@ -134,4 +134,14 @@ lan-ip: ## Display the Mac LAN address used by physical devices.
 		|| (echo "No LAN address found; inspect network settings." && exit 1)
 
 acceptance: ## Display the manual iOS and Android acceptance checklist.
-	@cat doc/acceptance.md
+	@printf '%s\n' \
+		'Manual acceptance checklist:' \
+		'  [ ] Branded splash and loading states render correctly.' \
+		'  [ ] Login persists the Django session and isolates data by user.' \
+		'  [ ] Tasks can be created, edited, completed, reopened, filtered, and deleted.' \
+		'  [ ] Categories can be created, edited, filtered, and deleted.' \
+		'  [ ] Invalid forms show field-level HXML feedback.' \
+		'  [ ] Light/dark themes and English/Spanish render correctly.' \
+		'  [ ] Avatar selection and biometric enrollment behave correctly.' \
+		'  [ ] Database-backed About and Categories templates refresh after editing.' \
+		'  [ ] Repeat the flow on iOS and Android before a release.'

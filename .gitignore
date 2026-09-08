@@ -19,5 +19,9 @@ ios/
 android/
 coverage/
 
+# Local implementation notes are intentionally kept out of the public example.
+/doc/
+/docs/
+
 # User uploads served from MEDIA_ROOT in development.
 backend/media/

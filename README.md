@@ -5,49 +5,46 @@
 [![Hyperview](https://img.shields.io/badge/Hyperview-0.110.0-171A2F)](https://www.npmjs.com/package/hyperview/v/0.110.0)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-HyperTodo is a real consumer application for
-[dj-hyperview](https://github.com/eamigo86/dj-hyperview). Django owns the data,
-business rules, and HXML screens; an Expo host renders those screens as a native
-mobile interface with Hyperview.
+HyperTodo is a test application for the
+[dj-hyperview](https://github.com/eamigo86/dj-hyperview) package. It combines a
+Django backend with an Expo mobile host that uses Hyperview to render native
+screens from server-provided HXML.
 
-Unlike a static demo, HyperTodo exercises complete document navigation,
-fragment updates, database-backed templates, cache invalidation, authentication,
-custom HXML components, and native device capabilities.
+The project exists to exercise dj-hyperview in a realistic application. It is
+not intended to be a reusable task-management product.
 
-## What it demonstrates
+## What HyperTodo tests
 
-- Session-authenticated task and category management with strict user isolation.
-- Filesystem HXML templates with database overrides managed through Django Admin.
-- Live screen changes after publishing a stored template, without rebuilding the
-  mobile application.
-- Full Hyperview documents and targeted fragment replacement.
-- Optional Redis caching through an isolated logical database and namespace.
+- Login and session authentication, with each user restricted to their own data.
+- Task and category creation, editing, filtering, completion, and deletion.
+- Complete HXML documents and partial screen updates with fragments.
+- Filesystem templates and database-backed overrides edited through Django Admin.
+- Template validation, source precedence, revision-based invalidation, and caching.
+- Optional Redis caching with an isolated logical database and namespace.
 - Light and dark themes, English and Spanish, avatars, and accessible contrast.
-- Animated splash handoff, biometric unlock, native image selection, swipe
-  actions, and a server-driven side menu.
-- Strict backend TDD, focused mobile tests, type checking, linting, Django checks,
-  migration checks, and Expo Doctor.
-
+- Native integrations such as the animated splash screen, biometric unlock, image
+  selection, swipe actions, and the side menu.
+- Automated backend and mobile quality gates.
 
 ## Screenshots
 
 <table>
   <tr>
-    <td align="center"><img src="doc/images/dashboard-light.png" width="280" alt="HyperTodo light dashboard"><br><strong>Light dashboard</strong></td>
-    <td align="center"><img src="doc/images/dashboard-dark.png" width="280" alt="HyperTodo dark dashboard"><br><strong>Dark dashboard</strong></td>
-    <td align="center"><img src="doc/images/side-menu.png" width="280" alt="HyperTodo server-driven side menu"><br><strong>Side menu</strong></td>
+    <td align="center"><img src=".github/assets/screenshots/login.png" width="280" alt="HyperTodo login screen"><br><strong>Login</strong></td>
+    <td align="center"><img src=".github/assets/screenshots/dashboard-light.png" width="280" alt="HyperTodo dashboard in light mode"><br><strong>Light dashboard</strong></td>
+    <td align="center"><img src=".github/assets/screenshots/dashboard-dark.png" width="280" alt="HyperTodo dashboard in dark mode"><br><strong>Dark dashboard</strong></td>
   </tr>
   <tr>
-    <td align="center"><img src="doc/images/task-swipe-actions.png" width="280" alt="HyperTodo task list with swipe actions"><br><strong>Task actions</strong></td>
-    <td align="center"><img src="doc/images/categories.png" width="280" alt="HyperTodo category list"><br><strong>Categories</strong></td>
-    <td align="center"><img src="doc/images/settings.png" width="280" alt="HyperTodo profile and security settings"><br><strong>Settings</strong></td>
+    <td align="center"><img src=".github/assets/screenshots/task-swipe-actions.png" width="280" alt="HyperTodo task list with swipe actions"><br><strong>Task actions</strong></td>
+    <td align="center"><img src=".github/assets/screenshots/categories.png" width="280" alt="HyperTodo category list"><br><strong>Categories</strong></td>
+    <td align="center"><img src=".github/assets/screenshots/settings.png" width="280" alt="HyperTodo profile and security settings"><br><strong>Settings</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src=".github/assets/screenshots/side-menu.png" width="280" alt="HyperTodo side menu"><br><strong>Side menu</strong></td>
+    <td align="center"><img src=".github/assets/screenshots/about.png" width="280" alt="HyperTodo About screen"><br><strong>About</strong></td>
+    <td></td>
   </tr>
 </table>
-
-The database-backed About screen can be edited and validated directly in Django
-Admin, then refreshed immediately in the mobile application:
-
-![Django Admin HXML editor](doc/images/django-admin-hxml-editor.png)
 
 ## Repository layout
 
@@ -55,20 +52,21 @@ Admin, then refreshed immediately in the mobile application:
 | --- | --- |
 | `backend/` | Django 6.1.1 application using Python 3.14 and dj-hyperview 0.1.0a10. |
 | `mobile/` | Expo 57 host using React Native 0.86 and Hyperview 0.110.0. |
-| `doc/` | Architecture, setup, testing, acceptance, decisions, and integration findings. |
-| `Makefile` | Root commands for installing, validating, and running both applications. |
+| `Makefile` | Commands for installing, validating, and running both applications. |
 
 ## Quick start
 
-### Prerequisites
+### Requirements
 
 - Python 3.14 and [uv](https://docs.astral.sh/uv/)
 - Node 22.19.0 through [nvm](https://github.com/nvm-sh/nvm)
 - Corepack
 - Expo Go on a physical device, or an iOS/Android simulator
-- Redis only when exercising the optional shared-cache path
+- Redis only when testing the optional shared-cache configuration
 
-Run all setup commands from the repository root:
+### 1. Prepare the project
+
+Run these commands in a terminal opened at the repository root:
 
 ```console
 make help
@@ -78,101 +76,85 @@ make backend-seed
 make check
 ```
 
-The seed command creates two local accounts while Django debug mode is enabled:
+`make setup` installs the locked Python and JavaScript dependencies. The migration
+command prepares the local database, and the seed command creates repeatable demo
+data and publishes the database-template examples. `make check` verifies the
+complete backend and mobile test suites before the app is started.
+
+The development seed provides two local accounts:
 
 | User | Password | Purpose |
 | --- | --- | --- |
-| `admin` | `admin123` | Superuser and Django Admin template editor. |
-| `demo` | `demo123` | Regular account with separate tasks and categories. |
+| `admin` | `admin123` | Superuser with access to Django Admin and the HXML editor. |
+| `demo` | `demo123` | Regular user with separate tasks and categories. |
 
-### Run with Expo Go on a physical device
+### 2. Start the backend for a physical device
 
-Find the development machine's LAN address:
+First, obtain the development machine's LAN address from any root terminal:
 
 ```console
 make lan-ip
 ```
 
-Start Django in the backend terminal:
+Then start Django in the **backend terminal**, replacing the example address:
 
 ```console
 LAN_IP=192.168.1.20 make backend-run-device
 ```
 
-Start Expo in the mobile terminal:
+### 3. Start Expo Go
+
+In a separate **mobile terminal**, use the same address:
 
 ```console
 LAN_IP=192.168.1.20 make mobile-start-go
 ```
 
-Scan the QR code with the phone camera and open it in Expo Go. The phone and
-development machine must use the same reachable local network.
+Scan the QR code with the phone camera and open the project in Expo Go. The phone
+and development machine must be connected to the same reachable local network.
 
-### Run locally or in a simulator
+### Simulator alternatives
 
-```console
-# Backend terminal
-make backend-run
-```
+For an iOS Simulator, run `make backend-run` in the backend terminal and
+`make mobile-start` in the mobile terminal. Use `make mobile-start-android` for
+the Android Emulator. To exercise the existing Redis service, replace the backend
+command with `make backend-run-redis`.
 
-```console
-# Mobile terminal: iOS Simulator or an installed development client
-make mobile-start
-```
+## Testing database-backed templates
 
-Use `make mobile-start-android` for the Android Emulator address. Run
-`make backend-run-redis` instead of `make backend-run` when testing the existing
-Redis service configured by `REDIS_URL`.
-
-## Live database templates
-
-The configured source order checks the database before the filesystem. Running
+The backend checks the database template source before the filesystem source.
 `make backend-seed` publishes database overrides for the About screen and the
-Categories document and fragment while preserving their filesystem fallbacks.
+Categories document and fragment, while retaining their filesystem versions as
+fallbacks.
 
-1. Sign in to Django Admin with the local admin account.
-2. Open a stored Hyperview template.
-3. Edit and publish its HXML with the optional schema-aware editor.
-4. Refresh the corresponding screen in HyperTodo.
+1. Sign in to Django Admin with `admin` / `admin123`.
+2. Open **Hyperview database templates → Hyperview templates**.
+3. Edit and save the About template or a Categories template.
+4. Return to the corresponding mobile screen and refresh it.
 
-The committed database version appears immediately on the next request. Editing
-a stored HXML template is equivalent to changing application code, so
-dj-hyperview 0.1.0a10 restricts mutations to superusers by default.
+The About screen uses a database-backed template that can be edited and validated
+in Django Admin, then refreshed immediately in the mobile application:
 
-## Quality gates
+![Django Admin HXML editor](.github/assets/screenshots/django-admin-hxml-editor.png)
+
+Editing stored HXML changes the mobile interface without rebuilding the app. Treat
+that access like a production code-deployment permission: dj-hyperview restricts
+template mutations to superusers by default.
+
+## Quality checks
+
+Run the complete automated gate from the repository root:
 
 ```console
 make check
 ```
 
-This runs:
+It runs Ruff, pytest with statement and branch coverage, Django system checks,
+migration drift detection, TypeScript, Jest, and Expo Doctor. No native build is
+required. Run `make acceptance` to print the manual device checklist.
 
-- Ruff, pytest with statement and branch coverage, Django checks, and migration
-  drift detection for the backend.
-- TypeScript, Jest, and Expo Doctor for the mobile host.
-
-No native build is required for the automated gate. See
-[Testing](doc/testing.md) and the [Acceptance checklist](doc/acceptance.md) for
-the manual device workflow.
-
-## Documentation
-
-Start with the [documentation index](doc/index.md) or go directly to:
-
-- [Getting started](doc/getting-started.md)
-- [Architecture](doc/architecture.md)
-- [Testing](doc/testing.md)
-- [Lessons learned](doc/lessons-learned.md)
-- [Package improvement candidates](doc/package-improvements.md)
-
-The reusable package documentation is published at
+Package documentation is available at
 [eamigo86.github.io/dj-hyperview](https://eamigo86.github.io/dj-hyperview/).
-
-## Scope
-
-HyperTodo is a reference consumer, not a reusable task-management package. Its
-purpose is to prove and document the integration boundary between Django,
-dj-hyperview, Hyperview, Expo, and project-owned native extensions.
 
 ## License
 
