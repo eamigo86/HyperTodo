@@ -694,7 +694,7 @@ def test_a_category_card_is_painted_by_its_own_colour_again(user):
         assert row.attrib["style"].split()[0] == "card-fill"
         inner = row.find("./hv:view[@style='card-inner']", NS)
         assert inner is not None
-        assert inner.find("./hv:text[@style='name']", NS) is not None
+        assert inner.find("./hv:text[@style='name-on-fill']", NS) is not None
         assert inner.find("./hv:text[@style='meta-on-fill']", NS) is not None
 
     fill_style = style_by_id(root, "card-fill")

@@ -1,5 +1,5 @@
 {% load dj_hyperview i18n %}<?xml version="1.0" encoding="UTF-8"?>
-<doc xmlns="https://hyperview.org/hyperview">
+<doc xmlns="https://hyperview.org/hyperview" xmlns:app="https://hypertodo.app/components">
   <styles>
     <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
     <style id="screen-content" flex="1" padding="24" />
@@ -21,6 +21,10 @@
          4.5:1 on all five fills (4.95 on green, the binding constraint). -->
     <style id="card-fill" borderRadius="24" marginBottom="12" overflow="hidden" />
     <style id="card-inner" padding="20" />
+    <!-- Category fills are identity colours and remain pastel in both themes.
+         Therefore their title uses the fixed on-category ink rather than theme.ink,
+         which becomes near-white in dark mode. -->
+    <style id="name-on-fill" color="{{ theme.on_category }}" fontSize="20" fontWeight="700" />
     <style id="meta-on-fill" color="{{ theme.on_category }}" fontSize="13" fontWeight="600" marginTop="4" />
     <!-- Below here: the pre-1.1.0 white card, kept whole for clients that predate the
          swipe-row component. Delete it, the {% templatetag openblock %} else {% templatetag closeblock %} branch in

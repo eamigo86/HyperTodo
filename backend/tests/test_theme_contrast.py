@@ -168,7 +168,8 @@ PAIRS = (
     ("tasks", "empty-copy.color", "empty-card.backgroundColor", AA),
     # --- categories -----------------------------------------------------------
     *(
-        ("categories", "meta-on-fill.color", f"{tone}.backgroundColor", AA)
+        ("categories", foreground, f"{tone}.backgroundColor", AA)
+        for foreground in ("name-on-fill.color", "meta-on-fill.color")
         for tone in ("lavender", "yellow", "mint", "pink", "green")
     ),
     ("categories", "name.color", "card.backgroundColor", LARGE),

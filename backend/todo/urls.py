@@ -12,6 +12,7 @@ urlpatterns = [
     path("logout/", views.logout_view, name="logout"),
     path("biometric/login/", views.biometric_login, name="biometric-login"),
     path("dashboard/", views.dashboard, name="dashboard"),
+    path("about/", views.about, name="about"),
     path("settings/", views.settings_view, name="settings"),
     path("preferences/", views.preferences, name="preferences"),
     path("menu/", views.menu, name="menu"),

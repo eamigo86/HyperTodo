@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:app="https://hypertodo.app/components"
+  xmlns:hv="https://hyperview.org/hyperview"
+  targetNamespace="https://hypertodo.app/components"
+  elementFormDefault="qualified"
+  version="1.1"
+>
+  <xs:simpleType name="action">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="navigate" />
+      <xs:enumeration value="replace" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="verb">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="get" />
+      <xs:enumeration value="post" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:element name="side-menu">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="https://hyperview.org/hyperview" processContents="lax" minOccurs="0" maxOccurs="unbounded" />
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:ID" />
+      <xs:attribute name="style" type="xs:string" />
+      <xs:attribute name="close-href" type="xs:string" />
+      <xs:attribute name="animation-duration" type="xs:positiveInteger" />
+      <xs:attribute name="panel-width" type="xs:positiveInteger" />
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="swipe-row">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:any namespace="https://hyperview.org/hyperview" processContents="lax" />
+        <xs:element ref="app:swipe-action" />
+      </xs:choice>
+      <xs:attribute name="id" type="xs:ID" />
+      <xs:attribute name="style" type="xs:string" />
+      <xs:attribute name="edit-href" type="xs:string" />
+      <xs:attribute name="toggle-href" type="xs:string" />
+      <xs:attribute name="delete-href" type="xs:string" />
+      <xs:attribute name="completed" type="xs:boolean" />
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="swipe-action">
+    <xs:complexType>
+      <xs:attribute name="href" type="xs:string" use="required" />
+      <xs:attribute name="action" type="app:action" use="required" />
+      <xs:attribute name="verb" type="app:verb" use="required" />
+      <xs:attribute name="label" type="xs:string" use="required" />
+      <xs:attribute name="a11y-label" type="xs:string" use="required" />
+      <xs:attribute name="tone" type="xs:string" />
+      <xs:attribute name="confirm-title" type="xs:string" />
+      <xs:attribute name="confirm-body" type="xs:string" />
+      <xs:attribute name="confirm-label" type="xs:string" />
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="edge-menu-opener">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:ID" />
+      <xs:attribute name="style" type="xs:string" />
+      <xs:attribute name="href" type="xs:string" use="required" />
+      <xs:attribute name="action" type="app:action" use="required" />
+      <xs:attribute name="target" type="xs:string" use="required" />
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

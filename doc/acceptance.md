@@ -3,7 +3,7 @@
 ## Automated
 
 - [x] Django 6.1.1 installs with Python 3.14 through uv.
-- [x] Published dj-hyperview 0.1.0a8 is the installed package.
+- [x] Published dj-hyperview 0.1.0a10 is the installed package.
 - [x] Backend tests pass above the 95 percent statement-and-branch gate.
 - [x] Source precedence and shared Redis invalidation tests pass without flushing Redis.
 - [x] Every tested document and fragment is valid UTF-8 HXML with its explicit package media type.
@@ -21,7 +21,7 @@
 - [ ] Create, edit, filter by, and delete a category.
 - [ ] Invalid forms remain on an HXML form with visible feedback.
 - [ ] Session expiry returns to the dedicated sign-in path.
-- [ ] A database template override is visible after refresh.
+- [x] A database template override is visible after refresh.
 
 ## Manual Android smoke
 

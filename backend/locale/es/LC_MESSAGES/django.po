@@ -718,3 +718,28 @@ msgstr "Tu foto se guarda al tocar Guardar ajustes."
 msgid "Sign out, then sign in with your password and turn on 'Unlock with biometrics next time'."
 msgstr "Cierra sesión, inicia sesión con tu contraseña y activa 'Desbloquear con biometría la próxima vez'."
 
+msgid "About"
+msgstr "Acerca de"
+
+msgid "A calm, server-driven place to organize tasks, categories, and the work that matters."
+msgstr "Un espacio tranquilo y dirigido por el servidor para organizar tareas, categorías y el trabajo que importa."
+
+msgid "Built with"
+msgstr "Creado con"
+
+#, python-format
+msgid "Backend, authentication, data, and business rules. Version %(django_version)s."
+msgstr "Backend, autenticación, datos y reglas de negocio. Versión %(django_version)s."
+
+msgid "Template sources, validation, caching, and server-driven responses."
+msgstr "Fuentes de plantillas, validación, caché y respuestas dirigidas por el servidor."
+
+#, python-format
+msgid "Native mobile interface rendered from HXML. Version %(hyperview_version)s."
+msgstr "Interfaz móvil nativa renderizada desde HXML. Versión %(hyperview_version)s."
+
+msgid "React Native host, device services, and development workflow."
+msgstr "Host de React Native, servicios del dispositivo y flujo de desarrollo."
+
+msgid "All rights reserved."
+msgstr "Todos los derechos reservados."

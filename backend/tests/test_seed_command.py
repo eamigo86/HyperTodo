@@ -1,6 +1,8 @@
 """Tests for the idempotent local demo-data command."""
 
 import pytest
+from dj_hyperview.contrib.database.models import HyperviewTemplate
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import override_settings
@@ -34,6 +36,19 @@ def test_seed_demo_creates_isolated_admin_and_user_data_with_local_defaults(
     assert Task.objects.filter(user=demo).count() == 5
     assert not Task.objects.filter(user=admin, category__user=demo).exists()
     assert not Task.objects.filter(user=demo, category__user=admin).exists()
+    expected_templates = {
+        "screens/about.xml",
+        "screens/categories.xml",
+        "fragments/category_list.xml",
+    }
+    assert set(HyperviewTemplate.objects.values_list("name", flat=True)) == (
+        expected_templates
+    )
+    assert not HyperviewTemplate.objects.exclude(revision=1).exists()
+    for template in HyperviewTemplate.objects.all():
+        source = settings.BASE_DIR / "hyperview" / template.name
+        assert template.active is True
+        assert template.content == source.read_text(encoding="utf-8")
 
 
 def test_seed_demo_allows_credentials_and_usernames_to_be_overridden(monkeypatch):

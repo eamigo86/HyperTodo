@@ -46,6 +46,11 @@
         <image style="side-menu-icon{% if active_nav == 'settings' %} side-menu-icon-active{% endif %}" source="{% static 'todo/icons/settings.png' %}" />
         <text style="side-menu-link-text" accessibilityRole="button">{% translate "Settings" %}</text>
       </view>
+      <view style="side-menu-link{% if active_nav == 'about' %} side-menu-link-active{% endif %}" href="/hv/about/" action="navigate">
+        <behavior trigger="press" href="/hv/menu/close/" action="replace" target="side-menu-host" />
+        <image style="side-menu-icon{% if active_nav == 'about' %} side-menu-icon-active{% endif %}" source="{% static 'todo/icons/alert.png' %}" />
+        <text style="side-menu-link-text" accessibilityRole="button">{% translate "About" %}</text>
+      </view>
     </view>
     <!-- The drawer supplies the form the switcher no longer carries, the same
          shape it already wraps sign-out in. It holds nothing but the CSRF token,

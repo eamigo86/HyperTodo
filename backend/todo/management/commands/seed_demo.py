@@ -4,6 +4,8 @@ import os
 from datetime import timedelta
 from typing import Any
 
+from dj_hyperview.contrib.database.models import HyperviewTemplate
+from dj_hyperview.contrib.database.services import publish_template
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandParser
@@ -86,11 +88,28 @@ class Command(BaseCommand):
             ),
             now=now,
         )
+        self._seed_hxml_templates()
         self.stdout.write(
             self.style.SUCCESS(
                 f"Demo data is ready for {admin.username} and {demo.username}."
             )
         )
+
+    def _seed_hxml_templates(self) -> None:
+        """Publish missing demonstration templates without replacing admin edits."""
+        template_root = settings.BASE_DIR / "hyperview"
+        for name in (
+            "screens/about.xml",
+            "screens/categories.xml",
+            "fragments/category_list.xml",
+        ):
+            if HyperviewTemplate.objects.filter(name=name).exists():
+                continue
+            publish_template(
+                name,
+                (template_root / name).read_text(encoding="utf-8"),
+                using="default",
+            )
 
     def _seed_account(
         self,

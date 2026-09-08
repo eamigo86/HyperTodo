@@ -1128,7 +1128,7 @@ def test_side_menu_is_loaded_and_closed_through_hxml_requests(user):
         for view in opened.iter(f"{{{NS['hv']}}}view")
         if "side-menu-link" in (view.attrib.get("style") or "").split()
     ]
-    assert len(rows) == 4
+    assert len(rows) == 5
     for row in rows:
         images = row.findall("./hv:image", NS)
         assert len(images) == 1, row.attrib["href"]
@@ -1154,10 +1154,77 @@ def test_side_menu_is_loaded_and_closed_through_hxml_requests(user):
     panel = opened.find(".//hv:view[@id='logout-panel']", NS)
     assert "style" not in panel.attrib
     assert opened.find(".//hv:view[@style='side-menu-footer']", NS) is not None
+    about_link = opened.find(".//hv:view[@href='/hv/about/']", NS)
+    assert about_link is not None
+    assert about_link.find("./hv:text", NS).text == "About"
+    dashboard = assert_hxml(client.get(reverse("todo:dashboard")))
+    preferences_style = dashboard.find(".//hv:style[@id='side-menu-preferences']", NS)
+    assert preferences_style is not None
+    assert preferences_style.attrib["paddingBottom"] == "20"
+    edge_opener = dashboard.find(".//app:edge-menu-opener", NS)
+    assert edge_opener is not None
+    assert edge_opener.attrib == {
+        "id": "dashboard-edge-menu",
+        "style": "edge-menu-opener",
+        "href": "/hv/menu/?active=dashboard",
+        "action": "replace",
+        "target": "side-menu-host",
+    }
+    assert dashboard.find(".//hv:style[@id='edge-menu-opener']", NS) is not None
 
     closed = assert_hxml(client.get(reverse("todo:menu-close")))
     assert closed.attrib == {"id": "side-menu-host"}
     assert len(closed) == 0
+
+
+def test_category_swipe_cards_use_fill_safe_name_ink(user):
+    category = Category.objects.create(user=user, name="Pastel", color="mint")
+    client = Client(headers={"x-app-version": "1.2.0"})
+    client.force_login(user)
+    client.cookies[THEME_COOKIE] = "dark"
+
+    root = assert_hxml(client.get(reverse("todo:categories")))
+    row = root.find(f".//app:swipe-row[@id='category-swipe-{category.pk}']", NS)
+    name = row.find("./hv:view/hv:text", NS)
+    style = root.find(".//hv:style[@id='name-on-fill']", NS)
+
+    assert name is not None
+    assert name.attrib["style"] == "name-on-fill"
+    assert style is not None
+    assert style.attrib["color"] == "#161A35"
+
+
+def test_about_is_an_authenticated_document_linked_only_from_the_side_menu(user):
+    anonymous = Client().get(reverse("todo:about"))
+    assert_hxml(anonymous, status=401)
+
+    client = Client(headers={"x-app-version": "1.2.0"})
+    client.force_login(user)
+    root = assert_hxml(client.get(reverse("todo:about")))
+    screen = root.find("./hv:screen", NS)
+
+    assert screen is not None
+    assert screen.attrib["id"] == "about-screen"
+    assert root.find(".//hv:text[@id='about-app-version']", NS).text == (
+        "HyperTodo 1.2.0"
+    )
+    assert root.find(".//hv:text[@id='about-package-version']", NS).text == (
+            "dj-hyperview 0.1.0a10"
+    )
+    technology_names = {
+        item.text for item in root.findall(".//hv:text[@style='technology-name']", NS)
+    }
+    assert {"Django", "dj-hyperview", "Hyperview", "Expo"} <= technology_names
+    assert root.find(".//hv:text[@id='about-copyright']", NS) is not None
+
+    for route in (
+        reverse("todo:dashboard"),
+        reverse("todo:tasks"),
+        reverse("todo:categories"),
+        reverse("todo:settings"),
+    ):
+        page = assert_hxml(client.get(route))
+        assert page.find(".//hv:view[@href='/hv/about/']", NS) is None
 
 
 def test_task_cards_expose_swipe_actions_instead_of_tiny_links(user):
@@ -1651,7 +1718,7 @@ def test_every_side_menu_row_announces_itself_as_a_control(user):
         if (node.attrib.get("style") or "")
         in ("side-menu-link-text", "side-menu-logout-text")
     ]
-    assert len(labels) == 5, [label.text for label in labels]
+    assert len(labels) == 6, [label.text for label in labels]
     for label in labels:
         assert label.attrib.get("accessibilityRole") == "button", label.text
         # createProps spreads the id-derived test props LAST, so an id here would

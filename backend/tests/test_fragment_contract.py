@@ -833,7 +833,7 @@ def test_every_side_menu_link_also_closes_the_menu(user):
         for view in root.iter(f"{{{HV}}}view")
         if "side-menu-link" in (view.attrib.get("style") or "").split()
     ]
-    assert len(links) == 4, f"expected the four menu destinations, found {len(links)}"
+    assert len(links) == 5, f"expected the five menu destinations, found {len(links)}"
     for link in links:
         close = link.find("./hv:behavior[@action='replace']", NS)
         assert close is not None, (

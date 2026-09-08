@@ -2,7 +2,7 @@
 
 ## Released packages over source checkouts
 
-The backend installs dj-hyperview 0.1.0a8 from PyPI and the client installs Hyperview 0.110.0 from npm. This makes the project a truthful external consumer. The upstream Hyperview Expo PR is used only as dependency-matrix guidance.
+The backend installs dj-hyperview 0.1.0a10 from PyPI and the client installs Hyperview 0.110.0 from npm. This makes the project a truthful external consumer. The upstream Hyperview Expo PR is used only as dependency-matrix guidance.
 
 ## Sessions and CSRF over token authentication
 

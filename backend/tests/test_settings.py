@@ -699,6 +699,10 @@ def test_no_side_menu_destination_is_stranded(client, user):
     # to live behind the menu, and test_sign_out_lives_only_in_the_side_menu
     # guards it there. The four navigation destinations stay covered below.
     offered.discard(reverse("todo:logout"))
+    # About is intentionally a drawer-only informational destination. Unlike an
+    # action or a required workflow, it has a native Back header and strands no
+    # user when the drawer is unavailable.
+    offered.discard(reverse("todo:about"))
     # Appearance and language joined it. Settings became one real form with one
     # Save button, and a control that commits the instant it is tapped -- and
     # reloads the document doing it -- cannot share that screen with unsaved

@@ -35,6 +35,35 @@ def test_active_database_template_overrides_filesystem_immediately():
     assert root.find(f"{{{NAMESPACE}}}screen").attrib["id"] == "database-probe"
 
 
+def test_database_overrides_categories_document_and_refresh_fragment(user):
+    document_name = "screens/categories.xml"
+    fragment_name = "fragments/category_list.xml"
+    document = (
+        (settings.BASE_DIR / "hyperview" / document_name)
+        .read_text(encoding="utf-8")
+        .replace('id="categories-screen"', 'id="database-categories-screen"', 1)
+    )
+    fragment = (
+        (settings.BASE_DIR / "hyperview" / fragment_name)
+        .read_text(encoding="utf-8")
+        .replace('id="category-list"', 'id="database-category-list"', 1)
+    )
+    publish_template(document_name, document, using="default")
+    publish_template(fragment_name, fragment, using="default")
+    client = Client(headers={"x-app-version": "1.2.0"})
+    client.force_login(user)
+
+    screen = ElementTree.fromstring(client.get(reverse("todo:categories")).content)
+    refreshed = ElementTree.fromstring(
+        client.get(reverse("todo:categories"), {"fragment": "list"}).content
+    )
+
+    assert screen.find(f"{{{NAMESPACE}}}screen").attrib["id"] == (
+        "database-categories-screen"
+    )
+    assert refreshed.attrib["id"] == "database-category-list"
+
+
 def test_inactive_database_template_falls_through_to_filesystem():
     publish_template(NAME, DATABASE_XML, active=False, using="default")
     response = Client().get(reverse("todo:source-probe"))

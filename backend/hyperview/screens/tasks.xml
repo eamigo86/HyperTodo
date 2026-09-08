@@ -20,7 +20,10 @@
     <style id="empty-item" paddingVertical="24" />
     <style id="list-spinner" alignItems="center" height="28" justifyContent="center" />
     <style id="swipe-row" borderRadius="22" marginBottom="12" overflow="hidden" />
-    <style id="task" backgroundColor="{{ theme.surface }}" borderRadius="22" padding="16" />
+    <!-- The swipe-row owns the outer radius, exactly like category cards. Keeping
+         a second radius here exposes rounded inner corners where the task meets
+         the open action tray. -->
+    <style id="task" backgroundColor="{{ theme.surface }}" padding="16" />
     <style id="task-title" color="{{ theme.ink_body }}" fontSize="17" fontWeight="600" />
     <style id="meta" color="{{ theme.ink_muted }}" fontSize="13" marginTop="5" />
     <style id="empty-card" alignItems="center" backgroundColor="{{ theme.surface }}" borderRadius="24" padding="24" />

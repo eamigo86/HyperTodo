@@ -156,7 +156,7 @@
          under Settings, and at large OS text sizes on a small phone the rows would
          overflow their half onto the block below, which neither clips nor
          scrolls. Only the nav block absorbs the free height. -->
-    <style id="side-menu-preferences" paddingHorizontal="12" paddingTop="12" />
+    <style id="side-menu-preferences" paddingBottom="20" paddingHorizontal="12" paddingTop="12" />
     <!-- Every id used inside a pressed row needs its own pressed rule. `pressed`
          reaches every descendant and each styled one whose ids declare none falls
          back to opacity 0.7 (services/index.ts:33-41); RN nests the layers, so a
@@ -272,6 +272,10 @@
     <style id="side-menu-logout-text" color="{{ theme.danger }}" flex="1" fontSize="16" fontWeight="600">
       <modifier pressed="true"><style color="{{ theme.danger }}" /></modifier>
     </style>
+    <!-- A narrow, dashboard-only gesture rail. It ends above the tab bar and only
+         claims rightward horizontal movement, so normal vertical scrolling and
+         every screen that can navigate back keep their native gestures. -->
+    <style id="edge-menu-opener" bottom="72" left="0" position="absolute" top="0" width="24" zIndex="40" />
   </styles>
   <screen id="dashboard-screen">
     <body style="screen">
@@ -295,6 +299,7 @@
         {% include "fragments/dashboard_content.xml" %}
       </view>
       {% include "fragments/bottom_navigation.xml" with active_nav="dashboard" %}
+      <app:edge-menu-opener xmlns:app="https://hypertodo.app/components" id="dashboard-edge-menu" style="edge-menu-opener" href="/hv/menu/?active=dashboard" action="replace" target="side-menu-host" />
       {% include "fragments/side_menu_host.xml" %}
     </body>
   </screen>

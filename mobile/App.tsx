@@ -13,6 +13,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { getApiUrl } from "./src/config";
 import AnimatedSideMenu from "./src/components/AnimatedSideMenu";
+import EdgeMenuOpener from "./src/components/EdgeMenuOpener";
 import ElementErrorBanner from "./src/components/ElementErrorBanner";
 import OfflineRefreshControl from "./src/components/OfflineRefreshControl";
 import { FAILURE_COPY, classifyFailure } from "./src/feedback/failure";
@@ -66,7 +67,7 @@ const hyperviewFetch = createHyperviewFetch(entrypointUrl);
 // render would fail its shallow compare and re-render the whole server-driven tree
 // for a change that only repaints two insets.
 const behaviors = [ShowSnackbarBehavior, StoreBiometricTokenBehavior, ProbeBiometricsBehavior, BiometricUnlockBehavior, PickAvatarBehavior];
-const components = [AnimatedSideMenu, SwipeRow];
+const components = [AnimatedSideMenu, EdgeMenuOpener, SwipeRow];
 const formatDate = (date?: Date | null, format?: string) =>
   date && format ? moment(date).format(format) : undefined;
 

@@ -20,6 +20,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django_ace",
     "dj_hyperview",
     "dj_hyperview.contrib.database",
     "todo",
@@ -119,6 +120,8 @@ HYPERVIEW = {
         },
         {"BACKEND": "dj_hyperview.sources.FileSystemSource"},
     ],
+    "ADMIN": {"EDITOR": True},
+    "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
     "VALIDATION": {"MODE": "publish_and_render"},
 }
 if ENABLE_REDIS_CACHE:

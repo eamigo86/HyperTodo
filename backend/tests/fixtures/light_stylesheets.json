@@ -1745,7 +1745,6 @@
     },
     "task": {
       "backgroundColor": "#FFFFFF",
-      "borderRadius": "22",
       "padding": "16"
     },
     "task-list": {

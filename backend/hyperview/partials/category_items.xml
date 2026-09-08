@@ -4,7 +4,7 @@
   <form>{% hv_csrf_token %}
     <app:swipe-row xmlns:app="https://hypertodo.app/components" id="category-swipe-{{ category.id }}" style="card-fill {{ category.color }}">
       <view style="card-inner">
-        <text style="name">{{ category.name }}</text>
+        <text style="name-on-fill">{{ category.name }}</text>
         <text style="meta-on-fill">{% blocktranslate count counter=category.task_count %}{{ counter }} task{% plural %}{{ counter }} tasks{% endblocktranslate %}</text>
       </view>
       <app:swipe-action href="/hv/categories/{{ category.id }}/edit/" action="navigate" verb="get" label="{% translate "Edit" %}" a11y-label="{% translate "Edit category" %}" tone="primary" />

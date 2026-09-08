@@ -4,10 +4,12 @@ import re
 from collections.abc import Callable
 from functools import wraps
 from hashlib import sha256
+from importlib.metadata import version
 from uuid import UUID
 
 from dj_hyperview import (
     HYPERVIEW_FRAGMENT_MEDIA_TYPE,
+    HYPERVIEW_SCHEMA_VERSION,
     HyperviewFragmentTemplateResponse,
     HyperviewTemplateResponse,
 )
@@ -79,7 +81,6 @@ def _paginate(queryset: QuerySet, raw_page: str) -> Page:
         PageNotAnInteger: If the page value is not an integer.
     """
     return Paginator(queryset, PAGE_SIZE).page(raw_page)
-
 
 
 def _template_response(
@@ -474,6 +475,34 @@ def _app_version(request: HttpRequest) -> str:
     """
     raw = request.headers.get(APP_VERSION_HEADER, "")
     return raw if APP_VERSION_PATTERN.fullmatch(raw) else "unknown"
+
+
+@hxml_endpoint(fragment=False)
+@vary_on_headers(APP_VERSION_HEADER)
+def about(request: HttpRequest) -> HttpResponse:
+    """Render package and application information for signed-in users.
+
+    Args:
+        request: Incoming About screen request.
+
+    Returns:
+        Complete About screen HXML document.
+    """
+    if denied := _require_user(request):
+        return denied
+    if invalid := _method(request, "GET"):
+        return invalid
+    return _template_response(
+        request,
+        "screens/about.xml",
+        {
+            "app_version": _app_version(request),
+            "django_version": version("Django"),
+            "dj_hyperview_version": version("dj-hyperview"),
+            "hyperview_version": HYPERVIEW_SCHEMA_VERSION,
+            "copyright_year": timezone.now().year,
+        },
+    )
 
 
 def _client_version(request: HttpRequest) -> tuple[int, ...]:
