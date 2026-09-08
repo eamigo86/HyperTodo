@@ -1,7 +1,7 @@
 import type { HvComponentProps } from "hyperview";
 import { createStyleProp } from "hyperview";
 import { renderChildNodes } from "hyperview/src/services/render";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -21,6 +21,18 @@ const ACTION_LOCAL_NAME = "swipe-action";
 const ACTION_WIDTH = 88;
 const SWIPE_THRESHOLD = 44;
 const ANIMATION_DURATION = 160;
+
+// One tray is open app-wide, keyed by a per-row ref so identity survives re-renders.
+// A row claims the slot when a drag starts on it, which is what slides the previous
+// row's tray shut mid-gesture instead of leaving two trays open.
+let openRow: React.MutableRefObject<() => void> | null = null;
+
+function claimOpenRow(row: React.MutableRefObject<() => void>): void {
+  if (openRow && openRow !== row) {
+    openRow.current();
+  }
+  openRow = row;
+}
 
 type UpdateAction = "navigate" | "replace";
 type UpdateVerb = "get" | "post";
@@ -99,9 +111,15 @@ function SwipeRowComponent({
   const children = renderChildNodes(content, stylesheets, onUpdate, options);
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsTranslateX = useRef(new Animated.Value(trayWidth)).current;
+  const closeRef = useRef<() => void>(() => {});
 
   const animateActions = useCallback(
     (open: boolean): void => {
+      if (open) {
+        claimOpenRow(closeRef);
+      } else if (openRow === closeRef) {
+        openRow = null;
+      }
       setActionsOpen(open);
       Animated.timing(actionsTranslateX, {
         duration: ANIMATION_DURATION,
@@ -111,6 +129,18 @@ function SwipeRowComponent({
       }).start();
     },
     [actionsTranslateX, trayWidth],
+  );
+
+  closeRef.current = () => animateActions(false);
+
+  // A removed row must not leave the slot pointing at a tray nobody can see.
+  useEffect(
+    () => () => {
+      if (openRow === closeRef) {
+        openRow = null;
+      }
+    },
+    [closeRef],
   );
 
   const dispatch = useCallback(
@@ -150,7 +180,10 @@ function SwipeRowComponent({
           Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
         onMoveShouldSetPanResponderCapture: (_event, gesture) =>
           Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
-        onPanResponderGrant: () => actionsTranslateX.stopAnimation(),
+        onPanResponderGrant: () => {
+          claimOpenRow(closeRef);
+          actionsTranslateX.stopAnimation();
+        },
         onPanResponderMove: (_event, gesture) => {
           const origin = actionsOpen ? 0 : trayWidth;
           const nextPosition = Math.max(0, Math.min(trayWidth, origin + gesture.dx));
@@ -165,7 +198,7 @@ function SwipeRowComponent({
         onPanResponderTerminate: () => animateActions(actionsOpen),
         onPanResponderTerminationRequest: () => false,
       }),
-    [actionsOpen, actionsTranslateX, animateActions, trayWidth],
+    [actionsOpen, actionsTranslateX, animateActions, closeRef, trayWidth],
   );
 
   return (

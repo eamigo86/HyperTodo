@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, PanResponder } from "react-native";
+import { Alert, Animated, PanResponder } from "react-native";
 import { act, fireEvent, render } from "@testing-library/react-native";
 
 jest.mock("hyperview", () => ({
@@ -65,6 +65,11 @@ const props = {
   stylesheets: { regular: {}, selected: {}, pressed: {}, focused: {}, pressedSelected: {} },
 };
 
+type PanConfig = Record<
+  "onPanResponderGrant" | "onPanResponderMove" | "onPanResponderRelease",
+  (event: object, gesture: { dx: number; dy: number }) => void
+>;
+
 describe("SwipeRow", () => {
   // The closed tray is hidden from the accessibility tree on purpose, and the
   // queries honour that, so reaching a button while the row is shut is explicit.
@@ -74,19 +79,51 @@ describe("SwipeRow", () => {
     return node;
   };
 
+  // PanResponder.create re-runs only when a row's own actionsOpen flips, so the config
+  // recorded right after a row renders stays that row's live handler until it opens.
+  const lastConfig = (): PanConfig =>
+    (PanResponder.create as jest.Mock).mock.calls.at(-1)?.[0];
+
   // fireEvent cannot drive this row. RNTL's isEventEnabled calls the nearest touch
   // responder's onMoveShouldSetResponder() with NO gesture, our config answers false
   // for a zero-length move, and every event on the root is then dropped in silence
   // (fire-event.js:39-52). The predecessor of this file "opened" rows that way and
   // was asserting against a row that never opened. Drive the config instead.
   const openActions = (): void => {
-    const config = (PanResponder.create as jest.Mock).mock.calls.at(-1)?.[0];
-    act(() => config.onPanResponderRelease({}, { dx: -100, dy: 0 }));
+    act(() => lastConfig().onPanResponderRelease({}, { dx: -100, dy: 0 }));
   };
+
+  // Grant and release are separate phases here: a tray closes its neighbours at drag
+  // start, which openActions() -- release only -- never reaches.
+  const startDrag = (config: PanConfig): void => {
+    act(() => {
+      config.onPanResponderGrant({}, { dx: 0, dy: 0 });
+      config.onPanResponderMove({}, { dx: -12, dy: 0 });
+    });
+  };
+
+  const swipeOpen = (config: PanConfig): void => {
+    startDrag(config);
+    act(() => {
+      config.onPanResponderMove({}, { dx: -60, dy: 0 });
+      config.onPanResponderRelease({}, { dx: -60, dy: 0 });
+    });
+  };
+
+  const trayOpen = (screen: ReturnType<typeof render>): boolean =>
+    screen.getByTestId("swipe-row-actions", { includeHiddenElements: true }).props
+      .accessibilityElementsHidden === false;
 
   const renderRow = (element?: Element) => {
     jest.spyOn(PanResponder, "create");
     return render(<SwipeRow {...props} {...(element ? { element } : {})} />);
+  };
+
+  const twoRows = () => {
+    const first = renderRow(rowWith([EDIT, DELETE], { id: "row-a" }));
+    const firstDrag = lastConfig();
+    const second = renderRow(rowWith([EDIT, DELETE], { id: "row-b" }));
+    return { first, firstDrag, second, secondDrag: lastConfig() };
   };
 
   beforeEach(() => {
@@ -300,5 +337,55 @@ describe("SwipeRow", () => {
       element,
       { verb: "get" },
     );
+  });
+
+  it("opening a second row closes the first", () => {
+    const { first, firstDrag, second, secondDrag } = twoRows();
+
+    swipeOpen(firstDrag);
+    expect(trayOpen(first)).toBe(true);
+
+    swipeOpen(secondDrag);
+
+    expect(trayOpen(second)).toBe(true);
+    expect(trayOpen(first)).toBe(false);
+  });
+
+  it("starting to drag another row closes the open one before release", () => {
+    const { first, firstDrag, second, secondDrag } = twoRows();
+    swipeOpen(firstDrag);
+
+    startDrag(secondDrag);
+
+    // The neighbour is already shut while the finger is still down; the dragged row
+    // has not crossed the threshold, so nothing has taken its place yet.
+    expect(trayOpen(first)).toBe(false);
+    expect(trayOpen(second)).toBe(false);
+  });
+
+  it("re-dragging the open row does not close it", () => {
+    const screen = renderRow(rowWith([EDIT, DELETE], { id: "row-a" }));
+    swipeOpen(lastConfig());
+
+    startDrag(lastConfig());
+
+    expect(trayOpen(screen)).toBe(true);
+  });
+
+  it("an unmounted open row does not block the next one", () => {
+    const timing = jest.spyOn(Animated, "timing");
+    const { first, firstDrag, second, secondDrag } = twoRows();
+    swipeOpen(firstDrag);
+    first.unmount();
+    timing.mockClear();
+
+    expect(() => swipeOpen(secondDrag)).not.toThrow();
+    expect(trayOpen(second)).toBe(true);
+    // Counting the animations is the only handle on the slot from out here.
+    // Opening a row runs exactly one: its own. A slot still holding the unmounted
+    // row would run a second, driving a tray whose component is already gone --
+    // silent in React 19, and the row's element and Animated.Value stay reachable
+    // from the module for as long as nothing else opens.
+    expect(timing).toHaveBeenCalledTimes(1);
   });
 });
