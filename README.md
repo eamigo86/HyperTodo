@@ -1,7 +1,7 @@
 # HyperTodo
 
 [![CI](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml/badge.svg)](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml)
-[![dj-hyperview](https://img.shields.io/badge/dj--hyperview-0.1.0a10-278CFF)](https://pypi.org/project/dj-hyperview/0.1.0a10/)
+[![dj-hyperview](https://img.shields.io/badge/dj--hyperview-0.1.0a11-278CFF)](https://pypi.org/project/dj-hyperview/0.1.0a11/)
 [![Hyperview](https://img.shields.io/badge/Hyperview-0.110.0-171A2F)](https://www.npmjs.com/package/hyperview/v/0.110.0)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -50,7 +50,7 @@ not intended to be a reusable task-management product.
 
 | Path | Purpose |
 | --- | --- |
-| `backend/` | Django 6.1.1 application using Python 3.14 and dj-hyperview 0.1.0a10. |
+| `backend/` | Django 6.1.1 application using Python 3.14 and dj-hyperview 0.1.0a11. |
 | `mobile/` | Expo 57 host using React Native 0.86 and Hyperview 0.110.0. |
 | `Makefile` | Commands for installing, validating, and running both applications. |
 

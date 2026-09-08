@@ -7,6 +7,7 @@ NVM_DIR ?= $(HOME)/.nvm
 NVM_SH := $(NVM_DIR)/nvm.sh
 YARN := COREPACK_HOME="$(CURDIR)/$(MOBILE_DIR)/.corepack" corepack yarn
 REDIS_URL ?= redis://127.0.0.1:6379/15
+REDIS_TEST_URL ?= redis://127.0.0.1:6379/14
 DJANGO_DEBUG ?= 1
 EXPO_PUBLIC_API_URL ?= http://127.0.0.1:8000/hv/
 
@@ -21,7 +22,7 @@ endef
 .PHONY: help setup test check \
 	backend-install backend-migrate backend-seed backend-run backend-run-redis \
 	backend-run-device \
-	backend-test backend-test-redis backend-lint backend-check backend-quality \
+	backend-test backend-test-editor backend-test-redis backend-lint backend-check backend-quality \
 	mobile-install mobile-start mobile-start-android mobile-test mobile-typecheck \
 	mobile-start-device mobile-start-go mobile-login mobile-whoami \
 	mobile-doctor mobile-check mobile-ios mobile-ios-device \
@@ -69,8 +70,16 @@ backend-run-device: ## Start Redis-backed Django for a device; requires LAN_IP.
 backend-test: ## Run backend tests with branch-aware coverage enforcement.
 	@cd "$(BACKEND_DIR)" && uv run pytest
 
-backend-test-redis: ## Run the isolated integration test against Redis database 14.
-	@cd "$(BACKEND_DIR)" && uv run pytest -m redis
+backend-test-editor: ## Exercise the installed Admin formatter with a real HXML screen.
+	@cd "$(BACKEND_DIR)" && \
+		HXML_EDITOR_JS="$$(uv run python -c 'from importlib.resources import files; print(files("dj_hyperview").joinpath("static/dj_hyperview/admin/hxml_editor.js"))')" \
+		node --test tests/js/*.mjs
+
+backend-test-redis: ## Run isolated cross-process cache acceptance against Redis.
+	@cd "$(BACKEND_DIR)" && \
+		HYPERTODO_REDIS_INTEGRATION=1 \
+		HYPERTODO_REDIS_TEST_URL="$(REDIS_TEST_URL)" \
+		uv run pytest -m redis --no-cov
 
 backend-lint: ## Run Ruff lint checks for backend code and tests.
 	@cd "$(BACKEND_DIR)" && uv run ruff check .
@@ -79,7 +88,7 @@ backend-check: ## Run Django checks and verify that migrations are current.
 	@cd "$(BACKEND_DIR)" && uv run python manage.py check
 	@cd "$(BACKEND_DIR)" && uv run python manage.py makemigrations --check --dry-run
 
-backend-quality: backend-lint backend-test backend-check ## Run every backend quality gate.
+backend-quality: backend-lint backend-test backend-test-editor backend-check ## Run every backend quality gate.
 
 mobile-install: ## Install locked mobile dependencies with Node and Corepack.
 	@$(call run_mobile,$(YARN) install --frozen-lockfile)

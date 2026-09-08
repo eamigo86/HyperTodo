@@ -61,15 +61,15 @@ wheels = [
 
 [[package]]
 name = "dj-hyperview"
-version = "0.1.0a10"
+version = "0.1.0a11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
     { name = "lxml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/72/96/8e5602d12529167182ab2e1458f46465508dca29b64d8bb85b8f688a026b/dj_hyperview-0.1.0a10.tar.gz", hash = "sha256:b0732bdcebfc680b9125fc86e1e6d9a51ef7d4874650eab0420398ce16d908db", size = 63293, upload-time = "2026-09-07T23:30:01.905Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/de/2c/f668f200bd0fc42d8db8a5747cae6c5f5286f7cb60a7222da18dea7fcb1c/dj_hyperview-0.1.0a11.tar.gz", hash = "sha256:144de6448cc5ccbe6820bafd060de61616c4edbed8161faa0d2a38b762b98541", size = 70175, upload-time = "2026-09-08T06:52:51.869Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0e/8e/8631ad71a1293fcb629563f10bc80f4b11ed78c0158eb5f355ed9f6b2746/dj_hyperview-0.1.0a10-py3-none-any.whl", hash = "sha256:528887e46593d1babd7d8a6ab0e103a25b0b67d3b4ba43f0d787b3d66a76499a", size = 83956, upload-time = "2026-09-07T23:30:00.424Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/48/e3141d1747986e6204f1526100b5c662eb1931d790d76dad42711fd77812/dj_hyperview-0.1.0a11-py3-none-any.whl", hash = "sha256:fa48b9ad514ed331da1a6073800a6879e07340bc5ef0fe11a5329f61c3b9a737", size = 92370, upload-time = "2026-09-08T06:52:50.417Z" },
 ]
 
 [package.optional-dependencies]
@@ -148,7 +148,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dj-hyperview", extras = ["editor"], specifier = "==0.1.0a10" },
+    { name = "dj-hyperview", extras = ["editor"], specifier = "==0.1.0a11" },
     { name = "django", specifier = "==6.1.1" },
     { name = "django-redis", specifier = ">=6.0,<7" },
     { name = "pillow", specifier = ">=11,<13" },
