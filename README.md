@@ -28,6 +28,27 @@ custom HXML components, and native device capabilities.
 - Strict backend TDD, focused mobile tests, type checking, linting, Django checks,
   migration checks, and Expo Doctor.
 
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="doc/images/dashboard-light.png" width="280" alt="HyperTodo light dashboard"><br><strong>Light dashboard</strong></td>
+    <td align="center"><img src="doc/images/dashboard-dark.png" width="280" alt="HyperTodo dark dashboard"><br><strong>Dark dashboard</strong></td>
+    <td align="center"><img src="doc/images/side-menu.png" width="280" alt="HyperTodo server-driven side menu"><br><strong>Side menu</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="doc/images/task-swipe-actions.png" width="280" alt="HyperTodo task list with swipe actions"><br><strong>Task actions</strong></td>
+    <td align="center"><img src="doc/images/categories.png" width="280" alt="HyperTodo category list"><br><strong>Categories</strong></td>
+    <td align="center"><img src="doc/images/settings.png" width="280" alt="HyperTodo profile and security settings"><br><strong>Settings</strong></td>
+  </tr>
+</table>
+
+The database-backed About screen can be edited and validated directly in Django
+Admin, then refreshed immediately in the mobile application:
+
+![Django Admin HXML editor](doc/images/django-admin-hxml-editor.png)
+
 ## Repository layout
 
 | Path | Purpose |
