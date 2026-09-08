@@ -113,7 +113,7 @@ export default function App(): React.JSX.Element {
 // style assertion in the suite keeps reading the way it always did.
 const makeStyles = (t: ThemeTokens) => StyleSheet.create({
   topInset: { flex: 1, backgroundColor: t.brand },
-  // `canvas`, not `surface`: every screen's `bottom-navigation` style declares
+  // `canvas`, not `surface`: every screen's `bottom-navigation-style` rule declares
   // backgroundColor="{{ theme.canvas }}", and this inset sits directly under it.
   safeArea: { flex: 1, backgroundColor: t.canvas },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: t.canvas, padding: 28 },

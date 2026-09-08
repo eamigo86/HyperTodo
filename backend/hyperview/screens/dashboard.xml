@@ -2,7 +2,7 @@
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
     <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
-    <style id="screen-content" flex="1" />
+    <style id="screen-content-style" flex="1" />
     <style id="hero" backgroundColor="{{ theme.brand }}" paddingBottom="56" paddingHorizontal="24" paddingTop="18" />
     <!-- `gap`, not a margin on the disc: the disc is the side-menu touchable and has
          no href-style, so HyperRef wraps it in an unstyled TouchableOpacity that
@@ -111,7 +111,7 @@
          ink that flips with the theme puts near-white text on an unchanged pastel.
          Same value as light shipped with, so the light stylesheet does not move. -->
     <style id="chip-text" color="{{ theme.on_category }}" fontSize="13" fontWeight="600" />
-    <style id="bottom-navigation" alignItems="center" backgroundColor="{{ theme.canvas }}" borderTopColor="{{ theme.hairline }}" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
+    <style id="bottom-navigation-style" alignItems="center" backgroundColor="{{ theme.canvas }}" borderTopColor="{{ theme.hairline }}" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
     <style id="nav-hit-area" alignItems="center" flex="1" justifyContent="center" />
     <style id="nav-item" alignItems="center" height="52" justifyContent="center" width="64" />
     <style id="nav-active" opacity="1" />
@@ -266,7 +266,7 @@
          1.06:1, near-white on near-white: with the glyph pinned to opacity 1 and the
          label re-declaring its colour, nothing on the row moved when it was held.
          The tint keeps #B42318 at 4.87:1, so ink and glyph both stay above AA. -->
-    <style id="side-menu-logout" alignItems="center" borderRadius="14" flexDirection="row" gap="14" minHeight="48" paddingHorizontal="12" paddingVertical="12">
+    <style id="side-menu-logout-style" alignItems="center" borderRadius="14" flexDirection="row" gap="14" minHeight="48" paddingHorizontal="12" paddingVertical="12">
       <modifier pressed="true"><style backgroundColor="{{ theme.danger_press_fill }}" /></modifier>
     </style>
     <style id="side-menu-logout-text" color="{{ theme.danger }}" flex="1" fontSize="16" fontWeight="600">
@@ -279,7 +279,7 @@
   </styles>
   <screen id="dashboard-screen">
     <body style="screen">
-      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false" over-scroll="false">
+      <view id="screen-content" style="screen-content-style" scroll="true" shows-scroll-indicator="false" over-scroll="false">
         <!-- A task form opened from a dashboard row is a modal ON TOP of this screen;
              `close` pops it without refetching anything (hv-doc.tsx:178-194), so
              without this the user comes back to the old title. An href-less reload

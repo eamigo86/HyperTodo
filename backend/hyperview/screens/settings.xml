@@ -2,9 +2,9 @@
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
     <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
-    <style id="screen-content" flex="1" />
+    <style id="screen-content-style" flex="1" />
     <style id="screen-content-inner" paddingBottom="40" paddingHorizontal="24" paddingTop="20" />
-    <style id="screen-header" alignItems="center" backgroundColor="{{ theme.brand }}" flexDirection="row" height="44" paddingHorizontal="8" />
+    <style id="screen-header-style" alignItems="center" backgroundColor="{{ theme.brand }}" flexDirection="row" height="44" paddingHorizontal="8" />
     <style id="back-button" alignItems="center" flexDirection="row" height="44" width="84" />
     <style id="back-chevron" color="{{ theme.on_brand }}" fontSize="34" lineHeight="36" marginRight="2" />
     <style id="back-label" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
@@ -98,7 +98,7 @@
     <style id="avatar-gate-note" color="{{ theme.ink_muted }}" fontSize="13" marginTop="10" />
     <style id="meta" color="{{ theme.ink_muted }}" fontSize="13" marginTop="5" />
     <style id="version" color="{{ theme.ink_muted }}" fontSize="13" marginTop="8" textAlign="center" />
-    <style id="bottom-navigation" alignItems="center" backgroundColor="{{ theme.canvas }}" borderTopColor="{{ theme.hairline }}" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
+    <style id="bottom-navigation-style" alignItems="center" backgroundColor="{{ theme.canvas }}" borderTopColor="{{ theme.hairline }}" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
     <style id="nav-hit-area" alignItems="center" flex="1" justifyContent="center" />
     <style id="nav-item" alignItems="center" height="52" justifyContent="center" width="64" />
     <style id="nav-active" opacity="1" />
@@ -119,7 +119,7 @@
   <screen id="settings-screen">
     <body style="screen">
       {% include "partials/screen_header.xml" with header_title=_("Settings") back_id="settings-back" %}
-      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false" content-container-style="screen-content-inner" keyboard-dismiss-mode="on-drag">
+      <view id="screen-content" style="screen-content-style" scroll="true" shows-scroll-indicator="false" content-container-style="screen-content-inner" keyboard-dismiss-mode="on-drag">
         <!-- A sign-in or sign-out reached from a modal on top of this screen leaves
              it parked with the old account's name and email in the form. -->
         <behavior trigger="on-event" event-name="session-changed" action="reload" />

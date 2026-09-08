@@ -2,9 +2,9 @@
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
     <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
-    <style id="screen-content" flex="1" />
+    <style id="screen-content-style" flex="1" />
     <style id="screen-content-inner" paddingBottom="40" paddingHorizontal="24" paddingTop="20" />
-    <style id="screen-header" alignItems="center" backgroundColor="{{ theme.brand }}" flexDirection="row" height="44" paddingHorizontal="8" />
+    <style id="screen-header-style" alignItems="center" backgroundColor="{{ theme.brand }}" flexDirection="row" height="44" paddingHorizontal="8" />
     <style id="back-button" alignItems="center" flexDirection="row" height="44" width="84" />
     <style id="back-chevron" color="{{ theme.on_brand }}" fontSize="34" lineHeight="36" marginRight="2" />
     <style id="back-label" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
@@ -41,7 +41,7 @@
   <screen id="task-form-screen">
     <body style="screen">
       {% include "partials/screen_header.xml" with header_title=header_title back_id="task-back" %}
-      <view id="screen-content" style="screen-content" scroll="true" shows-scroll-indicator="false" content-container-style="screen-content-inner" keyboard-dismiss-mode="on-drag">
+      <view id="screen-content" style="screen-content-style" scroll="true" shows-scroll-indicator="false" content-container-style="screen-content-inner" keyboard-dismiss-mode="on-drag">
         {% include "fragments/task_form_panel.xml" %}
       </view>
     </body>

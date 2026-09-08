@@ -540,7 +540,9 @@ def test_the_settings_scroll_view_pads_its_content_not_itself(client, user):
     assert content.attrib["scroll"] == "true"
     assert content.attrib["content-container-style"] == "screen-content-inner"
     assert not [
-        key for key in style_by_id(root, "screen-content").attrib if "padding" in key
+        key
+        for key in style_by_id(root, "screen-content-style").attrib
+        if "padding" in key
     ]
 
 
@@ -829,7 +831,7 @@ MIN_PRESS_FILL_CONTRAST = 1.2
             "todo:dashboard",
             (
                 ("side-menu-link", "side-menu-link-text", "side-menu-panel"),
-                ("side-menu-logout", "side-menu-logout-text", "side-menu-footer"),
+                ("side-menu-logout-style", "side-menu-logout-text", "side-menu-footer"),
             ),
         ),
         ("todo:settings", (("action-row", "action-row-text", "card"),)),

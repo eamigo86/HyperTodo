@@ -1,4 +1,4 @@
-{% load i18n static %}<view xmlns="https://hyperview.org/hyperview" id="bottom-navigation" style="bottom-navigation">
+{% load i18n static %}<view xmlns="https://hyperview.org/hyperview" id="bottom-navigation" style="bottom-navigation-style">
   <view id="nav-dashboard" href-style="nav-hit-area" style="nav-item{% if active_nav == 'dashboard' %} nav-active{% endif %}" href="#root-route" action="navigate">
     <image style="nav-icon{% if active_nav == 'dashboard' %} nav-icon-active{% endif %}" source="{% static 'todo/icons/home.png' %}" />
     <text style="nav-label{% if active_nav == 'dashboard' %} nav-label-active{% endif %}">{% translate "Home" %}</text>

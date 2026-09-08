@@ -1,4 +1,4 @@
-<list xmlns="https://hyperview.org/hyperview" id="category-list" style="category-list" trigger="refresh" shows-scroll-indicator="false">
+<list xmlns="https://hyperview.org/hyperview" id="category-list" style="category-list-style" trigger="refresh" shows-scroll-indicator="false">
   <behavior trigger="refresh" href="/hv/categories/?fragment=list" action="replace" target="category-list" />
   {% include "partials/category_items.xml" %}
 </list>

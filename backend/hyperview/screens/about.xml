@@ -2,7 +2,7 @@
 <doc xmlns="https://hyperview.org/hyperview">
   <styles>
     <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
-    <style id="screen-header" alignItems="center" backgroundColor="{{ theme.brand }}" flexDirection="row" height="44" paddingHorizontal="8" />
+    <style id="screen-header-style" alignItems="center" backgroundColor="{{ theme.brand }}" flexDirection="row" height="44" paddingHorizontal="8" />
     <style id="back-button" alignItems="center" flexDirection="row" height="44" width="84" />
     <style id="back-chevron" color="{{ theme.on_brand }}" fontSize="34" lineHeight="36" marginRight="2" />
     <style id="back-label" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
@@ -13,7 +13,7 @@
     <style id="content-inner" padding="24" paddingBottom="40" />
     <style id="hero" alignItems="center" backgroundColor="{{ theme.surface }}" borderRadius="24" padding="24" />
     <style id="app-name" color="{{ theme.ink }}" fontSize="28" fontWeight="800" />
-    <style id="app-version" color="{{ theme.link_ink }}" fontSize="15" fontWeight="700" marginTop="6" />
+    <style id="app-version-style" color="{{ theme.link_ink }}" fontSize="15" fontWeight="700" marginTop="6" />
     <style id="description" color="{{ theme.ink_muted }}" fontSize="16" lineHeight="23" marginTop="16" textAlign="center" />
     <style id="section-title" color="{{ theme.ink }}" fontSize="22" fontWeight="800" marginBottom="12" marginTop="28" />
     <style id="technology-card" backgroundColor="{{ theme.surface }}" borderRadius="18" marginBottom="10" padding="16" />
@@ -28,7 +28,7 @@
       <view style="content" scroll="true" shows-scroll-indicator="false" content-container-style="content-inner">
         <view style="hero">
           <text style="app-name">HyperTodo</text>
-          <text id="about-app-version" style="app-version">HyperTodo {{ app_version }}</text>
+          <text id="about-app-version" style="app-version-style">HyperTodo {{ app_version }}</text>
           <text style="description">{% translate "A calm, server-driven place to organize tasks, categories, and the work that matters." %}</text>
         </view>
         <text style="section-title">{% translate "Built with" %}</text>

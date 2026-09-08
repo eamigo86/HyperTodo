@@ -1,4 +1,4 @@
-<list xmlns="https://hyperview.org/hyperview" id="task-list" style="task-list" trigger="refresh" shows-scroll-indicator="false">
+<list xmlns="https://hyperview.org/hyperview" id="task-list" style="task-list-style" trigger="refresh" shows-scroll-indicator="false">
   <behavior trigger="refresh" href="/hv/tasks/?status={{ status_filter }}{% if selected_category %}&amp;category={{ selected_category.id }}{% endif %}&amp;fragment=list" action="replace" target="task-list" />
   {% include "partials/task_items.xml" %}
 </list>

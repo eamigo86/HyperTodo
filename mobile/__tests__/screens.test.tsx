@@ -120,7 +120,7 @@ describe("the shell follows the palette the server named", () => {
     act(() => publishTheme("dark"));
 
     // #0F1118 is theme.canvas, which is exactly what every screen's
-    // `bottom-navigation` style declares. That equality IS the fix.
+    // `bottom-navigation-style` rule declares. That equality IS the fix.
     expect(bg(screen.getByTestId("top-inset", { includeHiddenElements: true }))).toBe("#1F6FD1");
     expect(bg(screen.getByLabelText("HyperTodo safe area", { includeHiddenElements: true }))).toBe("#0F1118");
   });

@@ -1,4 +1,4 @@
-{% load i18n %}<view xmlns="https://hyperview.org/hyperview" id="screen-header" style="screen-header">
+{% load i18n %}<view xmlns="https://hyperview.org/hyperview" id="screen-header" style="screen-header-style">
   <view id="{{ back_id }}" style="back-button" action="back"><text style="back-chevron">‹</text><text style="back-label">{% translate "Back" %}</text></view>
   <view style="screen-header-title-slot"><text style="screen-header-title">{{ header_title }}</text></view>
   <view style="screen-header-spacer" />

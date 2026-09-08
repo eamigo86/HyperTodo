@@ -2,15 +2,15 @@
 <doc xmlns="https://hyperview.org/hyperview" xmlns:app="https://hypertodo.app/components">
   <styles>
     <style id="screen" backgroundColor="{{ theme.canvas }}" flex="1" />
-    <style id="screen-content" flex="1" padding="24" />
-    <style id="screen-header" alignItems="center" backgroundColor="{{ theme.brand }}" flexDirection="row" height="44" paddingHorizontal="8" />
+    <style id="screen-content-style" flex="1" padding="24" />
+    <style id="screen-header-style" alignItems="center" backgroundColor="{{ theme.brand }}" flexDirection="row" height="44" paddingHorizontal="8" />
     <style id="back-button" alignItems="center" flexDirection="row" height="44" width="84" />
     <style id="back-chevron" color="{{ theme.on_brand }}" fontSize="34" lineHeight="36" marginRight="2" />
     <style id="back-label" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
     <style id="screen-header-title-slot" alignItems="center" flex="1" justifyContent="center" />
     <style id="screen-header-spacer" width="84" />
     <style id="screen-header-title" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" />
-    <style id="category-list" flex="1" />
+    <style id="category-list-style" flex="1" />
     <style id="empty-item" paddingVertical="24" />
     <style id="list-spinner" alignItems="center" height="28" justifyContent="center" />
     <!-- The colour is the card. The fill sits on the swipe-row root, which is the
@@ -73,7 +73,7 @@
     <style id="primary-text" color="{{ theme.on_brand }}" fontSize="19" fontWeight="700" textAlign="center">
       <modifier pressed="true"><style color="{{ theme.on_brand }}" /></modifier>
     </style>
-    <style id="bottom-navigation" alignItems="center" backgroundColor="{{ theme.canvas }}" borderTopColor="{{ theme.hairline }}" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
+    <style id="bottom-navigation-style" alignItems="center" backgroundColor="{{ theme.canvas }}" borderTopColor="{{ theme.hairline }}" borderTopWidth="1" flexDirection="row" height="72" justifyContent="space-around" paddingHorizontal="8" />
     <style id="nav-hit-area" alignItems="center" flex="1" justifyContent="center" />
     <style id="nav-item" alignItems="center" height="52" justifyContent="center" width="64" />
     <style id="nav-active" opacity="1" />
@@ -94,7 +94,7 @@
   <screen id="categories-screen">
     <body style="screen">
       {% include "partials/screen_header.xml" with header_title=_("Categories") back_id="category-list-back" %}
-      <view id="screen-content" style="screen-content">
+      <view id="screen-content" style="screen-content-style">
         <!-- The listener has to sit OUTSIDE the element it replaces and on a tag that
              opts into HyperRef. HvList does neither: it never sets supportsHyperRef
              (components/hv-element/utils.tsx:16), so a listener parked on the <list>

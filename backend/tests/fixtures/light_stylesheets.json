@@ -39,7 +39,7 @@
       "fontSize": "19",
       "fontWeight": "700"
     },
-    "bottom-navigation": {
+    "bottom-navigation-style": {
       "alignItems": "center",
       "backgroundColor": "#F7F8FC",
       "borderTopColor": "#E9ECF5",
@@ -70,7 +70,7 @@
     "card-inner": {
       "padding": "20"
     },
-    "category-list": {
+    "category-list-style": {
       "flex": "1"
     },
     "danger": {
@@ -197,11 +197,11 @@
       "backgroundColor": "#F7F8FC",
       "flex": "1"
     },
-    "screen-content": {
+    "screen-content-style": {
       "flex": "1",
       "padding": "24"
     },
-    "screen-header": {
+    "screen-header-style": {
       "alignItems": "center",
       "backgroundColor": "#278CFF",
       "flexDirection": "row",
@@ -380,7 +380,7 @@
       "backgroundColor": "#F7F8FC",
       "flex": "1"
     },
-    "screen-content": {
+    "screen-content-style": {
       "flex": "1"
     },
     "screen-content-inner": {
@@ -388,7 +388,7 @@
       "paddingHorizontal": "24",
       "paddingTop": "20"
     },
-    "screen-header": {
+    "screen-header-style": {
       "alignItems": "center",
       "backgroundColor": "#278CFF",
       "flexDirection": "row",
@@ -502,7 +502,7 @@
       "justifyContent": "space-between",
       "marginTop": "16"
     },
-    "bottom-navigation": {
+    "bottom-navigation-style": {
       "alignItems": "center",
       "backgroundColor": "#F7F8FC",
       "borderTopColor": "#E9ECF5",
@@ -731,7 +731,7 @@
       "backgroundColor": "#F7F8FC",
       "flex": "1"
     },
-    "screen-content": {
+    "screen-content-style": {
       "flex": "1"
     },
     "section": {
@@ -840,7 +840,7 @@
       "paddingHorizontal": "12",
       "paddingTop": "12"
     },
-    "side-menu-logout": {
+    "side-menu-logout-style": {
       "alignItems": "center",
       "borderRadius": "14",
       "flexDirection": "row",
@@ -858,7 +858,7 @@
     "side-menu-logout-text:pressed=true": {
       "color": "#B42318"
     },
-    "side-menu-logout:pressed=true": {
+    "side-menu-logout-style:pressed=true": {
       "backgroundColor": "#F3D8D2"
     },
     "side-menu-name": {
@@ -1227,7 +1227,7 @@
       "fontSize": "19",
       "fontWeight": "700"
     },
-    "bottom-navigation": {
+    "bottom-navigation-style": {
       "alignItems": "center",
       "backgroundColor": "#F7F8FC",
       "borderTopColor": "#E9ECF5",
@@ -1361,7 +1361,7 @@
       "backgroundColor": "#F7F8FC",
       "flex": "1"
     },
-    "screen-content": {
+    "screen-content-style": {
       "flex": "1"
     },
     "screen-content-inner": {
@@ -1369,7 +1369,7 @@
       "paddingHorizontal": "24",
       "paddingTop": "20"
     },
-    "screen-header": {
+    "screen-header-style": {
       "alignItems": "center",
       "backgroundColor": "#278CFF",
       "flexDirection": "row",
@@ -1543,7 +1543,7 @@
       "backgroundColor": "#F7F8FC",
       "flex": "1"
     },
-    "screen-content": {
+    "screen-content-style": {
       "flex": "1"
     },
     "screen-content-inner": {
@@ -1551,7 +1551,7 @@
       "paddingHorizontal": "24",
       "paddingTop": "20"
     },
-    "screen-header": {
+    "screen-header-style": {
       "alignItems": "center",
       "backgroundColor": "#278CFF",
       "flexDirection": "row",
@@ -1596,7 +1596,7 @@
       "fontSize": "19",
       "fontWeight": "700"
     },
-    "bottom-navigation": {
+    "bottom-navigation-style": {
       "alignItems": "center",
       "backgroundColor": "#F7F8FC",
       "borderTopColor": "#E9ECF5",
@@ -1647,7 +1647,7 @@
       "fontWeight": "700",
       "marginBottom": "6"
     },
-    "filter-summary": {
+    "filter-summary-style": {
       "color": "#6A6F86",
       "fontSize": "13",
       "fontWeight": "600",
@@ -1714,11 +1714,11 @@
       "backgroundColor": "#F7F8FC",
       "flex": "1"
     },
-    "screen-content": {
+    "screen-content-style": {
       "flex": "1",
       "padding": "24"
     },
-    "screen-header": {
+    "screen-header-style": {
       "alignItems": "center",
       "backgroundColor": "#278CFF",
       "flexDirection": "row",
@@ -1747,7 +1747,7 @@
       "backgroundColor": "#FFFFFF",
       "padding": "16"
     },
-    "task-list": {
+    "task-list-style": {
       "flex": "1"
     },
     "task-title": {

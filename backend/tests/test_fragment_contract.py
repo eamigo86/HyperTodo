@@ -30,6 +30,7 @@ from django.test import Client
 from django.urls import reverse
 from PIL import Image
 
+from tests.test_forms_ui import declared_ids
 from todo.models import Category, Task
 from todo.services import issue_biometric_token
 
@@ -983,4 +984,56 @@ def test_no_template_ships_a_custom_element_the_client_cannot_render():
     assert not unknown, (
         "these tags reach the client as nothing at all, with only an info log to "
         f"say so: {sorted(unknown)}"
+    )
+
+
+def test_no_style_id_is_also_an_element_id_anywhere_in_the_app(user, fixtures):
+    # The rule: a <style id> may never equal an element id, anywhere in the app.
+    # Why: Hyperview resolves `target`, `show-during-load` and every other id
+    # reference with Dom.getElementById (hyperview.tsx:413), which is xmldom's
+    # depth-first FIRST match over ONE shared id namespace -- and <styles> is
+    # emitted before <screen>. A colliding style id therefore wins the lookup, so
+    # `replace target="task-list"` splices the fresh <list> INSIDE <styles>, drops
+    # the style rule it landed on and never touches the rendered element. Silently:
+    # UpdateMissingTargetError only fires when NOTHING matches, and something did.
+    # Element ids are contract surface (target=, testIDs, these tests); style ids
+    # are private to the templates, so the collision is always the style's to lose.
+    # Sweep limit: _requests follows hrefs, so screens nothing links to (error,
+    # session_expired, source_probe, root) are not covered; checked by hand, their
+    # only element ids are error-screen, session-expired-screen, filesystem-probe
+    # and root-navigator, none of which is a style id.
+    client = Client()
+    style_ids: dict[str, set[str]] = {}
+    element_ids: dict[str, set[str]] = {}
+    for shape in ("document", "fragment"):
+        for label, verb, url in _requests(shape, fixtures):
+            # Mirrors the shape guards above: /hv/logout/ ends the session and the
+            # delete endpoints remove the records, so put the world back each time.
+            client.force_login(user)
+            _restore(user, fixtures)
+            if verb == "post":
+                body = _fragment_body(
+                    url, fixtures, token=issue_biometric_token(user=user)
+                )
+                response = client.post(url, body)
+            else:
+                response = client.get(url)
+            root = ElementTree.fromstring(response.content)
+            for declared in declared_ids(root):
+                style_ids.setdefault(declared, set()).add(label)
+            for element in root.iter():
+                if element.tag == f"{{{HV}}}style" or "id" not in element.attrib:
+                    continue
+                element_ids.setdefault(element.attrib["id"], set()).add(label)
+    assert style_ids and element_ids, "the render sweep found nothing, so this is dead"
+
+    collisions = sorted(set(style_ids) & set(element_ids))
+    assert not collisions, (
+        "these ids are declared BOTH as a <style id> and as an element id, so every "
+        "update aimed at the element is swallowed by the stylesheet: "
+        + "; ".join(
+            f"{name} (style in {sorted(style_ids[name])[0]}, "
+            f"element in {sorted(element_ids[name])[0]})"
+            for name in collisions
+        )
     )

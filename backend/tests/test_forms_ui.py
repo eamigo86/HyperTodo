@@ -238,7 +238,7 @@ def test_the_bottom_navigation_labels_are_readable_wherever_the_bar_is_hosted(
     client.force_login(user)
 
     root = assert_hxml(client.get(reverse(route)))
-    backdrop = style_by_id(root, "bottom-navigation").attrib["backgroundColor"]
+    backdrop = style_by_id(root, "bottom-navigation-style").attrib["backgroundColor"]
 
     assert int(style_by_id(root, "nav-label").attrib["fontSize"]) < 18
     for style_id in ("nav-label", "nav-label-active"):
@@ -379,7 +379,7 @@ def test_task_form_fields_are_legible_and_reachable(user):
     content = root.find(".//hv:view[@id='screen-content']", NS)
     assert content is not None
     assert content.attrib["content-container-style"] == "screen-content-inner"
-    assert "padding" not in style_by_id(root, "screen-content").attrib
+    assert "padding" not in style_by_id(root, "screen-content-style").attrib
 
 
 def test_category_form_reports_field_level_errors(user):

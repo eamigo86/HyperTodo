@@ -632,7 +632,7 @@ def test_bottom_navigation_sits_on_the_canvas_colour(user):
 
     for route in ("todo:dashboard", "todo:tasks", "todo:categories"):
         root = assert_hxml(client.get(reverse(route)))
-        style = root.find(".//hv:style[@id='bottom-navigation']", NS)
+        style = root.find(".//hv:style[@id='bottom-navigation-style']", NS)
         assert style is not None, route
         assert style.attrib["backgroundColor"] == "#F7F8FC"
         assert style.attrib["borderTopWidth"] == "1"
@@ -687,7 +687,7 @@ def test_secondary_screens_use_centered_blue_destination_headers(user):
     for route, (back_id, title) in routes.items():
         root = assert_hxml(client.get(route))
         header = root.find(".//hv:view[@id='screen-header']", NS)
-        header_style = root.find(".//hv:style[@id='screen-header']", NS)
+        header_style = root.find(".//hv:style[@id='screen-header-style']", NS)
         back = root.find(f".//hv:view[@id='{back_id}']", NS)
         heading = root.find(".//hv:text[@style='screen-header-title']", NS)
 
@@ -745,7 +745,7 @@ def test_task_screen_scrolls_and_makes_dashboard_filter_visible(user, monkeypatc
         assert content is not None
         assert "scroll" not in content.attrib
         assert task_list is not None
-        assert task_list.attrib["style"] == "task-list"
+        assert task_list.attrib["style"] == "task-list-style"
         assert selected is not None
         assert "chip-active" in selected.attrib["style"]
         assert summary is not None
@@ -1946,5 +1946,5 @@ def test_the_header_can_never_disagree_with_the_stylesheet_it_shipped_with(
 
     painted = theme_tokens.THEMES[response.headers[THEME_HEADER]]
     root = ElementTree.fromstring(response.content)
-    navigation = style_by_id(root, "bottom-navigation")
+    navigation = style_by_id(root, "bottom-navigation-style")
     assert navigation.attrib["backgroundColor"] == painted["canvas"]

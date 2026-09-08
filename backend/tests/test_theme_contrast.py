@@ -126,18 +126,23 @@ PAIRS = (
         pair
         for screen in ("dashboard", "tasks", "categories", "settings")
         for pair in (
-            (screen, "nav-label.color", "bottom-navigation.backgroundColor", AA),
-            (screen, "nav-label-active.color", "bottom-navigation.backgroundColor", AA),
+            (screen, "nav-label.color", "bottom-navigation-style.backgroundColor", AA),
+            (
+                screen,
+                "nav-label-active.color",
+                "bottom-navigation-style.backgroundColor",
+                AA,
+            ),
             (
                 screen,
                 "nav-icon.tintColor",
-                "bottom-navigation.backgroundColor",
+                "bottom-navigation-style.backgroundColor",
                 GRAPHIC,
             ),
             (
                 screen,
                 "nav-icon-active.tintColor",
-                "bottom-navigation.backgroundColor",
+                "bottom-navigation-style.backgroundColor",
                 GRAPHIC,
             ),
             (screen, "nav-add-symbol.color", "nav-add.backgroundColor", LARGE),
@@ -148,18 +153,23 @@ PAIRS = (
         pair
         for screen in ("tasks", "categories", "settings", "task_form", "category_form")
         for pair in (
-            (screen, "back-chevron.color", "screen-header.backgroundColor", LARGE),
-            (screen, "back-label.color", "screen-header.backgroundColor", LARGE),
+            (
+                screen,
+                "back-chevron.color",
+                "screen-header-style.backgroundColor",
+                LARGE,
+            ),
+            (screen, "back-label.color", "screen-header-style.backgroundColor", LARGE),
             (
                 screen,
                 "screen-header-title.color",
-                "screen-header.backgroundColor",
+                "screen-header-style.backgroundColor",
                 LARGE,
             ),
         )
     ),
     # --- tasks ----------------------------------------------------------------
-    ("tasks", "filter-summary.color", "screen.backgroundColor", AA),
+    ("tasks", "filter-summary-style.color", "screen.backgroundColor", AA),
     ("tasks", "chip-text.color", "chip.backgroundColor", AA),
     ("tasks", "chip-text-active.color", "chip-active.backgroundColor", AA),
     ("tasks", "task-title.color", "task.backgroundColor", AA),
@@ -361,7 +371,7 @@ PRESSED = (
     ),
     (
         "dashboard",
-        "side-menu-logout:pressed=true.backgroundColor",
+        "side-menu-logout-style:pressed=true.backgroundColor",
         "side-menu-footer.backgroundColor",
         "side-menu-logout-text.color",
         "side-menu-logout-text:pressed=true.color",

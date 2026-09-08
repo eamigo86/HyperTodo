@@ -73,7 +73,7 @@
       <view id="logout-panel">
         <form id="side-menu-logout-form">
           {% hv_csrf_token %}
-          <view id="side-menu-logout" style="side-menu-logout" href="/hv/logout/" verb="post" action="replace" target="logout-panel">
+          <view id="side-menu-logout" style="side-menu-logout-style" href="/hv/logout/" verb="post" action="replace" target="logout-panel">
             <image style="side-menu-logout-icon" source="{% static 'todo/icons/logout.png' %}" />
             <text style="side-menu-logout-text" accessibilityRole="button">{% translate "Sign out" %}</text>
           </view>

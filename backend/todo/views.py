@@ -109,10 +109,10 @@ def _template_response(
         else HyperviewTemplateResponse
     )
     response = response_class(request, template_name, context, status=status)
-    # React Native delegates GET caching to the platform networking stack. On iOS,
-    # NSURLCache can reuse the response for an identical fragment URL, so editing a
-    # task or category would keep rendering the old row even after pull-to-refresh.
-    # Every HXML response in this application is session-specific or mutable.
+    # Policy, not a fix: every HXML response here is session-specific or mutable,
+    # so no platform cache may replay one. This header was added while chasing the
+    # stale-row bug and changed nothing; that bug was a <style id> shadowing the
+    # <list id> it targeted, now guarded by test_fragment_contract.py.
     patch_cache_control(response, private=True, no_store=True)
     return response
 

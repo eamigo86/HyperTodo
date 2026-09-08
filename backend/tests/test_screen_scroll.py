@@ -50,7 +50,7 @@ def test_dashboard_hero_scrolls_over_an_unpainted_container(user):
     root = assert_hxml(client.get(reverse("todo:dashboard")))
 
     content = root.find(".//hv:view[@id='screen-content']", NS)
-    container_style = style_by_id(root, "screen-content")
+    container_style = style_by_id(root, "screen-content-style")
 
     assert container_style is not None
     assert "backgroundColor" not in container_style.attrib
