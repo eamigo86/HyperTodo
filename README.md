@@ -1,7 +1,7 @@
 # HyperTodo
 
 [![CI](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml/badge.svg)](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml)
-[![dj-hyperview](https://img.shields.io/badge/dj--hyperview-0.1.0a16-278CFF)](https://pypi.org/project/dj-hyperview/0.1.0a16/)
+[![dj-hyperview](https://img.shields.io/badge/dj--hyperview-0.1.0a17-278CFF)](https://pypi.org/project/dj-hyperview/0.1.0a17/)
 [![Hyperview](https://img.shields.io/badge/Hyperview-0.110.0-171A2F)](https://www.npmjs.com/package/hyperview/v/0.110.0)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -50,7 +50,7 @@ not intended to be a reusable task-management product.
 
 | Path | Purpose |
 | --- | --- |
-| `backend/` | Django 6.1.1 application using Python 3.14 and dj-hyperview 0.1.0a16. |
+| `backend/` | Django 6.1.1 application using Python 3.14 and dj-hyperview 0.1.0a17. |
 | `mobile/` | Expo 57 host using React Native 0.86 and Hyperview 0.110.0. |
 | `Makefile` | Commands for installing, validating, and running both applications. |
 
@@ -158,7 +158,7 @@ Package documentation is available at
 
 ## Automatic HXML validation
 
-The installed dj-hyperview 0.1.0a16 release enforces one corrected Hyperview schema automatically.
+The installed dj-hyperview 0.1.0a17 release enforces one corrected Hyperview schema automatically.
 HyperTodo configures only the extensions owned by its existing mobile host in
 `backend/config/schema.py`: five custom behaviors and `image.variant` with
 `face`/`fingerprint` values. `backend/schema/hypertodo.xsd` continues to describe
