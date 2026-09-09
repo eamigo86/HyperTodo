@@ -1226,7 +1226,7 @@ def test_about_is_an_authenticated_document_linked_only_from_the_side_menu(user)
         "HyperTodo 1.2.0"
     )
     assert root.find(".//hv:text[@id='about-package-version']", NS).text == (
-        "dj-hyperview 0.1.0a17"
+        "dj-hyperview 0.1.0a19"
     )
     technology_names = {
         item.text for item in root.findall(".//hv:text[@style='technology-name']", NS)

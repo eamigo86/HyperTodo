@@ -5,7 +5,7 @@ description = "Django backend for the HyperTodo dj-hyperview consumer applicatio
 requires-python = ">=3.14,<3.15"
 dependencies = [
   "Django==6.1.1",
-  "dj-hyperview[editor]==0.1.0a17",
+  "dj-hyperview[editor]==0.1.0a19",
   "django-redis>=6.0,<7",
   "pillow>=11,<13",
   "redis>=7.0,<8",
