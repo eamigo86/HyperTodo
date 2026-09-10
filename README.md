@@ -202,6 +202,108 @@ v1 fallback without own-operation correlation or entity precision. See also
   selection, swipe actions, and the side menu.
 - Automated backend and mobile quality gates.
 
+## Custom elements, actions and host components
+
+Use this inventory when editing HXML or looking for the code behind a native
+interaction. These extensions belong to **HyperTodo**, not to dj-hyperview or
+Hyperview core. Existing elements can be reused in templates; declaring a new
+name in a schema does **not** install its mobile implementation.
+
+### HXML elements: what renders and why
+
+The `app:` prefix denotes `https://hypertodo.app/components`; ordinary HXML uses
+`https://hyperview.org/hyperview`. The namespace URI, not the chosen prefix,
+identifies a component. [App registration](mobile/App.tsx) supplies the first
+three components below. [AppSessionSurface](mobile/src/realtime/app-session.tsx)
+adds the two [gate components](mobile/src/realtime/gate.tsx) to the same renderer.
+
+| Registered element | Why HyperTodo implements it | Real usage |
+| --- | --- | --- |
+| [`app:side-menu`](mobile/src/components/AnimatedSideMenu.tsx) | Animates a drawer and its backdrop, then replaces the menu host on close. `panel-width` is a percentage of the window; HXML supplies the menu contents. | [Side-menu fragment](backend/hyperview/fragments/side_menu.xml). |
+| [`app:edge-menu-opener`](mobile/src/components/EdgeMenuOpener.tsx) | Adds a rightward edge gesture that fetches/replaces the menu host without replacing the screen. It uses GET + `replace`, not a new navigation action. | [Dashboard](backend/hyperview/screens/dashboard.xml). |
+| [`app:swipe-row`](mobile/src/components/SwipeRow.tsx) | Adds an animated action tray and equivalent screen-reader actions to a row. Labels, destinations and optional destructive confirmation come from its children; only one tray stays open. | [Task rows](backend/hyperview/partials/task_items.xml), [category rows](backend/hyperview/partials/category_items.xml). |
+| [`app:realtime`](mobile/src/realtime/gate.tsx) | Wraps a screen's content to coordinate resource dependencies, refresh, drafts and route/session ownership. A successful request is acknowledged only after matching layout, not when an SSE event arrives. | [Task form](backend/hyperview/screens/task_form.xml); [contextual-update policy](mobile/docs/realtime-contextual-updates.md). |
+| [`app:realtime-page`](mobile/src/realtime/gate.tsx) | Renders nothing. Its request/page metadata lets the boundary correlate actual layout and loaded pages without adding a list row. A marker alone is not proof of success. | [Task page markers](backend/hyperview/partials/task_items.xml). |
+
+`app:swipe-action` is **data consumed by `SwipeRow`**, not a sixth registered
+component. It declares `href`, `action` (`navigate`/`replace`), `verb` (`get`/`post`),
+labels, tone and optional confirmation copy. The current host reads these children;
+the row's legacy `edit-href`/`toggle-href`/`delete-href` attributes remain for older
+clients. Keep the surrounding form and CSRF token for mutations.
+
+For example, this existing Dashboard element targets the screen's
+`side-menu-host` and uses its existing `edge-menu-opener` style:
+
+```xml
+<app:edge-menu-opener xmlns:app="https://hypertodo.app/components"
+  id="dashboard-edge-menu" style="edge-menu-opener"
+  href="/hv/menu/?active=dashboard" action="replace" target="side-menu-host" />
+```
+
+### Custom behavior actions: native effects, not new HTTP verbs
+
+The current six actions are registered by
+[`createOwnedBehaviors`](mobile/src/behaviors/owned.ts), with native APIs supplied
+by [owned-native](mobile/src/behaviors/owned-native.ts). The callbacks retain their
+live source and session generation across asynchronous work; an old screen cannot
+apply its result to a new account. Recovery exposes only the three biometric
+actions, not all six.
+
+| `behavior action` | Why it exists | Real usage |
+| --- | --- | --- |
+| `probe-biometrics` | Checks hardware/enrollment and the saved credential, reveals available controls and selects the face/fingerprint icon. It does not sign in. | [Login panel](backend/hyperview/fragments/login_panel.xml). |
+| `biometric-unlock` | Opens the OS biometric prompt, then submits the saved credential through the captured login form. Django still authenticates the request. | [Login panel](backend/hyperview/fragments/login_panel.xml). |
+| `store-biometric-token` | Consumes an authorized session credential effect for device sign-in; an explicitly bound empty-token response clears it. Arbitrary HXML cannot grant credential-write authority. | [Login transition](backend/hyperview/fragments/login_transition.xml), [Settings transition](backend/hyperview/fragments/settings_transition.xml). |
+| `pick-avatar` | Opens the photo picker, resizes/encodes a JPEG and updates the form field/preview. The photo remains a draft until Settings is saved. | [Avatar panel](backend/hyperview/partials/avatar_panel.xml). |
+| `show-snackbar` | Displays brief success/error copy supplied by a response, without embedding a native toast implementation in HXML. | [Task transition](backend/hyperview/fragments/task_transition.xml). |
+| `notify-resources` | Marks the current session's declared resources stale after its own operation, so dependent screens can refresh silently. It neither publishes to Redis nor substitutes for authenticated SSE delivery. | [Task transition](backend/hyperview/fragments/task_transition.xml); [resource coordinator](mobile/docs/realtime-resources.md). |
+
+These are excerpts from the task-success fragment, inside its existing Hyperview
+`view`. The backend supplies `notice_message`; the resource notification is emitted
+only in the negotiated realtime branch:
+
+```xml
+<behavior trigger="load" action="show-snackbar" message="{{ notice_message }}" tone="success" once="true" />
+```
+
+```xml
+<behavior trigger="load" action="notify-resources" resources="tasks" once="true" />
+```
+
+By contrast, `navigate`, `back`, `reload`, `replace`, `append` and `dispatch-event`
+used in the templates are **built-in Hyperview actions**, not six more custom
+behaviors. `get`/`post` select the HTTP method. The app's gate coordinates owned
+operations; it does not turn those actions into permission checks or replay POSTs.
+
+### React-only UI and validation boundaries
+
+These helpers are mounted by the host, **not addressable as XML tags**:
+
+| Host helper | Why it exists |
+| --- | --- |
+| [`AnimatedSplash`](mobile/src/components/AnimatedSplash.tsx) | Provides the startup animation, reduced-motion handling and a bounded fallback if animation completion never arrives. |
+| [`LoadingScreen` / `ErrorScreen`](mobile/App.tsx), [`ElementErrorBanner`](mobile/src/components/ElementErrorBanner.tsx) | Supply branded loading, safe full-screen errors and dismissible fragment errors rather than exposing raw exception text. |
+| [`OfflineRefreshControl`](mobile/src/components/OfflineRefreshControl.tsx) | Stops the pinned client's stuck pull-to-refresh indicator after a failed request and applies the current theme. It does not retry or declare the request successful. |
+| [`SnackbarHost`](mobile/src/components/SnackbarHost.tsx), [`RealtimeNotice`](mobile/src/components/RealtimeNotice.md) | Separate transient feedback from a persistent, actionable draft warning. The gate owns discard confirmation and staleness; closing a card does not acknowledge fresh data. |
+| [`AppSessionSurface`](mobile/src/realtime/app-session.tsx), [`gate.Root`](mobile/src/realtime/gate.tsx), [`SessionNavigation`](mobile/App.tsx) | Own the authentication shield, request generations and navigation lifetime, preventing retired account content/callbacks from becoming current. |
+
+There are also **attributes on core elements**, not replacement components:
+`image.variant` (`face` or `fingerprint`) identifies icons for `probe-biometrics`;
+`picker-item.realtime-entity-key` and `picker-item.realtime-entity-epoch` identify
+the currently selected category dependency for contextual form conflicts.
+They do not change the normal picker value or grant access to an entity.
+
+The backend validates custom elements through
+[`hypertodo.xsd`](backend/schema/hypertodo.xsd) (`HYPERVIEW.EXTRA_SCHEMAS`) and the
+six actions/extra attributes through
+[`schema_extensions()`](backend/config/schema.py) (`HYPERVIEW.SCHEMA_EXTENSIONS`).
+For a new extension, implement/register it in the mobile host **and** declare its
+validation contract; neither side replaces Django authentication, ownership or
+CSRF checks. Realtime additionally needs the coordinated
+[backend change contract](backend/docs/realtime-changes.md) and
+[mobile update policy](mobile/docs/realtime-contextual-updates.md). Schema acceptance
+alone does not start SSE, prove native support or verify a layout acknowledgement.
+
 ## Screenshots
 
 <table>
