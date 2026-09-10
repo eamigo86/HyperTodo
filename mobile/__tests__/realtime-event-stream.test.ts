@@ -141,3 +141,35 @@ it('rechecks owner after read before dispatch and closes malformed streams witho
   const other=fixture(), next=owner();other.client.setOwner(next);await tick();other.first.push('retry: 1\n\n');await tick();
   expect(next.onAuthRequired).not.toHaveBeenCalled();expect(other.first.cancel).toHaveBeenCalledTimes(1);other.client.dispose();
 });
+
+it('negotiates rich changes and admits seed only after current-owner response validation',async()=>{
+  const f=fixture(), onMutationSeed=jest.fn(),current={...owner(),onMutationSeed};
+  const seed='d'.repeat(32),change={mutationId:seed+'00000001',entities:null};
+  f.first.response.headers.set('X-HyperTodo-Realtime-Features','changes-v2');
+  f.first.response.headers.set('X-HyperTodo-Mutation-Seed',seed);
+  f.client.setOwner(current);await tick();
+  expect(new Headers(f.fetch.mock.calls[0][1].headers).get('X-HyperTodo-Realtime-Features')).toBe('changes-v2');
+  expect(onMutationSeed).toHaveBeenCalledWith(seed);
+  f.first.push(wire('invalidate',{version:2,resources:['tasks'],mutation_id:change.mutationId,entities:null}));await tick();
+  expect(current.receive).toHaveBeenCalledWith(['tasks'],'invalidate',change);
+  f.client.dispose();
+});
+
+it.each(['missing-feature','wrong-feature','bad-seed','wrong-binding','late-owner'])('never accepts a seed from %s response',async kind=>{
+  const f=fixture(),onMutationSeed=jest.fn(),current={...owner(),onMutationSeed};
+  f.first.response.headers.set('X-HyperTodo-Mutation-Seed',kind==='bad-seed'?'unsafe':'d'.repeat(32));
+  if(kind!=='missing-feature')f.first.response.headers.set('X-HyperTodo-Realtime-Features',kind==='wrong-feature'?'future':'changes-v2');
+  if(kind==='wrong-binding')f.first.response.headers.set(H.binding,B);
+  f.client.setOwner(current);
+  if(kind==='late-owner')f.client.setOwner(null);
+  await tick();expect(onMutationSeed).not.toHaveBeenCalled();f.client.dispose();
+});
+
+it('falls back to v1 when an old server does not confirm the feature',async()=>{
+  const f=fixture(),current=owner();f.client.setOwner(current);await tick();
+  f.first.push(wire('invalidate',{version:1,resources:['tasks']}));await tick();
+  expect(current.receive).toHaveBeenCalledWith(['tasks'],'invalidate');
+  f.first.push(wire('invalidate',{version:2,resources:['tasks'],mutation_id:null,entities:null}));await tick();
+  expect(current.receive).toHaveBeenCalledTimes(1);expect(f.first.cancel).toHaveBeenCalledTimes(1);
+  expect(current.onAuthRequired).not.toHaveBeenCalled();f.client.dispose();
+});

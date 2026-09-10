@@ -52,6 +52,10 @@ def schema_extensions() -> dict[str, Any]:
             },
         },
         "ELEMENT_ATTRIBUTES": {
-            "image": {"variant": {"TYPE": "string", "ENUM": ["face", "fingerprint"]}}
+            "picker-item": {
+                "realtime-entity-key": {"TYPE": "string"},
+                "realtime-entity-epoch": {"TYPE": "string"},
+            },
+            "image": {"variant": {"TYPE": "string", "ENUM": ["face", "fingerprint"]}},
         },
     }

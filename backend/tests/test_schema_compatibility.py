@@ -115,7 +115,11 @@ def test_configuration_declares_only_owned_extensions():
         "error",
     ]
     assert registry["ELEMENT_ATTRIBUTES"] == {
-        "image": {"variant": {"TYPE": "string", "ENUM": ["face", "fingerprint"]}}
+        "image": {"variant": {"TYPE": "string", "ENUM": ["face", "fingerprint"]}},
+        "picker-item": {
+            "realtime-entity-key": {"TYPE": "string"},
+            "realtime-entity-epoch": {"TYPE": "string"},
+        },
     }
 
 

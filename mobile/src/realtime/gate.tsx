@@ -1,6 +1,8 @@
 import { useIsFocused, useRoute, useNavigation } from "@react-navigation/native";
 import Hyperview, { Parser, renderChildren, shallowCloneToRoot, type HvComponentOnUpdate, type HvComponentProps, type HvBehavior } from "hyperview";
 import React, { createContext, useContext, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
+import {ActivityIndicator,View} from 'react-native';
+import RealtimeNotice from '../components/RealtimeNotice';
 
 import type { FetchImplementation } from "../network";
 import { decorateOperationHref, hasReservedBody, readOperationUrl, nextCounter, OPERATION_PARAMETER } from "./operation";
@@ -11,8 +13,11 @@ import {navigationTarget, prepareReload, reloadUrl, screenCallbacks, Unsupported
 import {parseOwnedAuthPanel,type GatePorts,type GateObservation,type Outcome,type TerminalReason} from "./auth";
 import {classifyAuth} from "./session-protocol";
 import type {AuthResult} from "./session";
+import {CHANGE_HEADERS,type ResourceChange} from './stream-protocol';
+import {captureDraft,trackDraft,type DraftState} from './drafts';
+import {affectsForm} from './form-entities';
 import {createRetention} from "./retention";
-import {dependencies,neededVersion,parseResources,readNoticeLabels,resourceReloadUrl,ResourceNotice,type ResourceName,type ResourceVersions} from "./resources";
+import {dependencies,neededVersion,parseResources,readNoticeLabels,resourceReloadUrl,type ResourceName,type ResourceVersions} from "./resources";
 
 let nextInstance = 0;
 
@@ -52,8 +57,18 @@ type Route = RouteSnapshot & {
   resources:readonly ResourceName[];
   observedResources:ResourceVersions;
   resourceFailure?:number;
+  draft?:DraftState;
+  documentRevision:number;
+  confirming?:boolean;
+  heldDraft?:Operation;
+  formVersions:ResourceVersions;
+  formChanges:ResourceVersions;
+  contextual:boolean;
+  concealed:boolean;
+  feedbackVersions:ResourceVersions;
+  dismissedNotice?:string;
 };
-type Operation = { key: string; epoch: number; token: string; canonicalUrl: string; args: Readonly<Update>; method: "get" | "post"; kind: "ordinary" | "refresh"; phase: "pending" | "submitted"; version: number; id?: string; local?: boolean; syncId?: string; timer?: ReturnType<typeof setTimeout>; result?: Element;document?:Document;cleanup?:()=>void;navigationCheck?:()=>void;authHeld?:boolean;authPreparing?:boolean;authDelivery?:AuthResult;authDelivered?:boolean;authReceipt?:object;responseStatus?:number;resourceRefresh?:boolean;resourceVersion?:number };
+type Operation = { key: string; epoch: number; token: string; canonicalUrl: string; args: Readonly<Update>; method: "get" | "post"; kind: "ordinary" | "refresh"; phase: "pending" | "submitted"; version: number; id?: string; local?: boolean; syncId?: string; timer?: ReturnType<typeof setTimeout>; result?: Element;document?:Document;cleanup?:()=>void;navigationCheck?:()=>void;authHeld?:boolean;authPreparing?:boolean;authDelivery?:AuthResult;authDelivered?:boolean;authReceipt?:object;responseStatus?:number;resourceRefresh?:boolean;resourceVersion?:number;draftRevision?:number;releaseDraft?:(accepted:boolean)=>void;remoteFeedback?:boolean;draftCommit?:Readonly<{revision:number;after:string}> };
 
 /** App-owned public Hyperview coordinator; transports never grant XML ACK authority. */
 export function createRealtimeGate(ports:GatePorts={}) {
@@ -88,10 +103,26 @@ export function createRealtimeGate(ports:GatePorts={}) {
   let rootRevision = 0;
   const rootListeners = new Set<() => void>();
   let active: Operation | undefined;
-  const pending = new Map<string, { epoch: number; version: number; url: string; operation?: Operation;resources:ResourceVersions }>();
+  const pending = new Map<string, { epoch: number; version: number; url: string; operation?: Operation;resources:ResourceVersions;contextual?:boolean }>();
   const operations = new Map<string, Operation>();
   const routes = new Map<string, Route>();
   const queue: Operation[] = [];
+  const tracksDraft=(mode:string)=>['list','form','readonly'].includes(mode);
+  const versionsFor=(route:Route)=>route.mode==='form'?route.formVersions:resourceVersions;
+  const changesFor=(route:Route)=>route.mode==='form'?route.formChanges:changedResourceVersions;
+  const automatic=(route:Route)=>route.mode==='readonly'||(route.mode==='list'&&(route.contextual?route.pages.length>0&&route.pages.every((page,index)=>page===index+1):route.pages.length===1&&route.pages[0]===1));
+  function updateDraft(route:Route,functionalEdit=false){
+    if(tracksDraft(route.mode)){
+      const previous=route.draft,next=trackDraft(previous,captureDraft(route.element,route.options.componentRegistry));
+      route.draft=functionalEdit&&previous?.current===null&&next.current===null?Object.freeze({...next,revision:next.revision+1}):next;
+    }
+    return route.draft;
+  }
+  function functionalField(route:Route,field:Element){
+    if(field.namespaceURI!=='https://hyperview.org/hyperview'||!['text-field','picker-field','date-field','switch'].includes(field.localName)||field.getAttribute('name')==='csrfmiddlewaretoken')return false;
+    if(!Array.from(route.element.getElementsByTagName('*')).includes(field))return false;
+    let parent:Node|null=field.parentNode;while(parent&&parent!==route.element){if(parent.nodeType===1&&(parent as Element).localName==='form')return true;parent=parent.parentNode;}return false;
+  }
 
   const subscribeRoot = (listener: () => void) => {
     rootListeners.add(listener);
@@ -146,6 +177,8 @@ export function createRealtimeGate(ports:GatePorts={}) {
   }
 
   function retire(operation: Operation) {
+    operation.releaseDraft?.(false);operation.releaseDraft=undefined;
+    const route=routes.get(operation.key);if(route?.heldDraft===operation)route.heldDraft=undefined;
     operation.cleanup?.();
     if (operation.timer) clearTimeout(operation.timer);
     operations.delete(operation.token);
@@ -234,12 +267,15 @@ export function createRealtimeGate(ports:GatePorts={}) {
     if (!["append","replace","reload","navigate","back"].includes(action??"")) {
       // Native input callbacks can arrive after their panel was replaced. Only
       // a live node may reach SDK swap: its detached ancestor is not a Document.
+      const replacement=args[3].newElement;
+      const functionalEdit=action==='swap'&&replacement?.nodeType===1&&functionalField(route,args[2])&&args[2].getAttribute('value')!==replacement.getAttribute('value');
       route.onUpdate(...args);
       // SDK swap moves the live tree synchronously, before React layout. Carry
       // that authority forward for another current edit; this is never an ACK.
       const document=route.options.onUpdateCallbacks?.getDoc();
       const boundaries=document?.getElementsByTagNameNS(NAMESPACE,"realtime");
       if(ownerEpoch===epoch&&routes.get(key)===route&&boundaries?.length===1)route.element=boundaries[0];
+      updateDraft(route,functionalEdit);drain();
       return;
     }
     const navigationAction=action==="navigate"||action==="back";
@@ -282,7 +318,10 @@ export function createRealtimeGate(ports:GatePorts={}) {
     const options = Object.freeze({...args[3]});
     const admitted: Readonly<Update> = Object.freeze([args[0], args[1], args[2], options]);
     const method = action!=="reload" && options.verb === "post" ? "post" : "get";
-    const operation: Operation = {key, epoch, token, canonicalUrl, args:admitted, method, kind, phase:"pending", version, local, syncId,resourceRefresh,resourceVersion:resourceRefresh?neededVersion(route.resources,resourceVersions,route.observedResources):undefined};
+    const operation: Operation = {key, epoch, token, canonicalUrl, args:admitted, method, kind, phase:"pending", version, local, syncId,resourceRefresh,resourceVersion:resourceRefresh?neededVersion(route.resources,versionsFor(route),route.observedResources):undefined};
+    // A new explicit action supersedes the unapplied old result; do not block
+    // logout/navigation behind an unanswered draft dialog or replay its POST.
+    if(kind==='ordinary'&&active?.releaseDraft)finish(active,'cancelled','sync-replaced',false);
     operations.set(token, operation);
     queue.push(operation);
     drain();
@@ -306,6 +345,7 @@ export function createRealtimeGate(ports:GatePorts={}) {
       behavior.setAttribute("ran-once","true");
     }
     const form = route.options.componentRegistry?.getFormData(element) ?? null;
+    if(operation.method==='post')operation.draftRevision=updateDraft(route)?.revision;
     const retryAction = behavior?.getAttribute("network-retry-action") as Parameters<Parser["loadElement"]>[3];
     const retryEvent = behavior?.getAttribute("network-retry-event");
     indicators(operation,true);
@@ -332,10 +372,24 @@ export function createRealtimeGate(ports:GatePorts={}) {
         // This is the owned delivery seam: public Parser completion is NOT an ACK.
         if(!await retention.wait(()=>operations.get(operation.token)===operation&&!suspended&&operation.epoch===epoch))return;
         indicators(operation,false);
-        const owner = routes.get(operation.key);
-        const target = owner && findTarget(owner.element,element,options);
+        let owner = routes.get(operation.key);
+        let target = owner && findTarget(owner.element,element,options);
         if (!owner || !target) {finish(operation,"cancelled","missing-target");return;}
+        if(operation.method==='post'&&operation.draftRevision!==undefined&&(target.localName==='form'||target.getElementsByTagName('form').length)){
+          while(updateDraft(owner)?.revision!==operation.draftRevision){
+            owner.heldDraft=operation;notifyNotice();
+            const accepted=await new Promise<boolean>(resolve=>{operation.releaseDraft=resolve;});
+            operation.releaseDraft=undefined;
+            if(!accepted||operations.get(operation.token)!==operation||operation.epoch!==epoch||suspended)return;
+            if(!await retention.wait(()=>operations.get(operation.token)===operation&&operation.epoch===epoch&&!suspended))return;
+            owner=routes.get(operation.key);target=owner&&findTarget(owner.element,element,options);
+            if(!owner||!target){finish(operation,'cancelled','missing-target');return;}
+          }
+          owner.heldDraft=undefined;
+        }
         const replacement = fragmentReplacement(target,source,action!);
+        const beforeDraft=updateDraft(owner),wholeDraft=captureDraft(owner.element,owner.options.componentRegistry);
+        const replacesCompleteForm=operation.method==='post'&&operation.responseStatus===200&&action==='replace'&&wholeDraft!==null&&wholeDraft!=='[]'&&captureDraft(target,owner.options.componentRegistry)===wholeDraft;
         const settingsUrl=operation.responseStatus===200&&operation.method==="post"?new URL(operation.canonicalUrl):null;
         if(settingsUrl&&operation.method==="post"&&operation.responseStatus===200&&action==="replace"&&options.targetId==="settings-form-panel"&&settingsUrl.origin===new URL(owner.baseUrl).origin&&settingsUrl.pathname==="/hv/settings/"&&!settingsUrl.search&&source.namespaceURI==="https://hyperview.org/hyperview"&&source.localName==="view"&&source.getAttribute("id")==="settings-form-panel"){
           for(const node of Array.from(source.childNodes))if(node.nodeType===1){
@@ -350,7 +404,11 @@ export function createRealtimeGate(ports:GatePorts={}) {
         // Public swap synchronously moves live nodes into a cloned tree before
         // React layout. Carry only this owned tree forward; this is not an ACK.
         const boundaries = currentDocument(replacement)?.getElementsByTagNameNS(NAMESPACE,"realtime");
-        if (routes.get(operation.key)===owner && operations.get(operation.token)===operation && boundaries?.length===1) owner.element=boundaries[0];
+        if (routes.get(operation.key)===owner && operations.get(operation.token)===operation && boundaries?.length===1){
+          owner.element=boundaries[0];
+          const after=captureDraft(owner.element,owner.options.componentRegistry);
+          if(replacesCompleteForm&&beforeDraft&&after!==null)operation.draftCommit=Object.freeze({revision:beforeDraft.revision,after});
+        }
         callEnd(owner,operation);
       } catch (error) {
         const signal=error&&typeof error==="object"?authSignals.get(error):undefined;
@@ -387,6 +445,8 @@ export function createRealtimeGate(ports:GatePorts={}) {
   }
 
   async function runReload(operation:Operation,route:Route){
+    operation.draftRevision=updateDraft(route)?.revision;
+    operation.remoteFeedback=operation.resourceRefresh&&route.focused&&!route.concealed&&automatic(route)&&neededVersion(route.resources,route.feedbackVersions,route.observedResources)>0;
     try{
       if(!route.runtime)throw new Error("missing-screen-runtime");
       const callbacks=screenCallbacks(route.options);
@@ -402,6 +462,11 @@ export function createRealtimeGate(ports:GatePorts={}) {
       },route.runtime.before,route.runtime.after);
       const result=await parser.loadDocument(operation.canonicalUrl);
       if(!await retention.wait(()=>operations.get(operation.token)===operation&&!suspended&&operation.epoch===epoch))return;
+      const current=routes.get(operation.key);
+      if(!current||updateDraft(current)?.revision!==operation.draftRevision){
+        indicators(operation,false);if(current)current.resourceFailure=operation.resourceVersion;
+        finish(operation,'cancelled','sync-replaced',false);drain();return;
+      }
       const prepared=prepareReload(result.doc,operation.id);
       indicators(operation,false);
       operation.document=result.doc;operation.result=result.doc.documentElement;operation.phase="submitted";
@@ -417,6 +482,9 @@ export function createRealtimeGate(ports:GatePorts={}) {
   }
 
   function drain() {
+    // Mark retained stale read-only content even while another route owns HTTP.
+    // Rendering keeps this tree mounted, but cannot expose it on the next focus.
+    for(const route of routes.values())if(!route.focused&&automatic(route)&&!updateDraft(route)?.dirty&&neededVersion(route.resources,versionsFor(route),route.observedResources)>0)route.concealed=true;
     notifyNotice();
     if (blocked || active || suspended || retention.isPaused()) return;
     while (queue.length) {
@@ -427,22 +495,40 @@ export function createRealtimeGate(ports:GatePorts={}) {
     }
     for (const route of routes.values()) {
       const legacyNotice=route.observed < version || route.failedVersion === version;
-      const dirty=neededVersion(route.resources,resourceVersions,route.observedResources);
+      const dirty=neededVersion(route.resources,versionsFor(route),route.observedResources);
       route.notice=legacyNotice||dirty>0;
-      if(dirty&&route.ready&&route.focused&&route.mode==="list"&&route.pages.length===1&&route.pages[0]===1&&route.resourceFailure!==dirty){
+      const editing=updateDraft(route)?.dirty;
+      if(dirty&&!editing&&route.ready&&route.focused&&automatic(route)&&route.resourceFailure!==dirty){
         refreshResources(route);break;
       }
-      if (legacyNotice && route.focused && route.mode === "list" && route.pages.length === 1 && route.failedVersion !== version) {
+      if (legacyNotice && !editing && route.focused && route.mode === "list" && route.pages.length === 1 && route.failedVersion !== version) {
         enqueue(route.key, [route.refreshHref, "replace", route.element, {targetId:route.target,verb:"get"}], "refresh");
         break;
       }
     }
   }
 
-  function refreshResources(route:Route){
+  function refreshResources(route:Route,discardConfirmed=false){
     if(!route.ready||!route.focused||retention.isPaused()||suspended||!readNoticeLabels(ports.noticeLabels)||[...operations.values()].some(operation=>operation.key===route.key&&operation.resourceRefresh))return;
-    try{const url=resourceReloadUrl(route.refreshHref,route.baseUrl,route.mode);enqueue(route.key,[url,"reload",route.element,{}],"refresh",epoch,true);}
-    catch{route.resourceFailure=neededVersion(route.resources,resourceVersions,route.observedResources);route.notice=true;notifyNotice();}
+    if(updateDraft(route)?.dirty&&!discardConfirmed)return;
+    try{const url=resourceReloadUrl(route.refreshHref,route.baseUrl,route.mode,route.pages,route.contextual);enqueue(route.key,[url,"reload",route.element,{}],"refresh",epoch,true);}
+    catch{route.resourceFailure=neededVersion(route.resources,versionsFor(route),route.observedResources);route.notice=true;notifyNotice();}
+  }
+
+  async function requestResourceRefresh(route:Route){
+    if(route.confirming||(active&&active!==route.heldDraft)||retention.isPaused()||suspended||!route.focused||routes.get(route.key)!==route)return;
+    if(!updateDraft(route)?.dirty&&!route.heldDraft){refreshResources(route);return;}
+    if(!ports.confirmDiscard)return;
+    const capturedEpoch=epoch,revision=route.draft!.revision,documentRevision=route.documentRevision,held=route.heldDraft;
+    route.confirming=true;notifyNotice();
+    let accepted=false;try{accepted=await ports.confirmDiscard()===true;}catch{/* Failed confirmation retains the draft. */}
+    const current=routes.get(route.key);
+    if(current)current.confirming=false;
+    if(accepted&&current&&epoch===capturedEpoch&&!suspended&&!retention.isPaused()&&current.focused&&current.documentRevision===documentRevision&&updateDraft(current)?.revision===revision){
+      if(held&&active===held&&current.heldDraft===held){held.draftRevision=revision;held.releaseDraft?.(true);}
+      else if(!active)refreshResources(current,true);
+    }
+    notifyNotice();
   }
 
   function containsBoundary(document: Document | null | undefined, route: Route): boolean {
@@ -468,6 +554,12 @@ export function createRealtimeGate(ports:GatePorts={}) {
       enqueue(key,args,"ordinary",ownerEpoch);
     };
     const authority=Object.freeze({isAlive,sourceIsCurrent,onUpdate:dispatch,effectReceipt:()=>sourceIsCurrent()?effectReceipts.get(element)??null:null,
+      markDraftEdit:(field:Element)=>{
+        const route=routes.get(key);
+        // Native avatar selection mutates a real hidden field directly. Signal
+        // before that mutation; no payload copy and no auth/ACK authority.
+        if(sourceIsCurrent()&&route&&functionalField(route,field))updateDraft(route,true);
+      },
       bindBiometricSubmit:()=>{
         if(!sourceIsCurrent())return null;
         const route=routes.get(key)!,current=callbacks.getRoot()!;
@@ -545,6 +637,9 @@ export function createRealtimeGate(ports:GatePorts={}) {
       const previous = routes.get(key);
       let hasReady=previous?.ready??false;
       let observedResources=previous?.observedResources??{tasks:0,categories:0,ui:0};
+      let documentCommitted=false;
+      let contextual=previous?.contextual??false;
+      const acknowledged:Operation[]=[];
       for (const node of [element,...Array.from(element.getElementsByTagName("*"))]) {
         const local = localCommits.get(node);
         if (local && local.key===key && local.epoch===epoch && local.result===node&&!retention.isPaused()) finish(local,"ack",local.authReceipt?"auth-panel-layout":"local-layout",false);
@@ -564,23 +659,37 @@ export function createRealtimeGate(ports:GatePorts={}) {
         if (operation?.document && operation.document!==currentDocument(element)) continue;
         if (operation && (operation.key !== key || operation.epoch !== epoch || operations.get(operation.token) !== operation)) continue;
         if (!routes.has(key)) observed = Math.min(observed, request.version);
-        if (!operation || operation.args[1]==="reload"){baseUrl=request.url;observedResources=request.resources;}
+        if (!operation || operation.args[1]==="reload"){baseUrl=request.url;observedResources=request.resources;documentCommitted=true;contextual=request.contextual===true;}
         pending.delete(requestId);
         if (operation) {
           if (operation.kind === "refresh" || operation.args[1]==="reload") observed = operation.version;
           finish(operation,"ack",operation.args[1]==="reload"?"reload-layout":"remote-layout",false);
+          acknowledged.push(operation);
         }
       }
+      const mode=element.getAttribute('mode')??'notice';
+      const draftSnapshot=tracksDraft(mode)?captureDraft(element,options.componentRegistry):null;
+      const savedDraft=acknowledged.some(operation=>operation.draftCommit&&previous?.draft?.revision===operation.draftCommit.revision&&draftSnapshot===operation.draftCommit.after);
       routes.set(key, {
         key, focused, element, onUpdate, observed, baseUrl, runtime, options, navigation, failedVersion:previous?.failedVersion,ready:hasReady,noticeCode:previous?.noticeCode,
-        resources:dependencies(element),observedResources,resourceFailure:previous?.resourceFailure,
+        resources:dependencies(element),observedResources,resourceFailure:previous?.resourceFailure,contextual,
+        concealed:neededVersion(dependencies(element),resourceVersions,observedResources)>0&&(previous?.concealed??false),
+        feedbackVersions:previous?.feedbackVersions??{tasks:0,categories:0,ui:0},
+        dismissedNotice:previous?.dismissedNotice,
+        draft:tracksDraft(mode)?trackDraft(previous?.draft,draftSnapshot,documentCommitted||savedDraft):undefined,
+        formVersions:previous?.mode===mode?previous.formVersions:resourceVersions,
+        formChanges:previous?.mode===mode?previous.formChanges:changedResourceVersions,
+        documentRevision:(previous?.documentRevision??0)+(documentCommitted?1:0),confirming:previous?.confirming,heldDraft:previous?.heldDraft,
         pages: [...pages].sort((a, b) => a - b),
         refreshHref: element.getAttribute("refresh-href") ?? "",
         target: element.getAttribute("target") ?? "",
-        mode: element.getAttribute("mode") ?? "notice",
+        mode,
         notice: observed < version || previous?.failedVersion === version || neededVersion(dependencies(element),resourceVersions,observedResources)>0,
       });
       ready(routes.get(key)!);
+      if(focused&&!retention.isPaused()&&!suspended&&acknowledged.some(operation=>operation.remoteFeedback)&&neededVersion(dependencies(element),versionsFor(routes.get(key)!),observedResources)===0){
+        try{ports.onResourceUpdated?.();}catch{/* Feedback cannot change a genuine ACK. */}
+      }
       if (!focused) cancelOwner(key, true);
       drain();
     }, [element, focused, key, onUpdate, runtime, options,navigation]);
@@ -591,10 +700,14 @@ export function createRealtimeGate(ports:GatePorts={}) {
     }, [key]);
     const dispatch: HvComponentOnUpdate = (...args) => enqueue(key, args, "ordinary", boundaryEpoch);
     const route=routes.get(key),labels=readNoticeLabels(ports.noticeLabels);
-    const visible=route?.notice&&focused&&labels;
-    const resyncOnly=route&&neededVersion(route.resources,resourceVersions,route.observedResources)>0&&neededVersion(route.resources,changedResourceVersions,route.observedResources)===0;
-    const message=route?.noticeCode==="auth-refused"?labels?.csrf:route?.failedVersion===version?labels?.error:resyncOnly?labels?.resync:labels?.changed;
-    return <>{visible&&message?<ResourceNotice message={message} label={labels.update} disabled={retention.isPaused()||suspended||!!active} onUpdate={route.noticeCode==="auth-refused"?undefined:()=>{if(epoch===boundaryEpoch&&routes.get(key)===route)refreshResources(route);}}/>:null}{renderChildren(element, stylesheets, dispatch, options)}</>;
+    const concealed=route&&automatic(route)&&!route.draft?.dirty&&(route.concealed||(!route.focused&&neededVersion(route.resources,versionsFor(route),route.observedResources)>0));
+    const remoteChange=route&&neededVersion(route.resources,changesFor(route),route.observedResources)>0;
+    const warningKey=route?[neededVersion(route.resources,changesFor(route),route.observedResources),route.heldDraft?.token,route.noticeCode,route.failedVersion,route.observed<version?version:''].join(':'):'';
+    const autoPending=route&&automatic(route)&&!route.draft?.dirty&&route.resourceFailure!==neededVersion(route.resources,versionsFor(route),route.observedResources);
+    const visible=route&&(route.notice||route.heldDraft)&&focused&&labels&&(route.heldDraft||route.noticeCode||route.failedVersion===version||route.observed<version||(remoteChange&&!autoPending));
+    const resyncOnly=route&&neededVersion(route.resources,versionsFor(route),route.observedResources)>0&&neededVersion(route.resources,changesFor(route),route.observedResources)===0;
+    const message=route?.noticeCode==="auth-refused"?labels?.csrf:route?.heldDraft?(labels?.newerEdits??labels?.changed):route?.failedVersion===version?labels?.error:resyncOnly?labels?.resync:labels?.changed;
+    return <>{visible&&message&&route.dismissedNotice!==warningKey?<RealtimeNotice message={message} actionLabel={labels.update} pending={retention.isPaused()||suspended||(!!active&&active!==route.heldDraft)||route.confirming===true} onAction={route.noticeCode==="auth-refused"?undefined:()=>{if(epoch===boundaryEpoch&&routes.get(key)===route)void requestResourceRefresh(route);}} dismissLabel={labels.dismiss} onDismiss={()=>{const current=routes.get(key);if(current&&epoch===boundaryEpoch){current.dismissedNotice=warningKey;notifyNotice();}}}/>:null}{concealed&&focused&&route.failedVersion===undefined?<ActivityIndicator/>:null}<View style={{flex:1,opacity:concealed?0:1}} pointerEvents={concealed?'none':'auto'} accessibilityElementsHidden={!!concealed} importantForAccessibility={concealed?'no-hide-descendants':'auto'}>{renderChildren(element, stylesheets, dispatch, options)}</View></>;
   }
 
   const components = [
@@ -634,6 +747,10 @@ export function createRealtimeGate(ports:GatePorts={}) {
       };
       const headers = new Headers(init.headers);
       headers.set(REQUEST_HEADER, requestId);
+      headers.delete(CHANGE_HEADERS.mutation);
+      if(operation&&operation.method==='post'&&!operation.local&&!classifyAuth(parsed.canonicalUrl,operation.method,new URL(parsed.canonicalUrl).origin)){
+        try{const mutationId=ports.admitMutation?.(operation);if(mutationId&&/^[a-f0-9]{40}$/.test(mutationId))headers.set(CHANGE_HEADERS.mutation,mutationId);}catch{/* Unknown origin never blocks HTTP. */}
+      }
       try {
         const prepared={...transportInit,headers};
         if(operation&&ports.authenticate&&classifyAuth(parsed.canonicalUrl,operation.method,new URL(parsed.canonicalUrl).origin)){
@@ -652,6 +769,7 @@ export function createRealtimeGate(ports:GatePorts={}) {
         }
         const response = await transport(parsed.token ? parsed.canonicalUrl : input, prepared);
         assertCurrent();
+        const request=pending.get(requestId);if(request)request.contextual=response.headers.get(CHANGE_HEADERS.features)==='changes-v2';
         if(operation)operation.responseStatus=response.status;
         if (operation && (response.status === 204 || response.status === 205)) throw new NoDocument();
         // Parser reads the body later. A headers-only epoch check lets a
@@ -705,13 +823,20 @@ export function createRealtimeGate(ports:GatePorts={}) {
       pending: pending.size, queued: queue.filter(operation => operations.has(operation.token)).length, operations: operations.size, lastRejection, lastTerminal, blocked, suspended, epoch,retainedPaused:retention.isPaused(),
       routes: [...routes.values()].map(({ key, focused, pages, refreshHref, notice,noticeCode }) => ({ key, focused, pages, refreshHref, notice,noticeCode })),
     }),
-    invalidateResources:(capturedEpoch:number,resources:readonly ResourceName[],cause:"invalidate"|"resync"="invalidate"):boolean=>{
+    invalidateResources:(capturedEpoch:number,resources:readonly ResourceName[],cause:"invalidate"|"resync"|"local"="invalidate",change?:ResourceChange):boolean=>{
       const names=parseResources(resources);
-      if(capturedEpoch!==epoch||suspended||!names||!["invalidate","resync"].includes(cause)||!readNoticeLabels(ports.noticeLabels))return false;
+      if(capturedEpoch!==epoch||suspended||!names||!["invalidate","resync","local"].includes(cause)||!readNoticeLabels(ports.noticeLabels))return false;
       if(resourceSequence>=Number.MAX_SAFE_INTEGER)return false;
       resourceSequence+=1;resourceVersions={...resourceVersions,...Object.fromEntries(names.map(name=>[name,resourceSequence]))};
       // Reconciliation cannot erase a still-unacknowledged real invalidation.
       if(cause==="invalidate")changedResourceVersions={...changedResourceVersions,...Object.fromEntries(names.map(name=>[name,resourceSequence]))};
+      if(cause==='invalidate')for(const route of routes.values())if(route.focused&&!route.concealed&&!retention.isPaused()){
+        route.feedbackVersions={...route.feedbackVersions,...Object.fromEntries(names.filter(name=>route.resources.includes(name)).map(name=>[name,resourceSequence]))};
+      }
+      for(const route of routes.values())if(route.mode==='form'&&(cause==='resync'||affectsForm(route.element,names,change))){
+        route.formVersions={...route.formVersions,...Object.fromEntries(names.map(name=>[name,resourceSequence]))};
+        if(cause==='invalidate')route.formChanges={...route.formChanges,...Object.fromEntries(names.map(name=>[name,resourceSequence]))};
+      }
       drain();return true;
     },
     invalidate: () => {

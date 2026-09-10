@@ -3,7 +3,7 @@ declare const __dirname: string; // Supplied by this Jest module, not the native
 import React from "react";
 import type Hyperview from "hyperview";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { AppState } from "react-native";
+import { Alert, AppState } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import { createSessionApp } from "../App";
@@ -400,6 +400,41 @@ it("executes Settings clear only from the owned successful source and does not w
     ui.unmount();
   }
 });
+
+it.each(['accept','logout','refused'] as const)('defers real Settings credential effects behind newer form edits without POST replay: %s',async outcome=>{
+ const f=fixture();f.setBinding(A,true);let release!:(response:Response)=>void,postId='',signedOut=false;
+ const pending=new Promise<Response>(resolve=>{release=resolve;}),dialog=jest.spyOn(Alert,'alert').mockImplementation(()=>{});
+ f.setOverride(async(url,init)=>{
+  const id=new Headers(init.headers).get('X-HyperTodo-Request-ID')!;
+  if(url.endsWith('/settings/')&&init.method==='POST'){postId=id;return pending;}
+  if(url.endsWith('/logout/')&&init.method==='POST'){
+   signedOut=true;f.setBinding(B,false);
+   return raw(fs.readFileSync(jest.requireActual('path').resolve(__dirname,'../../backend/hyperview/fragments/logout_transition.xml'),'utf8'),B,200,'logout-ok');
+  }
+  if(url===ENTRY&&!signedOut)return raw(doc(id,true).replace('mode="notice"','mode="form"').replace('<text>Account B</text>',`<view id="settings-form-panel"><form id="settings-form"><text-field name="display_name" placeholder="Display name" value="initial"/><text-field hide="true" name="csrfmiddlewaretoken" value="own-csrf"/><view href="/hv/settings/" verb="post" action="replace" target="settings-form-panel"><text>Save settings draft</text></view></form></view><view id="logout-panel"><form><text-field hide="true" name="csrfmiddlewaretoken" value="own-csrf"/><view href="/hv/logout/" verb="post" action="replace" target="logout-panel"><text>Sign out now</text></view></form></view>`),A);
+  return undefined;
+ });
+ const ui=mount(f.session);
+ try{
+  await ui.findByPlaceholderText('Display name');fireEvent.changeText(ui.getByPlaceholderText('Display name'),'submitted');
+  fireEvent.press(ui.getByText('Save settings draft'));await waitFor(()=>expect(postId).not.toBe(''));
+  fireEvent.changeText(ui.getByPlaceholderText('Display name'),'new unsaved name');
+  await act(async()=>release(raw(`<view xmlns="${HV}" xmlns:app="${NS}" id="settings-form-panel"><app:realtime-page request-id="${postId}" page="1"/><behavior trigger="load" action="store-biometric-token" token="" once="true" immediate="true"/><text>Settings response</text></view>`,A,outcome==='refused'?422:200)));
+  await ui.findByText('Your newer edits are still here. Discard them to show the server response.');
+  expect(ui.getByPlaceholderText('Display name').props.value).toBe('new unsaved name');expect(f.clear).not.toHaveBeenCalled();expect(ui.queryByText('Settings response')).toBeNull();
+  if(outcome==='logout'){
+   const epoch=f.session.gate.snapshot().epoch;fireEvent.press(ui.getByText('Sign out now'));await ui.findByText('Login');
+   expect(f.session.gate.snapshot().epoch).toBeGreaterThan(epoch);expect(f.clear).not.toHaveBeenCalled();expect(ui.queryByText('Settings response')).toBeNull();
+  }else{
+   fireEvent.press(ui.getByRole('button',{name:'Update'}));expect(dialog).toHaveBeenCalledTimes(1);expect(f.clear).not.toHaveBeenCalled();
+   await act(async()=>dialog.mock.calls[0][2]!.find(button=>button.style==='destructive')!.onPress!());await ui.findByText('Settings response');
+   await waitFor(()=>expect(f.session.gate.snapshot().operations).toBe(0));expect(f.clear).toHaveBeenCalledTimes(outcome==='accept'?1:0);
+  }
+  const posts=f.http.mock.calls.filter(([url,init])=>String(url).endsWith('/settings/')&&init?.method==='POST');
+  expect(posts).toHaveLength(1);expect(new URLSearchParams(posts[0][1]?.body as string).get('csrfmiddlewaretoken')).toBe('own-csrf');
+  expect(f.save).not.toHaveBeenCalled();
+ }finally{dialog.mockRestore();ui.unmount();}
+});
 it("retains a successful B response in background and publishes only after confirmations and awaited storage", async () => {
   const f = fixture();
   let release!: () => void;
@@ -638,9 +673,12 @@ it('routes a real owned notify-resources behavior to its captured dependency gat
     await ui.findByText('Login');
     fireEvent.changeText(ui.getByPlaceholderText('Password'), 'resource draft');
     const epoch = f.session.gate.snapshot().epoch;
-    fireEvent.press(ui.getByText('Resource hint'));
-    await ui.findByText('Puede haber cambios');
+    await act(async()=>fireEvent.press(ui.getByText('Resource hint')));
+    expect(ui.queryByText('Puede haber cambios')).toBeNull();
+    expect(f.session.gate.snapshot().routes[0].notice).toBe(true);
     expect(f.http.mock.calls.filter(([url]) => url === ENTRY)).toHaveLength(1);
+    act(()=>f.session.captureResources()!(['tasks']));
+    await ui.findByText('Puede haber cambios');
     f.setLanguage('en');
     await act(async () => {
       await f.session.supervisor.request('/hv/tasks/');

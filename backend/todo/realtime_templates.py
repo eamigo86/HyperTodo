@@ -1,9 +1,12 @@
 """Negotiated presentation metadata, never authentication or acknowledgement."""
 
+import json
 import re
 from urllib.parse import urlencode
 
 from django.http import HttpRequest
+
+from .realtime_changes import capture_entities, negotiated
 
 _REQUEST_ID = re.compile(r"[A-Za-z0-9_-]{1,80}", re.ASCII)
 _SCREENS = {
@@ -62,4 +65,35 @@ def realtime_context(
         realtime_mode="list" if name in {"tasks", "categories"} else "notice",
         realtime_refresh_href=refresh_href,
     )
+    if negotiated(request) and request.user.is_authenticated:
+        values["realtime_changes"] = True
+        if name in {"dashboard", "about"}:
+            values["realtime_mode"] = "readonly"
+        form_name = {
+            "fragments/task_form_panel": "task_form",
+            "fragments/category_form_panel": "category_form",
+            "fragments/settings_form_panel": "settings",
+        }.get(name, name)
+        if form_name in {"task_form", "category_form", "settings"}:
+            values["realtime_mode"] = "form"
+            using = request.user._state.db
+            rows = [("ui", request.user.pk)]
+            entity = context.get("task" if form_name == "task_form" else "category")
+            if entity is not None:
+                rows.append(
+                    ("tasks" if form_name == "task_form" else "categories", entity.pk)
+                )
+            metadata = capture_entities(using, rows)
+            values["realtime_entities"] = json.dumps(
+                metadata.payload, separators=(",", ":")
+            )
+            if form_name == "task_form":
+                # Form values remain actual authorized selector values. Tokens
+                # identify the CURRENT choice's change dependency, never access.
+                for option in context["form"].fields["category"].queryset:
+                    option_metadata = capture_entities(
+                        using, [("categories", option.pk)]
+                    ).payload
+                    option.realtime_entity_key = option_metadata["items"][0]["key"]
+                    option.realtime_entity_epoch = option_metadata["epoch"]
     return values

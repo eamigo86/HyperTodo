@@ -3,7 +3,7 @@ import type {SaveOptions} from "expo-image-manipulator";
 import type {HvBehavior,HvComponentOnUpdate,HvGetRoot,HvUpdateRoot} from "hyperview";
 import type {createSessionSupervisor,RecoveryHandle} from "../realtime/session";
 import type {SnackbarNotice} from "../feedback/snackbar";
-export type SourceAuthority={isAlive():boolean;sourceIsCurrent():boolean;onUpdate:HvComponentOnUpdate;effectReceipt():object|null;bindBiometricSubmit():((token:string)=>boolean)|null};
+export type SourceAuthority={isAlive():boolean;sourceIsCurrent():boolean;onUpdate:HvComponentOnUpdate;effectReceipt():object|null;bindBiometricSubmit():((token:string)=>boolean)|null;markDraftEdit?(field:Element):void};
 export type RenderedImage={saveAsync(options:SaveOptions):Promise<{base64?:string}>};
 export type OwnedNativePorts={platform:"ios"|"android";hasHardware():Promise<boolean>;isEnrolled():Promise<boolean>;supportedTypes():Promise<number[]>;readToken():Promise<string|null>;unlock(prompt:string):Promise<{success:boolean;error?:string}>;pick():Promise<{canceled:boolean;uri?:string}>;render(uri:string):Promise<RenderedImage>;save(image:RenderedImage):Promise<{base64?:string}>};
 export type ResourceName="tasks"|"categories"|"ui";
@@ -76,12 +76,13 @@ export function createOwnedBehaviors(ports:OwnedBehaviorPorts):HvBehavior[]{
       }
       if(mutated)updateRoot(shallowCloneToRoot(mutated));
     }),
-    callback("pick-avatar",async(element,_source,getRoot,updateRoot,_lease,current)=>{
+    callback("pick-avatar",async(element,source,getRoot,updateRoot,_lease,current)=>{
       const target=element.getAttribute("target"),previewId=element.getAttribute("preview-target"),currentId=element.getAttribute("current-target");
       const picked=await native.pick();if((!await current()||!current.now())||picked.canceled||!picked.uri)return;
       const rendered=await native.render(picked.uri);if((!await current()||!current.now()))return;
       const {base64}=await native.save(rendered);if((!await current()||!current.now())||!base64)return;
       const root=getRoot(),field=byId(root,target);if(!field)return;
+      if(field.getAttribute('value')!==base64)source.markDraftEdit?.(field);
       field.setAttribute("value",base64);const preview=byId(root,previewId);preview?.setAttribute("source",`data:image/jpeg;base64,${base64}`);preview?.setAttribute("hide","false");byId(root,currentId)?.setAttribute("hide","true");
       updateRoot(shallowCloneToRoot(field));
       if(await current()&&current.now())ports.notice({message:"Photo ready. Tap Save settings to keep it.",tone:"success"});

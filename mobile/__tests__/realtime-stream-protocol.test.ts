@@ -84,3 +84,52 @@ it('uses the installed Expo57 decoder fatal/BOM semantics, not just the Node imp
     }
   } finally { globalThis.TextDecoder=original; }
 });
+
+const rich = (entities: unknown = {epoch:'a'.repeat(16),items:[{resource:'tasks',key:'b'.repeat(64)}]}) => ({
+  version:2,resources:['tasks'],mutation_id:'c'.repeat(40),entities,
+});
+it('decodes negotiated changes-v2 without treating opaque entity or operation tokens as authority', () => {
+  const events=jest.fn(), decoder=createStreamDecoder(events,{changesV2:true});
+  const value=rich();
+  for(const byte of bytes(frame('invalidate',value)))decoder.push(new Uint8Array([byte]));
+  decoder.push(bytes(frame('invalidate',{...rich(null),mutation_id:null})));
+  decoder.push(bytes(frame('resync',{version:1})+frame('auth-required',{version:1})));
+  expect(events.mock.calls.map(([event])=>event)).toEqual([
+    {type:'invalidate',resources:['tasks'],change:{mutationId:value.mutation_id,entities:value.entities}},
+    {type:'invalidate',resources:['tasks'],change:{mutationId:null,entities:null}},
+    {type:'resync'},{type:'auth-required'},
+  ]);
+  const change=events.mock.calls[0][0].change;
+  expect([change,change.entities,change.entities.items,change.entities.items[0]].every(Object.isFrozen)).toBe(true);
+});
+
+it('requires explicit negotiation for rich events while retaining legacy v1 on either connection', () => {
+  expect(()=>createStreamDecoder(jest.fn()).push(bytes(frame('invalidate',rich())))).toThrow('invalid-stream');
+  const events=jest.fn(),decoder=createStreamDecoder(events,{changesV2:true});
+  decoder.push(bytes(frame('invalidate',{version:1,resources:['tasks']})));
+  expect(events).toHaveBeenCalledWith({type:'invalidate',resources:['tasks']});
+});
+
+it.each([
+  {...rich(),mutation_id:'c'.repeat(32)}, {...rich(),mutation_id:'C'.repeat(40)},
+  {...rich(),mutation_id:undefined}, {...rich(),owner:'private'},
+  rich({epoch:'a'.repeat(15),items:[{resource:'tasks',key:'b'.repeat(64)}]}),
+  rich({epoch:'a'.repeat(16),items:[]}),
+  rich({epoch:'a'.repeat(16),items:[{resource:'ui',key:'b'.repeat(64)}]}),
+  rich({epoch:'a'.repeat(16),items:[{resource:'tasks',key:'b'.repeat(63)}]}),
+  rich({epoch:'a'.repeat(16),items:[{resource:'tasks',key:'b'.repeat(64),id:1}]}),
+  rich({epoch:'a'.repeat(16),items:Array.from({length:33},(_,n)=>({resource:'tasks',key:n.toString(16).padStart(64,'0')}))}),
+  rich({epoch:'a'.repeat(16),items:[{resource:'tasks',key:'b'.repeat(64)},{resource:'tasks',key:'b'.repeat(64)}]}),
+])('rejects malformed changes-v2 metadata %# without partial delivery', value => {
+  const events=jest.fn(),decoder=createStreamDecoder(events,{changesV2:true});
+  expect(()=>decoder.push(bytes(frame('invalidate',value)))).toThrow('invalid-stream');
+  expect(events).not.toHaveBeenCalled();
+});
+
+it('accepts at most32 distinct entities and keeps the existing4KiB JSON bound', () => {
+  const events=jest.fn(),decoder=createStreamDecoder(events,{changesV2:true});
+  const value=rich({epoch:'a'.repeat(16),items:Array.from({length:32},(_,n)=>({resource:'tasks',key:n.toString(16).padStart(64,'0')}))});
+  decoder.push(bytes(frame('invalidate',value)));
+  expect(events.mock.calls[0][0].change.entities.items).toHaveLength(32);
+  expect(()=>createStreamDecoder(jest.fn(),{changesV2:true}).push(bytes(`event: invalidate\ndata: ${JSON.stringify(value)}${' '.repeat(4096)}\n\n`))).toThrow('invalid-stream');
+});

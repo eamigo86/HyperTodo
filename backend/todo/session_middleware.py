@@ -11,6 +11,7 @@ from django.http import (
 )
 from django.utils.cache import patch_cache_control, patch_vary_headers
 
+from .realtime_changes import mark_changes_response, mutation_context
 from .recovery import RECOVERY_HEADER, is_recovery, mark_recovery, recovery_error
 from .session_contract import (
     AUTH_OUTCOME_HEADER,
@@ -63,6 +64,10 @@ class SessionContractMiddleware:
         Returns:
             Negotiation rejection or unchanged downstream body/status plus metadata.
         """
+        with mutation_context(None):
+            return self._guard(request)
+
+    def _guard(self, request: HttpRequest) -> HttpResponse:
         contract = request.headers.get(CLIENT_CONTRACT_HEADER)
         if code := recovery_error(request, contract):
             return _error(code, 404 if code == "recovery-required" else 400)
@@ -88,7 +93,8 @@ class SessionContractMiddleware:
                 return _error("session-binding-mismatch", 409)
         if request.headers.get(RECOVERY_HEADER) is not None:
             mark_recovery(request)
-        return _mark_response(request, self.get_response(request))
+        with mutation_context(request):
+            return _mark_response(request, self.get_response(request))
 
 
 class SessionBindingResponseMiddleware:
@@ -135,4 +141,5 @@ class SessionBindingResponseMiddleware:
                 # auth binding; subsequent confirmation observes actual state.
                 response.headers.pop(AUTH_OUTCOME_HEADER, None)
                 response.headers.pop(SESSION_BINDING_HEADER, None)
+            mark_changes_response(request, response)
         return response

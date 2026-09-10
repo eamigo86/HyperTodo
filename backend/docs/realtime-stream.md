@@ -90,9 +90,13 @@ payloads. Resources are canonical nonempty subsets of `tasks`, `categories`, `ui
 Task screens already declare their category dependency, so category renames do
 not require changing the template corpus.
 
-Wire: `invalidate` carries only `{"version":1,"resources":[...]}`; `resync` and
+Legacy wire: `invalidate` carries only `{"version":1,"resources":[...]}`; `resync` and
 `auth-required` only `{"version":1}`; heartbeat is a comment. No IDs, retry fields,
 URLs, XML or extra keys. The consumer rejects noncanonical broker envelopes.
+The a22-backed application additionally negotiates `changes-v2`, fresh response seeds
+and opaque entity/origin metadata, projecting back to this exact v1 wire for old
+clients; see [contextual changes](realtime-changes.md). All authority and lifecycle
+checks above remain prerequisites, not replaced by the feature header.
 
 ## Verification boundary
 

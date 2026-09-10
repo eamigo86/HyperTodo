@@ -1,7 +1,7 @@
 # HyperTodo
 
 [![CI](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml/badge.svg)](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml)
-[![dj-hyperview](https://img.shields.io/badge/dj--hyperview-0.1.0a21-278CFF)](https://pypi.org/project/dj-hyperview/0.1.0a21/)
+[![dj-hyperview](https://img.shields.io/badge/dj--hyperview-0.1.0a22-278CFF)](https://pypi.org/project/dj-hyperview/0.1.0a22/)
 [![Hyperview](https://img.shields.io/badge/Hyperview-0.110.0-171A2F)](https://www.npmjs.com/package/hyperview/v/0.110.0)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -12,6 +12,182 @@ screens from server-provided HXML.
 
 The project exists to exercise dj-hyperview in a realistic application. It is
 not intended to be a reusable task-management product.
+
+## Quick start: SSE with Expo Go
+
+Use two terminals: **ASGI backend + Expo Go**. No native build is needed.
+The backend now pins published `dj-hyperview[editor,realtime]==0.1.0a22`, which
+supports the contextual change metadata used by this app. Install the reviewed
+package/app pair together. These instructions are not new native acceptance.
+
+### Requirements
+
+- Python 3.14 and [uv](https://docs.astral.sh/uv/).
+- Node 22.19.0 through [nvm](https://github.com/nvm-sh/nvm), with Corepack.
+- Expo Go compatible with this app's Expo SDK 57, on a phone or simulator.
+- An existing Redis server at `redis://127.0.0.1:6379/15`, or a reviewed replacement
+  in `backend/config/settings_sse.py`. Installing Python's Redis extra does not
+  start a Redis server.
+- For a phone: the computer and phone on the same reachable private network.
+  Development HTTP and the Expo bundle are visible to that network; do not expose
+  them publicly or use demo credentials with real data.
+
+### 1. Install the project dependencies
+
+From the repository root:
+
+```console
+make help
+make setup
+```
+
+This installs the backend dependencies from `backend/uv.lock` and the mobile
+packages from `mobile/yarn.lock`. No database migration or seed runs during setup.
+
+### 2. Prepare a new demo database (fresh checkout only)
+
+**Only use this section for a new, disposable local database.** If you already
+have data or edited HXML templates, use the next section instead.
+
+```console
+make backend-migrate
+make backend-seed
+```
+
+The local seed creates demonstration accounts and data. It can reset demo fields;
+it is not an upgrade command. The development accounts are:
+
+| User | Password | Purpose |
+| --- | --- | --- |
+| `admin` | `admin123` | Local Django Admin superuser. |
+| `demo` | `demo123` | Regular owner with separate tasks and categories. |
+
+### Existing database: update without seeding
+
+After pulling the reviewed package/app pair, run `make setup` to synchronize its
+dependencies. Take a verified backup and review the migration plan before applying
+migrations deliberately. **Do not run `make backend-seed` to upgrade.** It changes
+demo accounts/data and does not replace existing template edits.
+
+The SSE development profile below uses filesystem HXML, leaving stored override
+rows untouched. To use your DB-first profile instead, review its effective HXML
+before enabling realtime; see [database override adoption](#adopt-database-overrides-explicitly).
+Do not run old and new backend/package workers together on the same SSE namespace.
+
+### 3. Start Redis and the SSE backend
+
+Make sure your existing Redis service is running. `make lan-ip` prints a candidate
+computer address; verify that it belongs to the network your phone can reach.
+Replace `192.168.1.20` in **both** terminal commands below with that address.
+
+```console
+make lan-ip
+# Backend terminal, repository root:
+LAN_IP=192.168.1.20 make backend-run-sse
+```
+
+This runs Uvicorn with `config.settings_sse`, not Django's WSGI `runserver`.
+It does not start Redis, migrate the database, seed data or rewrite DB templates.
+The backend serves HXML at `/hv/`, the authenticated stream at `/realtime/events/`
+and Django Admin at `/admin/`. Admin assets are served here only in development.
+The connection subscribes after normal login; opening the stream URL in a browser
+is not an SSE authentication test.
+
+### 4. Open Expo Go
+
+In the second terminal, from the same repository root:
+
+```console
+# Mobile terminal; use the SAME computer address:
+LAN_IP=192.168.1.20 make mobile-start-go
+```
+
+Scan the QR code and open it in Expo Go. This target uses `expo start --go` and
+explicitly permits the local HTTP API; the release HTTPS guard stays enabled.
+Leave both terminals running. Allow the chosen development ports through your
+local firewall only as needed. Stop each command with Ctrl+C when finished.
+
+For a simulator on the same computer, the same two commands work with its
+reachable host address. `make backend-run-sse` without `LAN_IP` binds loopback
+only; a physical phone cannot reach that address. `make mobile-start` and
+`make mobile-start-device` target a **development client**, not Expo Go, and the
+older `backend-run*` targets use WSGI rather than SSE. They are not substitutes
+for this pair.
+
+### 5. Check Admin → Tasks updates
+
+1. In Expo Go, sign in as `demo`, open **Tasks** and keep a visible task on screen.
+2. In a browser, open `http://192.168.1.20:8000/admin/` and sign in as `admin`.
+   Edit the **title** of that same task, preserving its owner, and save normally.
+3. The owner's visible list should update **without** navigation, manual refresh
+   or an injected hint. A small confirmation appears only after the refreshed
+   document has actually rendered. Another account must not receive that task.
+4. Edit a task or profile from the **same device**: its own operation should not
+   produce a change-warning/refresh message. Existing explicit Save feedback stays.
+5. Keep an unsaved draft open, then edit the same record from **another device**
+   signed into the same account (or from Admin). The draft should remain, with an
+   actionable notice. Updating asks before discarding it; closing the notice does
+   not make stale data fresh. An unrelated task must not trigger that form conflict.
+
+These are manual acceptance steps, **not a claim of new native verification**.
+The [contextual-update guide](mobile/docs/realtime-contextual-updates.md) covers
+silent login/resync, stale-route entry, draft races and list limits: preserve the
+loaded prefix and filters up to 20 pages/400 rows; above that, refresh page 1 with
+the same filters. Exact pixel anchoring after removed/resized rows is not promised.
+
+## Realtime configuration
+
+The normal `config.settings` remains DB-template-first with realtime disabled.
+Its complete HYPERVIEW configuration is:
+
+```python
+HYPERVIEW = {
+    "TEMPLATE_DIRS": [BASE_DIR / "hyperview"],
+    "SOURCES": [
+        {
+            "BACKEND": "dj_hyperview.contrib.database.sources.DatabaseSource",
+            "OPTIONS": {"using": "default"},
+        },
+        {"BACKEND": "dj_hyperview.sources.FileSystemSource"},
+    ],
+    "ADMIN": {"EDITOR": True},
+    "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
+    "SCHEMA_EXTENSIONS": schema_extensions(),
+    "REALTIME": None,
+}
+```
+
+`BASE_DIR` and `schema_extensions` are already defined/imported in
+`backend/config/settings.py`. The explicit `config.settings_sse` profile preserves
+this configuration except for filesystem-only `SOURCES` and this transport block:
+
+```python
+HYPERVIEW["REALTIME"] = {
+    "REDIS_URL": "redis://127.0.0.1:6379/15",
+    "NAMESPACE": "hypertodo-development",
+}
+```
+
+Edit that development block if your Redis endpoint differs. The namespace
+identifies this app/environment: Redis PubSub is not isolated by database number.
+This block does not configure CACHE, and the Make variable `REDIS_URL` used by the
+older cache targets does not override it. Authentication, tasks, sessions, CSRF,
+schema extensions and the existing database/cache configuration are preserved.
+
+The development SSE profile **does not read DB override rows as templates,
+rewrite or delete them**. For reviewed DB overrides, preserve the full normal
+mapping, set its `REALTIME` section explicitly, and serve `config.asgi:application`
+with ASGI. Omitted/None disables transport; schema validation remains mandatory.
+Remove the retired top-level `HYPERTODO_REALTIME` even if None; there is no CACHE
+alias adapter. Production static serving belongs to your web server/CDN, not
+Django's DEBUG-only development handler.
+
+The [backend change contract](backend/docs/realtime-changes.md) describes v2
+negotiation and coordinated package/backend adoption. Older a21 deployments use
+v1 fallback without own-operation correlation or entity precision. See also
+[stream configuration](backend/docs/realtime-stream.md),
+[installed-package adoption](backend/docs/installed-adoption.md) and the
+[disposable normal-App fixture](backend/docs/sse-demo-fixture.md).
 
 ## What HyperTodo tests
 
@@ -50,149 +226,9 @@ not intended to be a reusable task-management product.
 
 | Path | Purpose |
 | --- | --- |
-| `backend/` | Django 6.1.1 application using Python 3.14 and dj-hyperview 0.1.0a21. |
+| `backend/` | Django 6.1.1 application using Python 3.14 and dj-hyperview 0.1.0a22. |
 | `mobile/` | Expo 57 host using React Native 0.86 and Hyperview 0.110.0. |
 | `Makefile` | Commands for installing, validating, and running both applications. |
-
-## Quick start
-
-### Requirements
-
-- Python 3.14 and [uv](https://docs.astral.sh/uv/)
-- Node 22.19.0 through [nvm](https://github.com/nvm-sh/nvm)
-- Corepack
-- Expo Go on a physical device, or an iOS/Android simulator
-- Redis when testing optional shared-cache or realtime delivery
-- Redis for SSE; the backend lock includes Uvicorn and dj-hyperview editor/realtime extras
-
-### 1. Prepare the project
-
-Run these commands in a terminal opened at the repository root:
-
-```console
-make help
-make setup
-make backend-migrate
-make backend-seed
-EXPO_PUBLIC_API_URL=https://hypertodo-ci.invalid/hv/ make check
-```
-
-`make setup` installs the locked Python and JavaScript dependencies. The migration
-command prepares the local database, and the seed command creates repeatable demo
-data and publishes the database-template examples. `make check` verifies the
-complete backend and mobile test suites before the app is started.
-
-The development seed provides two local accounts:
-
-| User | Password | Purpose |
-| --- | --- | --- |
-| `admin` | `admin123` | Superuser with access to Django Admin and the HXML editor. |
-| `demo` | `demo123` | Regular user with separate tasks and categories. |
-
-### 2. Start the backend for a physical device
-
-First, obtain the development machine's LAN address from any root terminal:
-
-```console
-make lan-ip
-```
-
-Then start Django in the **backend terminal**, replacing the example address:
-
-```console
-LAN_IP=192.168.1.20 make backend-run-device
-```
-
-### Realtime SSE: configure, then use ASGI
-
-The normal `config.settings` remains DB-template-first with realtime disabled.
-Its complete HYPERVIEW configuration is:
-
-```python
-HYPERVIEW = {
-    "TEMPLATE_DIRS": [BASE_DIR / "hyperview"],
-    "SOURCES": [
-        {
-            "BACKEND": "dj_hyperview.contrib.database.sources.DatabaseSource",
-            "OPTIONS": {"using": "default"},
-        },
-        {"BACKEND": "dj_hyperview.sources.FileSystemSource"},
-    ],
-    "ADMIN": {"EDITOR": True},
-    "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
-    "SCHEMA_EXTENSIONS": schema_extensions(),
-    "REALTIME": None,
-}
-```
-
-For a quick local SSE test **without changing stored template overrides**, use
-`config.settings_sse` through this command:
-
-```console
-# Repository root; defaults to 127.0.0.1:8000.
-make backend-run-sse
-# For a phone, explicitly choose the reachable private interface instead:
-LAN_IP=192.168.1.20 make backend-run-sse
-```
-
-This development profile uses filesystem HXML only; **database override rows are
-not read as templates, rewritten or deleted**. Authentication, tasks, sessions,
-CSRF, schema extensions and the database/cache configuration remain unchanged.
-It enables only this central transport block:
-
-```python
-HYPERVIEW["REALTIME"] = {
-    "REDIS_URL": "redis://127.0.0.1:6379/15",
-    "NAMESPACE": "hypertodo-development",
-}
-```
-
-An existing Redis server must be reachable there. Edit that development block if
-your Redis endpoint differs; its namespace identifies this app/environment because
-Redis PubSub is not isolated by database number. This does not configure CACHE.
-The command uses the locked Uvicorn ASGI server, serves Admin/editor static assets
-only with DEBUG enabled, and never runs migrations or seeds. Production static
-serving remains the responsibility of your web server/CDN. The older
-`make backend-run*` commands still use WSGI and do not serve SSE.
-
-For your own reviewed DB overrides, keep normal `config.settings`, preserve the
-complete schema/source mapping above, and set its `REALTIME` section explicitly.
-Serve `config.asgi:application` with the installed ASGI server. Omitted/None is
-rollback; schema validation stays mandatory. Remove the retired top-level
-`HYPERTODO_REALTIME` even if it was None; no CACHE alias adapter exists.
-
-### Existing database: upgrade is not fresh setup
-
-Update locked dependencies, review migration plans, and back up your own database
-before applying migrations deliberately. **Do not run `make backend-seed` to upgrade.**
-The seed resets demo account/data fields and does not replace existing template
-edits. DB-first overrides continue to win over files: review active HXML for the
-modern realtime boundary/page metadata before enabling the normal profile.
-`check_hyperview_templates --database default` checks identities, not rendered
-HXML or mobile metadata. Any template replacement is an explicit revision-checked
-publication; no automatic rewrite is performed.
-
-See [stream configuration](backend/docs/realtime-stream.md),
-[installed-package adoption](backend/docs/installed-adoption.md) and the
-[disposable normal-App fixture](backend/docs/sse-demo-fixture.md).
-
-### 3. Start Expo Go
-
-In a separate **mobile terminal**, use the same address:
-
-```console
-LAN_IP=192.168.1.20 make mobile-start-go
-```
-
-Scan the QR code with the phone camera and open the project in Expo Go. The phone
-and development machine must be connected to the same reachable local network.
-
-### Simulator alternatives
-
-For an iOS Simulator, run `make backend-run` in the backend terminal and
-`make mobile-start` in the mobile terminal. Use `make mobile-start-android` for
-the Android Emulator. To exercise the existing Redis service, replace the backend
-command with `make backend-run-redis`.
 
 ## Testing database-backed templates
 
@@ -242,10 +278,11 @@ Package documentation is available at
 
 ## Automatic HXML validation
 
-The installed dj-hyperview 0.1.0a21 release enforces one corrected Hyperview schema automatically.
+The installed dj-hyperview 0.1.0a22 release enforces one corrected Hyperview schema automatically.
 HyperTodo configures only the extensions owned by its existing mobile host in
-`backend/config/schema.py`: five custom behaviors and `image.variant` with
-`face`/`fingerprint` values. `backend/schema/hypertodo.xsd` continues to describe
+`backend/config/schema.py`: six custom behaviors, `image.variant` with
+`face`/`fingerprint` values, and the picker-item entity metadata used by contextual
+form updates. `backend/schema/hypertodo.xsd` continues to describe
 app-owned components through `EXTRA_SCHEMAS`. Empty biometric tokens remain valid
 revocations, and fragment targets may reference their host document.
 
@@ -451,7 +488,7 @@ This used only the standalone test fixture, not real app authentication or data.
 Android I/O and the representative native App/auth campaign had not yet run at
 this early checkpoint. Later acceptance is separate from this synthetic result;
 Jest is not native evidence, and no single run proves every action permutation.
-The current candidate uses the real SSE transport described above, without a
+The current application uses the real SSE transport described above, without a
 silent manual-only fallback or an SDK fork. Configuration/source regressions do
 not rerun or upgrade the historical native evidence.
 

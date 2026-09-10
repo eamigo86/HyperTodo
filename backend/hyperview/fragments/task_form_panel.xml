@@ -19,7 +19,7 @@
       <text style="label">{% translate "Category" %}</text>
       <picker-field id="task-category" name="category" value="{{ form.category.value|default:'' }}" field-style="picker-box{% if form.category.errors %} field-invalid{% endif %}" field-text-style="field-text" modal-style="date-modal" modal-overlay-style="date-modal-overlay" modal-text-style="date-modal-action" cancel-label="{% translate "Cancel" %}" done-label="{% translate "Done" %}" placeholder="{% translate "No category" %}" placeholderTextColor="{{ theme.ink_muted }}">
         <picker-item label="{% translate "No category" %}" value="" />
-        {% for option in form.fields.category.queryset %}<picker-item label="{{ option.name }}" value="{{ option.id }}" />{% endfor %}
+        {% for option in form.fields.category.queryset %}<picker-item label="{{ option.name }}" value="{{ option.id }}"{% if realtime_changes %} realtime-entity-key="{{ option.realtime_entity_key }}" realtime-entity-epoch="{{ option.realtime_entity_epoch }}"{% endif %} />{% endfor %}
       </picker-field>
       {% if form.category.errors %}<text style="field-error">{{ form.category.errors|join:', ' }}</text>{% endif %}
     </view>

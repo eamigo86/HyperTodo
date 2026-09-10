@@ -1,4 +1,10 @@
 <list xmlns="https://hyperview.org/hyperview" id="task-list" style="task-list-style" trigger="refresh" shows-scroll-indicator="false">
   <behavior trigger="refresh" href="/hv/tasks/?status={{ status_filter }}{% if selected_category %}&amp;category={{ selected_category.id }}{% endif %}&amp;fragment=list" action="replace" target="task-list" />
+  {% if realtime_prefix_pages %}
+    {% for prefix_page in realtime_prefix_pages %}
+      {% include "partials/task_items.xml" with tasks=prefix_page.object_list page_obj=prefix_page realtime_prefix_render=True realtime_prefix_last=forloop.last %}
+    {% endfor %}
+  {% else %}
   {% include "partials/task_items.xml" %}
+  {% endif %}
 </list>

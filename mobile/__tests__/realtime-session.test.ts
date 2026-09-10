@@ -11,7 +11,7 @@ function deferred<T>(){let resolve!:(value:T)=>void;let reject!:(error:Error)=>v
 const response=(body:string,binding=A,status=200,outcome?:string)=>({status,ok:status>=200&&status<300,redirected:false,url:ORIGIN+"/hv/",headers:new Headers({[H.binding]:binding,...(outcome?{[H.outcome]:outcome}:{}),"X-HyperTodo-Theme":"dark"}),text:jest.fn(async()=>body)}) as unknown as Response;
 const observation=(binding=A,authenticated=true)=>response(JSON.stringify({version:1,authenticated,binding}),binding);
 const tick=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
-function fixture(){
+function fixture(onMutationSeed?: (seed:string,identity:import('../src/realtime/session').Identity)=>void){
  let binding=A;let authenticated=true;let authBody=login;let status=200;let outcome="password-ok";
  const timers:Array<{ms:number;run:()=>void;active:boolean}>=[];
  const clock:SessionClock={schedule:(run,ms)=>{const timer={ms,run,active:true};timers.push(timer);return()=>{timer.active=false;};},sleep:jest.fn(async(_ms:number)=>{})};
@@ -23,7 +23,7 @@ function fixture(){
   return response("<view/>",binding);
  });
  const identity=jest.fn(),theme=jest.fn(),stop=jest.fn();
- const supervisor=createSessionSupervisor({origin:ORIGIN,transport,storage,clock,onIdentity:identity,onTheme:theme,stopStream:stop});
+ const supervisor=createSessionSupervisor({origin:ORIGIN,transport,storage,clock,onIdentity:identity,onTheme:theme,stopStream:stop,onMutationSeed});
  return{supervisor,transport,store,identity,theme,stop,clock,timers,setBinding:(next:string)=>{binding=next;},setAuth:(code:number,tag:string,body:string)=>{status=code;outcome=tag;authBody=body;}};
 }
 
@@ -32,6 +32,24 @@ it("bootstraps only the bounded observation and configures same-origin credentia
  expect(supervisor.snapshot()).toMatchObject({availability:"foreground",identity:{binding:A,authenticated:true,generation:1},rootReady:false});
  const init=transport.mock.calls[0][1];expect(init).toMatchObject({credentials:"include",redirect:"error",cache:"no-store",method:"GET"});expect(new Headers(init.headers).get(H.contract)).toBe("realtime-v1");
  expect(identity).toHaveBeenCalledTimes(1);expect(supervisor.markRootReady(0)).toBe(false);expect(supervisor.markRootReady(1)).toBe(true);
+});
+
+it('delivers negotiated seed only for the published identity and checked ordinary response, with no extra request',async()=>{
+ const seed=jest.fn(),f=fixture(seed),boot=observation();boot.headers.set('X-HyperTodo-Realtime-Features','changes-v2');boot.headers.set('X-HyperTodo-Mutation-Seed','a'.repeat(32));f.transport.mockResolvedValueOnce(boot);
+ await f.supervisor.bootstrap();expect(seed).toHaveBeenCalledWith('a'.repeat(32),f.supervisor.snapshot().identity);
+ expect(new Headers(f.transport.mock.calls[0][1].headers).get('X-HyperTodo-Realtime-Features')).toBe('changes-v2');
+ const next=response('<view/>');next.headers.set('X-HyperTodo-Realtime-Features','changes-v2');next.headers.set('X-HyperTodo-Mutation-Seed','b'.repeat(32));f.transport.mockResolvedValueOnce(next);
+ await f.supervisor.request('/hv/tasks/');expect(seed).toHaveBeenLastCalledWith('b'.repeat(32),f.supervisor.snapshot().identity);expect(f.transport).toHaveBeenCalledTimes(2);
+});
+
+it.each(['foreign','binding','old-generation','no-feature'])('does not admit ordinary seed from %s',async kind=>{
+ const seed=jest.fn(),f=fixture(seed);await f.supervisor.bootstrap();
+ const bad=response('<view/>',kind==='binding'?B:A);bad.headers.set('X-HyperTodo-Mutation-Seed','b'.repeat(32));
+ if(kind!=='no-feature')bad.headers.set('X-HyperTodo-Realtime-Features','changes-v2');
+ if(kind==='foreign')Object.defineProperty(bad,'url',{value:'https://foreign.test/hv/tasks/'});
+ const pending=deferred<Response>();f.transport.mockImplementationOnce(()=>pending.promise);
+ const request=f.supervisor.request('/hv/tasks/');await tick();if(kind==='old-generation')f.supervisor.invalidate();pending.resolve(bad);await request.catch(()=>{});
+ expect(seed).not.toHaveBeenCalled();
 });
 
 it("rejects foreign origins and auth POSTs on the ordinary port before transport",async()=>{

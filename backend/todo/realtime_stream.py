@@ -1,6 +1,7 @@
 """Bounded worker admission and fresh authorization around broker frames."""
 
 import asyncio
+import json
 import logging
 import threading
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
@@ -14,6 +15,7 @@ from .realtime_auth import (
     same_identity,
     topics_for,
 )
+from .realtime_changes import capture_wire_metadata
 
 logger = logging.getLogger(__name__)
 HEARTBEAT = 15.0
@@ -95,26 +97,43 @@ class Admissions:
 admissions = Admissions()
 
 
-def _event(value: object) -> dict[str, object]:
+def _event(value: object, *, changes_v2: bool = False) -> dict[str, object]:
     if not isinstance(value, Mapping) or set(value) != {"event", "data"}:
         raise ValueError("invalid-realtime-event")
     name, data = value["event"], value["data"]
-    if (
-        not isinstance(data, Mapping)
-        or type(data.get("version")) is not int
-        or data["version"] != 1
-    ):
+    if not isinstance(data, Mapping) or type(data.get("version")) is not int:
         raise ValueError("invalid-realtime-event")
-    if name in {"resync", "auth-required"} and set(data) == {"version"}:
+    version = data["version"]
+    if (
+        name in {"resync", "auth-required"}
+        and set(data) == {"version"}
+        and version == 1
+    ):
         return {"event": name, "data": {"version": 1}}
-    if name == "invalidate" and set(data) == {"version", "resources"}:
+    expected = {"version", "resources"}
+    if version == 2:
+        expected |= {"mutation_id", "entities"}
+    if name == "invalidate" and version in (1, 2) and set(data) == expected:
         resources = data["resources"]
         if (
             isinstance(resources, list)
             and resources
             and resources == [r for r in _RESOURCES if r in resources]
         ):
-            return {"event": name, "data": {"version": 1, "resources": list(resources)}}
+            metadata = capture_wire_metadata(data) if version == 2 else {}
+            result = {"version": version, "resources": list(resources), **metadata}
+            if (
+                len(
+                    json.dumps(
+                        result, separators=(",", ":"), ensure_ascii=True
+                    ).encode()
+                )
+                > 4096
+            ):
+                raise ValueError("invalid-realtime-event")
+            if not changes_v2:
+                result = {"version": 1, "resources": list(resources)}
+            return {"event": name, "data": result}
     raise ValueError("invalid-realtime-event")
 
 
@@ -129,6 +148,7 @@ class OwnedStream:
         fresh: Callable[[str], Awaitable[Identity | None]],
         heartbeat: float,
         lifetime: float,
+        changes_v2: bool = False,
     ) -> None:
         """Capture acquired resources and their finite connection deadline.
 
@@ -139,7 +159,9 @@ class OwnedStream:
             fresh: Session resolver called before every frame.
             heartbeat: Comment interval.
             lifetime: Maximum connection lifetime.
+            changes_v2: Exact negotiated presentation feature, never authority.
         """
+        self.changes_v2 = changes_v2
         self.access = access
         self.subscription = subscription
         self.admission = admission
@@ -168,7 +190,7 @@ class OwnedStream:
                 value = await asyncio.wait_for(
                     self._read, min(remaining, self.heartbeat)
                 )
-                event = _event(value)
+                event = _event(value, changes_v2=self.changes_v2)
             except TimeoutError:
                 event = None
             if asyncio.get_running_loop().time() >= self.deadline:
@@ -222,6 +244,7 @@ async def open_stream(
     fresh: Callable[[str], Awaitable[Identity | None]] = fresh_identity_async,
     heartbeat: float = HEARTBEAT,
     lifetime: float = LIFETIME,
+    changes_v2: bool = False,
 ) -> OwnedStream:
     """Acquire ACKed broker ownership then recheck auth before response creation.
 
@@ -232,6 +255,7 @@ async def open_stream(
         fresh: Fresh session resolver; injectable only for controller tests.
         heartbeat: Comment interval in seconds.
         lifetime: Finite connection lifetime in seconds.
+        changes_v2: Exact negotiated presentation feature; default projects v1.
 
     Returns:
         Owned iterator with an explicit idempotent cleanup callback.
@@ -246,7 +270,7 @@ async def open_stream(
             broker.subscribe(topics_for(access.identity)), BROKER_TIMEOUT
         )
         stream = OwnedStream(
-            access, subscription, admission, fresh, heartbeat, lifetime
+            access, subscription, admission, fresh, heartbeat, lifetime, changes_v2
         )
         actual = await fresh(access.session_key)
         if actual is None:

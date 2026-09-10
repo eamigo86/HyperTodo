@@ -1,4 +1,4 @@
-import { createStreamDecoder } from './stream-protocol';
+import { CHANGE_HEADERS, createStreamDecoder, type ResourceChange } from './stream-protocol';
 import { SESSION_HEADERS as H, validBinding } from './session-protocol';
 import type { ResourceName } from './resources';
 
@@ -8,7 +8,9 @@ export type StreamOwner = Readonly<{
   binding:string;
   /** Must check authenticated identity, generation, foreground and actual Root readiness. */
   isCurrent():boolean;
-  receive(resources:readonly ResourceName[],cause:'invalidate'|'resync'):boolean;
+  receive(resources:readonly ResourceName[],cause:'invalidate'|'resync',change?:ResourceChange):boolean;
+  /** Only a current, same-origin, binding-validated negotiated response reaches this port. */
+  onMutationSeed?(seed:string):void;
   onAuthRequired():void;
 }>;
 type Ports = {origin:string; fetch(url:string,init:RequestInit):Promise<Response>; clock?:StreamClock};
@@ -79,7 +81,7 @@ export function createEventStream(ports:Ports) {
     try {
       const response=await ports.fetch(endpoint,{
         method:'GET',credentials:'include',redirect:'error',cache:'no-store',signal:value.controller.signal,
-        headers:{Accept:'text/event-stream',Origin:origin.origin,'Cache-Control':'no-store',[H.contract]:'realtime-v1',[H.expected]:value.owner.binding},
+        headers:{Accept:'text/event-stream',Origin:origin.origin,'Cache-Control':'no-store',[H.contract]:'realtime-v1',[H.expected]:value.owner.binding,[CHANGE_HEADERS.features]:'changes-v2'},
       });
       if(!owns(value)){cancelBody(response);close(value);return;}
       if(response.redirected || !response.url || new URL(response.url).toString()!==endpoint) {
@@ -93,6 +95,9 @@ export function createEventStream(ports:Ports) {
         cancelBody(response);retry(value);return;
       }
       activity(value);
+      const changesV2=response.headers.get(CHANGE_HEADERS.features)==='changes-v2';
+      const seed=response.headers.get(CHANGE_HEADERS.seed);
+      if(changesV2&&seed&&/^[a-f0-9]{32}$/.test(seed)&&owns(value))value.owner.onMutationSeed?.(seed);
       value.reader=response.body.getReader();
       const decoder=createStreamDecoder(event=>{
         if(!owns(value))return;
@@ -100,8 +105,9 @@ export function createEventStream(ports:Ports) {
         if(event.type==='resync') {
           failures=0;
           value.owner.receive(ALL_RESOURCES,'resync');
-        } else value.owner.receive(event.resources,'invalidate');
-      });
+        } else if(event.change)value.owner.receive(event.resources,'invalidate',event.change);
+        else value.owner.receive(event.resources,'invalidate');
+      },{changesV2});
       while(owns(value)) {
         const result=await value.reader.read();
         if(!owns(value)){close(value);return;}

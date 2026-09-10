@@ -1,6 +1,6 @@
 # After-commit realtime notifications
 
-**Configured Task and Category changes publish private invalidations after commit.**
+**Configured Task, Category and profile presentation changes publish private invalidations after commit.**
 Normal ORM/Admin changes use the public package `RedisBroker`; disabled settings
 leave notification observers inactive. Mandatory HXML validation, authorization and existing responses
 are unchanged. No Redis import or connection occurs during application startup.
@@ -37,6 +37,7 @@ Invalidations are hints, not durable events: reconnect/resync reconciles state.
 | Task create/save/delete, including ordinary services and Admin | Persisted old/new owner on actual database alias | `tasks` |
 | Category create/save, including Admin ownership transfer | Persisted old/new category owner and existing referenced Task owners | `categories` |
 | Category delete, including Admin delete-selected | Category owner and referenced Task owners captured **before** `SET_NULL` | `tasks`, `categories` |
+| User first/last name/email and Profile theme/language/avatar persisted changes | Only actual old/new profile owner; no auth-only hints | `ui` |
 | Public package `TemplateInvalidation` after commit | Server-selected shared UI topic for `event.using` | `ui` |
 
 `update_fields`, including generators normalized by Django, never promotes an
@@ -56,8 +57,10 @@ Package template events are already after commit and are consumed directly;
 this works with package cache disabled. Registration is idempotent and does not
 require the optional database-template application when it is not installed.
 
-Public payloads contain only `{"version":1,"resources":[...]}` in canonical
-`tasks`, `categories`, `ui` order. Internal database routing, primary keys,
+Legacy public payloads contain only `{"version":1,"resources":[...]}` in canonical
+`tasks`, `categories`, `ui` order. The pinned a22 package adds negotiated
+opaque origin/entity metadata with explicit v1 projection at the endpoint; see
+[contextual changes](realtime-changes.md) for exact fields and deployment limits. Internal database routing, primary keys,
 template names/content and Redis configuration never enter those payloads.
 The broker and [SSE controller](realtime-stream.md) own authentication, subscription
 ACK, limits, reconnect/resync and transport cleanup. Exactly one initial resync
@@ -77,5 +80,5 @@ its admission on disconnect. Ordered resync barriers test isolation without slee
 Run Redis acceptance explicitly with `HYPERTODO_REDIS_INTEGRATION=1` and
 `HYPERTODO_REDIS_TEST_URL=redis://127.0.0.1:6379/14`. Tests generate unique namespaces,
 close subscriptions and never flush Redis. SQLite is test-owned; no live database,
-data migration, package installation or native run is involved. The focused
-checkpoint is 44 passes (42 intent controls and 2 real-Redis tests), not a full matrix.
+data migration, package installation or native run is involved. The historical focused
+checkpoint was 44 passes (42 intent controls and 2 real-Redis tests), not a full matrix.

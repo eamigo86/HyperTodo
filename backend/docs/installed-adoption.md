@@ -1,11 +1,17 @@
 # Run the published package, without source-path shortcuts
 
-**Use the locked `dj-hyperview[editor,realtime]==0.1.0a21` and Uvicorn in the selected environment.**
+**Use the locked `dj-hyperview[editor,realtime]==0.1.0a22` and Uvicorn in the selected environment.**
 No local package checkout, source METADATA fixture or appended Python environment is needed for normal HyperTodo.
+
+This published package provides both invalidation wire versions `(1, 2)`. The
+matching backend and mobile host negotiate contextual v2 metadata; old clients
+still receive v1. Upgrade/roll back the package and backend workers together,
+without mixing old a21 Redis readers and v2 producers in the same namespace.
 
 ## Development startup
 
-The README shows the complete HYPERVIEW mapping first. `make backend-run-sse` selects
+Start with the README's two-terminal SSE/Expo Go walkthrough; the complete
+HYPERVIEW mapping follows it. `make backend-run-sse` selects
 `config.settings_sse`: filesystem templates, central realtime Redis15/namespace
 `hypertodo-development`, normal auth/DB/cache/schema. It never modifies stored
 DB-template rows. Plain settings remain DB-first with realtime disabled.
@@ -45,7 +51,7 @@ This check creates and removes its own synthetic users/data. It is not a native 
 never starts Redis or changes DNS, and does not inspect existing accounts or credentials.
 Reports contain no passwords/tokens. Serving is a separate explicit finite action,
 with exact bind/port and a maximum600-second lifetime. Historical machine-specific
-native evidence is not a reproducible installed-package command or a21 native proof.
+native evidence is not a reproducible installed-package command or new-version native proof.
 
 ## Verification
 

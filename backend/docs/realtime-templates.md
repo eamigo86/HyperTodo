@@ -6,7 +6,12 @@ resource coordinator. Backend rendering tests alone are not native delivery
 evidence. Requests without the client contract retain legacy
 behaviors, forms, styles and response shapes.
 
-## Contract
+For the negotiated `changes-v2` form/readonly modes, entity dependencies and bounded
+full-document pages1–N refresh, see [contextual changes](realtime-changes.md).
+The list/notice rules below describe the preserved v1 fallback, not the new v2
+policy. Neither backend rendering result is new native acceptance.
+
+## Version-one contract
 
 The existing session guard must accept `X-HyperTodo-Client-Contract: realtime-v1`
 and the expected session binding first. Rendering uses its request-owned marker,

@@ -1,12 +1,13 @@
 import {createSessionEffects,type EffectResult,type StorageQueue} from "./session-effects";
 import {classifyAuth,parseAuthBody,parseObservation,validBinding,utf8Bytes,SESSION_HEADERS as H,type AuthBody,type AuthKind,type Observation} from "./session-protocol";
+import {CHANGE_HEADERS} from './stream-protocol';
 
 export type SessionClock={schedule(callback:()=>void,ms:number):()=>void;sleep(ms:number):Promise<void>};
 export type Identity=Readonly<Observation & {generation:number}>;
 type Availability="foreground"|"paused"|"auth-pending"|"uncertain";
 type Reason="bootstrap-required"|"network-uncertain"|"identity-mismatch"|"invalid-response"|"storage-failed"|"revoked"|null;
 export type AuthResult={kind:"transition";identity:Identity;storage:EffectResult|null}|{kind:"panel"|"refused";status:number;body:string;receipt:object}|{kind:"held"|"busy"|"uncertain"|"stale"};
-export type SessionPorts={origin:string;transport(url:string,init:RequestInit):Promise<Response>;storage:StorageQueue;clock?:SessionClock;stopStream():void;onIdentity(identity:Identity|null):void;onTheme(theme:string|null):void;onLanguage?(language:string|null):void};
+export type SessionPorts={origin:string;transport(url:string,init:RequestInit):Promise<Response>;storage:StorageQueue;clock?:SessionClock;stopStream():void;onIdentity(identity:Identity|null):void;onTheme(theme:string|null):void;onLanguage?(language:string|null):void;onMutationSeed?(seed:string,identity:Identity):void};
 export type RecoveryHandle=Readonly<{
   isAlive():boolean;isCurrent():boolean;
   fetch(input:string,init?:RequestInit):Promise<Response>;
@@ -36,6 +37,14 @@ export function createSessionSupervisor(ports:SessionPorts) {
   const listeners=new Set<()=>void>();
   const receipts=new WeakMap<object,{generation:number;result:Promise<EffectResult>}>();
   const nativeEffects=new Set<Promise<EffectResult>>();
+  const observationSeeds=new WeakMap<Observation,string>();
+  const seedFrom=(response:Response)=>{
+    const seed=response.headers.get(CHANGE_HEADERS.seed);
+    return response.headers.get(CHANGE_HEADERS.features)==='changes-v2'&&seed&&/^[a-f0-9]{32}$/.test(seed)?seed:null;
+  };
+  function publishSeed(seed:string|null|undefined,owner:Identity){
+    if(seed&&identity===owner&&generation===owner.generation&&active&&availability==='foreground')try{ports.onMutationSeed?.(seed,owner);}catch{/* Correlation cannot change session authority. */}
+  }
   const snapshot=()=>Object.freeze({identity,observedBinding,availability,reason,generation,rootReady});
   const notify=()=>{for(const listener of listeners)listener();};
   const stop=()=>{try{ports.stopStream();}catch{/* Stream failure cannot grant admission. */}};
@@ -55,6 +64,7 @@ export function createSessionSupervisor(ports:SessionPorts) {
     // Only immutable strings enter its queue; files require a separate contract.
     if(init.body!==undefined&&init.body!==null&&typeof init.body!=="string")throw new Error("unsupported-request-body");
     const headers=new Headers(init.headers);headers.set(H.contract,"realtime-v1");
+    headers.set(CHANGE_HEADERS.features,'changes-v2');
     if(expected)headers.set(H.expected,expected);else headers.delete(H.expected);
     if(!headers.has("Origin"))headers.set("Origin",origin);
     if(!headers.has("Accept"))headers.set("Accept","application/vnd.hyperview+xml");
@@ -76,7 +86,10 @@ export function createSessionSupervisor(ports:SessionPorts) {
       const response=await ports.transport(origin+"/hv/session-state/",options({method:"GET",signal:controller.signal,headers:{Accept:"application/json",...(neutral?{"X-HyperTodo-Recovery":"login-v1"}:{})}}));
       if(expired)throw new Error("confirmation-timeout");validResponse(response);
       if(response.status!==200)throw new Error("invalid-observation-status");
-      const body=await response.text();if(expired)throw new Error("confirmation-timeout");return parseObservation(body,response.headers);
+      const body=await response.text();if(expired)throw new Error("confirmation-timeout");
+      const result=parseObservation(body,response.headers),seed=seedFrom(response);
+      if(seed)observationSeeds.set(result,seed);
+      return result;
     };
     try{return await Promise.race([load(),timeout]);}finally{cancel();}
   }
@@ -95,6 +108,7 @@ export function createSessionSupervisor(ports:SessionPorts) {
     generation+=1;identity=Object.freeze({...observation,generation});everConfirmed=true;rootReady=false;observedBinding=observation.binding;
     availability=active?"foreground":"paused";reason=null;
     try{ports.onIdentity(identity);}catch{protect("invalid-response");}
+    publishSeed(observationSeeds.get(observation),identity);
     notify();return identity;
   }
   async function reconcile(resume:boolean):Promise<AuthResult>{
@@ -103,7 +117,7 @@ export function createSessionSupervisor(ports:SessionPorts) {
     if(captured!==generation)return{kind:"stale"};
     if(!result){protect("network-uncertain");return{kind:"uncertain"};}
     if(!expected||result.binding!==expected){invalidate();reason="identity-mismatch";notify();return{kind:"uncertain"};}
-    if(resume&&active&&!auth){availability="foreground";reason=null;notify();}
+    if(resume&&active&&!auth){availability="foreground";reason=null;if(identity)publishSeed(observationSeeds.get(result),identity);notify();}
     return{kind:resume&&active&&!auth?"held":"uncertain"};
   }
   async function failAuth(op:AuthOperation,why:Reason):Promise<AuthResult>{
@@ -199,6 +213,7 @@ export function createSessionSupervisor(ports:SessionPorts) {
     if(!owned()||availability!=="foreground"||auth)throw new Error("session-unavailable");
     ports.onTheme(response.headers.get("X-HyperTodo-Theme"));
     if(owned()&&availability==="foreground"&&!auth)ports.onLanguage?.(response.headers.get("Content-Language"));
+    if(owned()&&availability==='foreground'&&!auth)publishSeed(seedFrom(response),owner);
     return new Proxy(response,{get(target,property){
       if(property==="text")return async()=>{
         await waitPaused(owned);

@@ -13,7 +13,7 @@ async function fixture(){
  let doc=new DOMParser().parseFromString(`<doc xmlns="${NS}"><screen><body><view id="available" hide="true"><switch value="off"/></view><view id="token" hide="true"><image variant="face" hide="true"/><image variant="fingerprint" hide="true"/></view><form><text-field id="field" value=""/><image id="preview" hide="true"/><view id="current"/><behavior id="source" target="field" available-target="available" token-target="token" preview-target="preview" current-target="current"/></form></body></screen></doc>`,"application/xml") as Document;
  const element=doc.getElementById("source")!;let alive=true,focused=true;const getRoot=()=>doc,updateRoot=jest.fn((next:Document)=>{doc=next;});
  const submit=jest.fn((_token:string)=>true);let receipt:object|null=null;let settings=false;
- const source={isAlive:()=>alive,sourceIsCurrent:()=>alive&&focused,onUpdate:jest.fn(),effectReceipt:()=>receipt,bindBiometricSubmit:jest.fn(()=>submit)};
+ const source={isAlive:()=>alive,sourceIsCurrent:()=>alive&&focused,onUpdate:jest.fn(),effectReceipt:()=>receipt,bindBiometricSubmit:jest.fn(()=>submit),markDraftEdit:jest.fn()};
  const native={hasHardware:jest.fn(async()=>true),isEnrolled:jest.fn(async()=>true),supportedTypes:jest.fn(async()=>[2]),readToken:jest.fn(async()=>"credential" as string|null),unlock:jest.fn(async()=>({success:true})),pick:jest.fn(async()=>({canceled:false,uri:"file://synthetic"})),render:jest.fn(async(_uri:string)=>({saveAsync:async()=>({base64:"YWJj"})})),save:jest.fn(async()=>({base64:"YWJj"})),platform:"ios" as const};
  const notice=jest.fn(),notifyResources=jest.fn();const bindSource=jest.fn(()=>source);
  const behaviors=createOwnedBehaviors({supervisor,native:native as OwnedNativePorts,bindSource,isSettingsClear:()=>settings,notice,notifyResources});
@@ -67,6 +67,13 @@ it.each(["hasHardware","isEnrolled","readToken","supportedTypes"] as const)("sto
 
 it("prepares an avatar draft but never persists or posts it",async()=>{
  const f=await fixture();await f.run("pick-avatar");expect(f.doc().getElementById("field")!.getAttribute("value")).toBe("YWJj");expect(f.doc().getElementById("preview")!.getAttribute("source")).toBe("data:image/jpeg;base64,YWJj");expect(f.doc().getElementById("current")!.getAttribute("hide")).toBe("true");expect(f.notice).toHaveBeenCalledWith({message:"Photo ready. Tap Save settings to keep it.",tone:"success"});expect(f.updateRoot).toHaveBeenCalledTimes(1);expect(f.transport).toHaveBeenCalledTimes(1);expect(f.save).not.toHaveBeenCalled();
+});
+
+it('marks the live avatar field before a real value edit, not for identical picker output',async()=>{
+ const f=await fixture(),seen:string[]=[];
+ f.source.markDraftEdit.mockImplementation((field:Element)=>{seen.push(field.getAttribute('value')!);});
+ await f.run('pick-avatar');expect(seen).toEqual(['']);expect(f.source.markDraftEdit).toHaveBeenCalledTimes(1);
+ await f.run('pick-avatar');expect(f.source.markDraftEdit).toHaveBeenCalledTimes(1);
 });
 
 it.each(["pick","render","save"] as const)("discards picker work when source loses focus during %s",async(stage)=>{

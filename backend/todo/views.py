@@ -30,6 +30,7 @@ from django.views.decorators.vary import vary_on_headers
 from .context_processors import THEME_COOKIE, THEME_COOKIE_MAX_AGE
 from .forms import AvatarForm, CategoryForm, LoginForm, ProfileForm, TaskForm
 from .models import Category, Profile, Task
+from .realtime_changes import negotiated
 from .realtime_templates import realtime_context
 from .recovery import is_recovery, neutral_render_context
 from .selectors import (
@@ -85,6 +86,34 @@ def _paginate(queryset: QuerySet, raw_page: str) -> Page:
         PageNotAnInteger: If the page value is not an integer.
     """
     return Paginator(queryset, PAGE_SIZE).page(raw_page)
+
+
+def _paginate_request(
+    queryset: QuerySet, request: HttpRequest
+) -> tuple[Page, tuple[Page, ...]]:
+    """Rebuild a bounded loaded prefix only for a negotiated document refresh."""
+    through = request.GET.get("through_page")
+    if through is None:
+        return _paginate(queryset, request.GET.get("page", "1")), ()
+    if (
+        not getattr(request, "hv_realtime_v1", False)
+        or not negotiated(request)
+        or through not in {str(n) for n in range(1, 21)}
+        or len(request.GET.getlist("through_page")) != 1
+        or "page" in request.GET
+        or request.GET.get("fragment") not in {None, "list"}
+    ):
+        raise PageNotAnInteger
+    paginator = Paginator(queryset, PAGE_SIZE)
+    target = min(int(through), paginator.num_pages)
+    rows = list(queryset[: target * PAGE_SIZE])
+    # A deletion between count and read must not manufacture an empty tail marker.
+    target = min(target, max(1, (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE))
+    pages = tuple(
+        Page(rows[(n - 1) * PAGE_SIZE : n * PAGE_SIZE], n, paginator)
+        for n in range(1, target + 1)
+    )
+    return pages[-1], pages
 
 
 def _template_response(
@@ -960,14 +989,15 @@ def task_list(request: HttpRequest) -> HttpResponse:
     if fragment not in templates:
         return _error_response(request, _("Unknown task-list fragment."), 400)
     try:
-        page_obj = _paginate(
+        page_obj, prefix_pages = _paginate_request(
             tasks_for_user(request.user, status=status_filter, category=category),
-            request.GET.get("page", "1"),
+            request,
         )
     except EmptyPage, PageNotAnInteger:
         return _error_response(request, _("Unknown task-list page."), 400)
     context = {
         "tasks": page_obj.object_list,
+        "realtime_prefix_pages": prefix_pages,
         "categories": Category.objects.filter(user=request.user),
         "status_filter": status_filter,
         "selected_category": category,
@@ -1144,11 +1174,11 @@ def category_list(request: HttpRequest) -> HttpResponse:
     if fragment not in templates:
         return _error_response(request, _("Unknown category-list fragment."), 400)
     try:
-        page_obj = _paginate(
+        page_obj, prefix_pages = _paginate_request(
             Category.objects.filter(user=request.user)
             .annotate(task_count=Count("tasks"))
             .order_by("name"),
-            request.GET.get("page", "1"),
+            request,
         )
     except EmptyPage, PageNotAnInteger:
         return _error_response(request, _("Unknown category-list page."), 400)
@@ -1157,6 +1187,7 @@ def category_list(request: HttpRequest) -> HttpResponse:
         templates[fragment],
         {
             "categories": page_obj.object_list,
+            "realtime_prefix_pages": prefix_pages,
             "page_obj": page_obj,
             "swipe_actions": _supports_swipe_actions(request),
         },

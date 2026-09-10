@@ -8,6 +8,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpRe
 from django.utils.cache import patch_vary_headers
 
 from .realtime_auth import RealtimeDenied, authorize
+from .realtime_changes import mark_changes_response, negotiated
 from .realtime_config import RealtimeConfig
 from .realtime_stream import Broker, open_stream
 from .session_contract import (
@@ -48,10 +49,14 @@ async def events(request: HttpRequest) -> HttpResponse | StreamingHttpResponse:
     stream = None
     try:
         access = await authorize(request)
-        stream = await open_stream(access, _broker(access.config))
+        stream = await open_stream(
+            access, _broker(access.config), changes_v2=negotiated(request)
+        )
         response = sse_response(stream, aclose=stream.aclose)
         response[SESSION_BINDING_HEADER] = access.identity.binding
         response["Cache-Control"] = "no-store, no-transform"
+        request.hv_realtime_v1 = True  # authorize() has verified the existing contract.
+        mark_changes_response(request, response)
         patch_vary_headers(
             response,
             ["Cookie", "Origin", CLIENT_CONTRACT_HEADER, EXPECTED_SESSION_HEADER],

@@ -83,6 +83,14 @@ binder must belong to that same live node and gate. GET, other URLs/statuses,
 forged source objects, paused/retired identities and unrelated empty tokens fail.
 The factory retains its per-node exactly-once ledger.
 
+Contextual draft protection holds a destructive ordinary POST response before its
+public swap when later input exists. Its Settings-clear capability is not delivered
+until owned discard consent and the existing retention checks permit that same
+source. Logout/replacement abandons it without another POST. A 422 cannot acquire
+the status-200 credential-clear capability. A complete-form saved baseline resets
+only after matching layout with an unchanged revision/snapshot; other drafts stay
+protected. See [contextual updates](realtime-contextual-updates.md).
+
 ## Pause and ownership are not logout
 
 A retained pause denies new actions/refreshes and native continuations, without

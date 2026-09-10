@@ -7,6 +7,12 @@ from dataclasses import dataclass
 
 from django.db import transaction
 
+from .realtime_changes import (
+    EntitySet,
+    capture_entities,
+    current_mutation,
+    supports_changes,
+)
 from .realtime_config import RealtimeConfig, get_realtime_config
 
 logger = logging.getLogger(__name__)
@@ -53,15 +59,24 @@ class Notification:
     using: str
     topics: tuple[str, ...]
     resources: tuple[str, ...]
+    version: int = 1
+    mutation_id: str | None = None
+    entities: EntitySet | None = None
 
     @property
     def payload(self) -> dict[str, object]:
         """Return a fresh public wire payload without routing metadata.
 
         Returns:
-            Version and canonical resources only.
+            Canonical resources and negotiated opaque change metadata.
         """
-        return {"version": 1, "resources": list(self.resources)}
+        data = {"version": self.version, "resources": list(self.resources)}
+        if self.version == 2:
+            data.update(
+                mutation_id=self.mutation_id,
+                entities=self.entities.payload if self.entities else None,
+            )
+        return data
 
 
 def _publish(config: RealtimeConfig, intent: Notification) -> None:
@@ -89,6 +104,7 @@ def notify_after_commit(
     owners: Iterable[object],
     resources: Iterable[str],
     config: RealtimeConfig | None = None,
+    entities: Iterable[tuple[str, object]] | None = None,
 ) -> None:
     """Capture immutable private routing and defer delivery on the actual alias.
 
@@ -97,6 +113,7 @@ def notify_after_commit(
         owners: Persisted old/new and related task owners.
         resources: Known coarse resource names.
         config: Configuration already captured by the mutation receiver.
+        entities: Server-selected resource/model-key pairs; unknown stays broad.
 
     Raises:
         ValueError: If a caller supplies unknown or empty resources.
@@ -110,8 +127,18 @@ def notify_after_commit(
     topics = tuple(sorted({private_topic(using, owner) for owner in owners}))
     if not topics:
         return
+    precision = capture_entities(using, entities)
+    if precision is not None and any(
+        resource not in selected for resource, _ in precision.items
+    ):
+        precision = None
     intent = Notification(
-        using, topics, tuple(r for r in _RESOURCE_ORDER if r in selected)
+        using,
+        topics,
+        tuple(r for r in _RESOURCE_ORDER if r in selected),
+        version=2 if supports_changes() else 1,
+        mutation_id=current_mutation(),
+        entities=precision,
     )
     transaction.on_commit(lambda: _deliver(config, intent), using=using)
 

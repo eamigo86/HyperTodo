@@ -1,6 +1,7 @@
 """Scoped real Redis/ORM/Admin/SSE acceptance, never a shared-key flush."""
 
 import asyncio
+import json
 import os
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from django.urls import reverse
 
 from tests.test_session_contract import _confirm
 from todo.models import Task
+from todo.realtime_changes import capture_entities, supports_changes
 from todo.realtime_notifications import private_topic
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.redis]
@@ -98,7 +100,20 @@ def test_admin_commit_targets_a_not_b_or_other_namespace(
                 admin_client, task, "SSE committed title"
             )
             assert response.status_code == 302
-            assert await asyncio.wait_for(anext(a), 2) == INVALIDATE
+            expected = INVALIDATE
+            if supports_changes():
+                expected = {
+                    "event": "invalidate",
+                    "data": {
+                        "version": 2,
+                        "resources": ["tasks"],
+                        "mutation_id": None,
+                        "entities": capture_entities(
+                            "default", [("tasks", task.pk)]
+                        ).payload,
+                    },
+                }
+            assert await asyncio.wait_for(anext(a), 2) == expected
             # Same publisher order, not a sleep-based absence assertion.
             await sync_to_async(broker.publish_after_commit, thread_sensitive=True)(
                 RESYNC, [private_topic("default", other_user.pk)], using="default"
@@ -119,8 +134,9 @@ def test_admin_commit_targets_a_not_b_or_other_namespace(
     async_to_sync(run)()
 
 
+@pytest.mark.parametrize("changes_v2", [False, True])
 def test_real_asgi_stream_receives_admin_change_and_releases(
-    user, admin_client, client, settings, realtime_redis
+    user, admin_client, client, settings, realtime_redis, changes_v2
 ):
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": None}
     task = Task.objects.create(user=user, title="Before")
@@ -177,14 +193,30 @@ def test_real_asgi_stream_receives_admin_change_and_releases(
                 (b"x-hypertodo-expected-session", binding.encode()),
             ],
         }
+        if changes_v2:
+            scope["headers"].append((b"x-hypertodo-realtime-features", b"changes-v2"))
         await asyncio.wait_for(
             realtime_asgi(get_asgi_application())(scope, queue.get, send), 6
         )
         assert sent[0]["status"] == 200
-        assert frames == [
-            b'event: resync\ndata: {"version":1}\n\n',
-            b'event: invalidate\ndata: {"version":1,"resources":["tasks"]}\n\n',
-        ]
+        if changes_v2 and supports_changes():
+            assert (
+                len(frames) == 2
+                and frames[0] == b'event: resync\ndata: {"version":1}\n\n'
+            )
+            assert json.loads(frames[1].split(b"data: ", 1)[1]) == {
+                "version": 2,
+                "resources": ["tasks"],
+                "mutation_id": None,
+                "entities": capture_entities("default", [("tasks", task.pk)]).payload,
+            }
+            headers = {key.lower(): value for key, value in sent[0]["headers"]}
+            assert len(headers[b"x-hypertodo-mutation-seed"]) == 32
+        else:
+            assert frames == [
+                b'event: resync\ndata: {"version":1}\n\n',
+                b'event: invalidate\ndata: {"version":1,"resources":["tasks"]}\n\n',
+            ]
         assert admissions.total == 0
 
     async_to_sync(run)()

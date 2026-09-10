@@ -61,7 +61,14 @@ def test_services_publish_only_after_commit(
     assert event.using == "default"
     assert event.topics == (private_topic("default", user.pk),)
     assert event.resources == ("tasks",)
-    assert event.payload == {"version": 1, "resources": ["tasks"]}
+    from todo.realtime_changes import capture_entities
+
+    assert event.payload == {
+        "version": 2,
+        "resources": ["tasks"],
+        "mutation_id": None,
+        "entities": capture_entities("default", [("tasks", task.pk)]).payload,
+    }
     assert str(task.pk) not in json.dumps(event.payload)
     assert "Private" not in repr(event)
     with pytest.raises(FrozenInstanceError):

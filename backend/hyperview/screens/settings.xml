@@ -118,7 +118,7 @@
     <style id="nav-add-symbol" color="{{ theme.on_brand }}" fontSize="29" fontWeight="400" lineHeight="31" />
   </styles>
     <body style="screen">
-      {% if realtime_enabled %}<app:realtime xmlns:app="https://hypertodo.app/components" resources="{{ realtime_resources }}" refresh-href="{{ realtime_refresh_href }}" target="{{ realtime_target }}" mode="{{ realtime_mode }}"><app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
+      {% if realtime_enabled %}<app:realtime xmlns:app="https://hypertodo.app/components" resources="{{ realtime_resources }}" refresh-href="{{ realtime_refresh_href }}" target="{{ realtime_target }}" mode="{{ realtime_mode }}"{% if realtime_entities %} entities="{{ realtime_entities }}"{% endif %}><app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
       {% include "partials/screen_header.xml" with header_title=_("Settings") back_id="settings-back" %}
       <view id="screen-content" style="screen-content-style" scroll="true" shows-scroll-indicator="false" content-container-style="screen-content-inner" keyboard-dismiss-mode="on-drag">
         <!-- A sign-in or sign-out reached from a modal on top of this screen leaves

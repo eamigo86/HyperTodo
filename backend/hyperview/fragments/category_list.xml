@@ -1,4 +1,10 @@
 <list xmlns="https://hyperview.org/hyperview" id="category-list" style="category-list-style" trigger="refresh" shows-scroll-indicator="false">
   <behavior trigger="refresh" href="/hv/categories/?fragment=list" action="replace" target="category-list" />
+  {% if realtime_prefix_pages %}
+    {% for prefix_page in realtime_prefix_pages %}
+      {% include "partials/category_items.xml" with categories=prefix_page.object_list page_obj=prefix_page realtime_prefix_render=True realtime_prefix_last=forloop.last %}
+    {% endfor %}
+  {% else %}
   {% include "partials/category_items.xml" %}
+  {% endif %}
 </list>

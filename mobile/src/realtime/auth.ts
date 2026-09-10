@@ -10,7 +10,7 @@ export type Outcome = "ack" | "no-document" | "error" | "cancelled" | "dropped";
 export type TerminalReason = "owner-unavailable" | "sync-drop" | "sync-replaced" | "sdk-on-end" | "once" | "missing-target" | "removed-delayed-origin" | "missing-local-source" | "parser-no-op" | "empty-response" | "request-error" | "local-layout" | "remote-layout" | "caller-error" | "uncorrelated-result" | "reload-layout" | "unsupported-document" | "navigation-changed" | "navigation-no-op" | "missing-destination" | "auth-transition" | "auth-panel-layout" | "auth-refused" | "auth-busy" | "auth-uncertain";
 /** Passive internal facts only; never a callback capable of acknowledging XML. */
 export type GateObservation = Readonly<{kind:"ready";epoch:number;routeKey:string}> | Readonly<{kind:"terminal";epoch:number;routeKey:string;operation:string|null;outcome:Outcome;reason:TerminalReason}>;
-export type GatePorts={onObservation?:(event:GateObservation)=>void;noticeLabels?:()=>NoticeLabels;authenticate?:GateAuthPort;onReady?:(ready:Readonly<{epoch:number;routeKey:string}>)=>void};
+export type GatePorts={onObservation?:(event:GateObservation)=>void;noticeLabels?:()=>NoticeLabels;authenticate?:GateAuthPort;onReady?:(ready:Readonly<{epoch:number;routeKey:string}>)=>void;admitMutation?:(operation:object)=>string|null;confirmDiscard?:()=>Promise<boolean>;onResourceUpdated?:()=>void};
 
 /** Parse only the app's accepted login panels, without private SDK normalization. */
 export function parseOwnedAuthPanel(result:Extract<AuthResult,{kind:"panel"|"refused"}>,requestId:string|undefined):Element {

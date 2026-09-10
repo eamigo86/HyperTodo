@@ -20,9 +20,9 @@
       <app:swipe-action href="/hv/tasks/{{ task.id }}/delete/" action="replace" verb="post" label="{% translate "Delete" %}" a11y-label="{% translate "Delete task" %}" tone="danger" confirm-title="{% translate "Delete task?" %}" confirm-body="{% translate "This action cannot be undone." %}" confirm-label="{% translate "Delete" %}" />
     </app:swipe-row>
   </form>
-  {% if forloop.last and page_obj.has_next %}
+  {% if forloop.last and page_obj.has_next %}{% if not realtime_prefix_render or realtime_prefix_last %}
   <behavior trigger="visible" href="/hv/tasks/?status={{ status_filter }}{% if selected_category %}&amp;category={{ selected_category.id }}{% endif %}&amp;page={{ page_obj.next_page_number }}&amp;fragment=items" action="append" target="task-list" once="true" show-during-load="task-list-spinner" />
-  {% endif %}
+  {% endif %}{% endif %}
 </item>
 {% empty %}
 {% if page_obj.number == 1 %}<item key="task-empty" style="empty-item">{% if realtime_enabled %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="{{ page_obj.number }}" />{% endif %}<view style="empty-card"><text style="empty-title">{% translate "Nothing here yet" %}</text><text style="empty-copy">{% translate "No tasks match these filters." %}</text></view></item>{% endif %}

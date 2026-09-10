@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useSyncExternalStore } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type Hyperview from "hyperview";
 import { createRealtimeGate } from "./gate";
 import { createSessionSupervisor, type RecoveryHandle } from "./session";
@@ -12,6 +12,8 @@ import { THEME_TOKENS, useThemeName } from "../theme";
 import { sessionLabels } from "./app-session-labels";
 import type { SnackbarNotice } from "../feedback/snackbar";
 import { createEventStream, type StreamClock, type StreamOwner } from "./event-stream";
+import {createMutationLedger} from './mutations';
+import type {ResourceChange} from './stream-protocol';
 type PublicPresentation = {
   handle: RecoveryHandle;
   gate: ReturnType<typeof createRealtimeGate>;
@@ -20,7 +22,7 @@ type PublicPresentation = {
   behaviors: ReturnType<typeof createOwnedBehaviors>;
   entrypointUrl: string;
 };
-export type CapturedResourceReceiver = (resources: readonly ResourceName[], cause?: "invalidate" | "resync") => boolean;
+export type CapturedResourceReceiver = (resources: readonly ResourceName[], cause?: "invalidate" | "resync",change?:ResourceChange) => boolean;
 
 export type AppSessionOptions = {
   entrypointUrl: string;
@@ -42,6 +44,7 @@ export type AppSessionOptions = {
 /** Internal composition for normal App and the isolated native fixture. */
 export function createAppSession(options: AppSessionOptions) {
   const listeners = new Set<() => void>();
+  const mutations=createMutationLedger();
   let disposed = false;
   let labels = sessionLabels(null);
   let recovery: PublicPresentation | null = null;
@@ -69,8 +72,16 @@ export function createAppSession(options: AppSessionOptions) {
   let started: Promise<unknown> | undefined;
   let supervisor!: ReturnType<typeof createSessionSupervisor>;
   const gate = createRealtimeGate({
+    admitMutation:operation=>mutations.admit(operation),
+    confirmDiscard:()=>new Promise<boolean>(resolve=>{
+      try{Alert.alert(labels.discardTitle,labels.discardMessage,[
+        {text:labels.keepEditing,style:'cancel',onPress:()=>resolve(false)},
+        {text:labels.discardChanges,style:'destructive',onPress:()=>resolve(true)},
+      ],{cancelable:true,onDismiss:()=>resolve(false)});}catch{resolve(false);}
+    }),
     onObservation: forwardObservation,
     noticeLabels: () => labels,
+    onResourceUpdated:()=>options.onNotice({message:labels.updated,tone:'success'}),
     onReady: ready => {
       if (ready.epoch === rootEpoch && supervisor.snapshot().generation === generation) supervisor.markRootReady(generation);
     },
@@ -98,6 +109,7 @@ export function createAppSession(options: AppSessionOptions) {
   });
   rootEpoch = gate.resetEpoch();
   const onIdentity = (identity: ReturnType<typeof supervisor.snapshot>["identity"]) => {
+    mutations.reset();
     recovery?.gate.resetEpoch();
     recovery = null;
     resources = null;
@@ -109,11 +121,11 @@ export function createAppSession(options: AppSessionOptions) {
     const capturedEpoch = rootEpoch,
       capturedGeneration = generation,
       capturedIdentity = identity;
-    const receiver: CapturedResourceReceiver = (names, cause = "invalidate") => {
+    const receiver: CapturedResourceReceiver = (names, cause = "invalidate",change) => {
       const state = supervisor.snapshot();
       return !disposed && state.identity === capturedIdentity && state.generation === capturedGeneration
         && state.rootReady && state.availability === "foreground"
-        && gate.invalidateResources(capturedEpoch, names, cause);
+        && gate.invalidateResources(capturedEpoch, names, cause==='invalidate'&&mutations.isOwn(change?.mutationId)?'local':cause,change);
     };
     resources = receiver;
     if (identity.authenticated) {
@@ -124,6 +136,7 @@ export function createAppSession(options: AppSessionOptions) {
       };
       streamOwner = Object.freeze({
         generation: capturedGeneration, binding: capturedIdentity.binding, isCurrent, receive: receiver,
+        onMutationSeed:seed=>{if(isCurrent())mutations.acceptSeed(seed);},
         onAuthRequired: () => { if (isCurrent()) supervisor.invalidate(); },
       });
     }
@@ -136,8 +149,8 @@ export function createAppSession(options: AppSessionOptions) {
       bindSource: gate.bindSource,
       isSettingsClear: gate.isSettingsClear,
       notice: options.onNotice,
-      notifyResources: (_source, names) => {
-        receiver(names);
+      notifyResources: (source, names) => {
+        if(source.sourceIsCurrent()&&supervisor.snapshot().identity===capturedIdentity&&supervisor.snapshot().generation===capturedGeneration)gate.invalidateResources(capturedEpoch,names,'local');
       }
     });
     gate.resumeEpoch(rootEpoch);
@@ -147,6 +160,7 @@ export function createAppSession(options: AppSessionOptions) {
     transport: createHyperviewHttpPort(options.entrypointUrl, options.http),
     storage: options.credentials.storage,
     onIdentity,
+    onMutationSeed:(seed,owner)=>{if(supervisor.snapshot().identity===owner&&supervisor.snapshot().availability==='foreground')mutations.acceptSeed(seed);},
     onTheme: options.onTheme,
     onLanguage: language => {
       const next = sessionLabels(language);
