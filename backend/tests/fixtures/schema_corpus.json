@@ -62,6 +62,9 @@
   "fragments/task_transition.xml": {
     "kind": "fragment"
   },
+  "partials/about_content.xml": {
+    "kind": "partial"
+  },
   "partials/avatar_panel.xml": {
     "kind": "partial"
   },

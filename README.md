@@ -262,8 +262,8 @@ metadata, and automatic-validation contract cannot drift apart.
 
 ### What the corpus proves
 
-The manifest covers all 39 filesystem XML sources: 12 documents, 21 fragments,
-and 6 partials. Real route contexts exercise both themes and languages, empty and
+The manifest covers all 40 filesystem XML sources: 12 documents, 21 fragments,
+and 7 partials. Real route contexts exercise both themes and languages, empty and
 populated data, absent/legacy/current mobile-version headers, successful and
 invalid forms, authentication transitions, and escaped user text. Existing flow
 tests use the same automatic rendered XSD contract as normal application requests. Active/inactive database overrides are
@@ -282,6 +282,10 @@ Admin **Format & Validate is context-free** and may report dynamic-template
 warnings. It neither renders a scenario nor proves every rendered branch. The
 before-save validator remains authoritative for its source-level contract;
 rendered XSD validation is the separate runtime check. No preview is restored.
+The About source keeps the optional realtime wrapper in balanced XML branches
+around one shared content partial. This preserves both legacy and negotiated
+rendered output while allowing the conservative formatter to prove idempotence;
+it does not relax handling of branch-dependent XML.
 The corrected schema covers documented differences, not the whole native client:
 date-field button labels are iOS-only, and the pinned host's decimal width
 conversion (for example, `12.5` points becoming `12`) is not rewritten.

@@ -7,6 +7,7 @@ from dj_hyperview.contrib.database.models import HyperviewTemplate
 from django.conf import settings
 from django.contrib.auth.models import Permission
 from django.urls import reverse
+from django.utils.html import escape
 
 
 @pytest.mark.django_db
@@ -46,12 +47,17 @@ def test_real_template_survives_admin_save_and_reopen(admin_client):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "name,marker",
+    [
+        ("screens/about.xml", b"about-screen"),
+        ("partials/about_content.xml", b"about-app-version"),
+    ],
+)
 def test_view_only_user_sees_real_template_without_edit_controls(
-    client, django_user_model
+    client, django_user_model, name, marker
 ):
-    source = (settings.BASE_DIR / "hyperview/screens/about.xml").read_text(
-        encoding="utf-8"
-    )
+    source = (settings.BASE_DIR / "hyperview" / name).read_text(encoding="utf-8")
     template = HyperviewTemplate.objects.create(
         name="screens/admin-read-only.xml",
         content=source,
@@ -83,11 +89,11 @@ def test_view_only_user_sees_real_template_without_edit_controls(
     assert b'class="deletelink"' not in response.content
     assert b"djhv-format-hxml" not in response.content
     assert b"{% load i18n %}" in response.content
-    assert (
-        b"&lt;doc xmlns=&quot;https://hyperview.org/hyperview&quot;&gt;"
-        in response.content
-    )
-    assert b"about-app-version" in response.content
+    # The app-version text moved into the single shared partial. Both real
+    # sources must remain fully visible, escaped and non-editable to this role.
+    for line in source.splitlines():
+        assert escape(line).encode() in response.content
+    assert marker in response.content
 
 
 @pytest.mark.django_db

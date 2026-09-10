@@ -146,7 +146,8 @@ def test_about_admin_validation_and_rendering_do_not_publish(
     publish_template("screens/about.xml", source, using="default")
     row = HyperviewTemplate.objects.get(name="screens/about.xml")
     before = (row.content, row.revision, row.active)
-    draft = source.replace("HyperTodo", "Unsaved &amp; HyperTodo")
+    draft = source.replace("</body>", "<text>Unsaved &amp; HyperTodo</text></body>")
+    assert draft != source
     with translation.override(language):
         response = admin_client.post(
             reverse("admin:dj_hyperview_database_hyperviewtemplate_hxml_validate"),
@@ -244,7 +245,12 @@ def test_template_seed_preserves_existing_reviewed_content(isolated_runtime):
     from todo.management.commands.seed_demo import Command
 
     name = "screens/about.xml"
-    source = (ROOT / name).read_text().replace("HyperTodo", "Reviewed application")
+    source = (
+        (ROOT / name)
+        .read_text()
+        .replace("</body>", "<text>Reviewed application</text></body>")
+    )
+    assert source != (ROOT / name).read_text()
     publish_template(name, source, using="default")
     before = list(
         HyperviewTemplate.objects.filter(name=name).values_list(

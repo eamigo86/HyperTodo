@@ -251,7 +251,7 @@ def test_resource_metadata_rejects_unknown_duplicate_noncanonical_values(
 
 @pytest.mark.parametrize("populated", (False, True))
 @pytest.mark.parametrize("modern", (False, True))
-def test_all_39_sources_render_through_real_routes_under_both_contracts(
+def test_all_40_sources_render_through_real_routes_under_both_contracts(
     user, monkeypatch, settings, populated, modern
 ):
     import tests.test_schema_corpus as corpus

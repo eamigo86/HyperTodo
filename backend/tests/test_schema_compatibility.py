@@ -29,7 +29,7 @@ def test_schema_corpus_manifest_names_every_source():
     } == {
         "document": 12,
         "fragment": 21,
-        "partial": 6,
+        "partial": 7,
     }
 
 
