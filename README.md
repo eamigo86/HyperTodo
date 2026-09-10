@@ -74,7 +74,7 @@ make help
 make setup
 make backend-migrate
 make backend-seed
-make check
+EXPO_PUBLIC_API_URL=https://hypertodo-ci.invalid/hv/ make check
 ```
 
 `make setup` installs the locked Python and JavaScript dependencies. The migration
@@ -220,12 +220,22 @@ template mutations to superusers by default.
 Run the complete automated gate from the repository root:
 
 ```console
-make check
+EXPO_PUBLIC_API_URL=https://hypertodo-ci.invalid/hv/ make check
 ```
 
 It runs Ruff, pytest with statement and branch coverage, Django system checks,
 migration drift detection, TypeScript, Jest, and Expo Doctor. No native build is
 required. Run `make acceptance` to print the manual device checklist.
+
+The HTTPS `.invalid` URL is an explicit **validation-only** setting, not a running
+backend or a deployment default. For Doctor alone, run
+`EXPO_PUBLIC_API_URL=https://hypertodo-ci.invalid/hv/ corepack yarn --cwd mobile doctor`.
+The command first requires successful full Expo config resolution, then the
+complete successful `expo-doctor` report. A zero exit without checks is rejected
+(the locked Doctor 1.20.4 can log config errors and still exit zero). Tool launch,
+config, check, report, signal and timeout failures stay failures with diagnostics.
+Doctor's online checks need network access; an unavailable service is not a PASS.
+The API guard and normal local-development opt-in remain unchanged.
 
 Package documentation is available at
 [eamigo86.github.io/dj-hyperview](https://eamigo86.github.io/dj-hyperview/).

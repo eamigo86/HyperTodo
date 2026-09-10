@@ -11,7 +11,7 @@
     "android": "expo run:android",
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand",
-    "doctor": "expo-doctor"
+    "doctor": "node scripts/doctor.cjs"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "9.1.0",

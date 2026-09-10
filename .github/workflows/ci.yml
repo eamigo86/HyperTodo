@@ -47,4 +47,9 @@ jobs:
       - run: corepack yarn install --frozen-lockfile
       - run: corepack yarn typecheck
       - run: corepack yarn test
-      - run: corepack yarn doctor
+      - name: Verify Expo configuration and complete Doctor report
+        env:
+          # Validation only: the synthetic backend is not contacted or deployed.
+          EXPO_PUBLIC_API_URL: https://hypertodo-ci.invalid/hv/
+          EXPO_PUBLIC_ALLOW_LOCAL_API: "0"
+        run: corepack yarn doctor
