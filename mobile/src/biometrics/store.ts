@@ -1,3 +1,4 @@
+import type {StorageQueue} from "../realtime/session-effects";
 import * as LocalAuthentication from "expo-local-authentication";
 import { AuthenticationType } from "expo-local-authentication";
 import { Platform } from "react-native";
@@ -84,3 +85,21 @@ export async function clearToken(): Promise<void> {
     // which the next unlock attempt turns into a reset panel anyway.
   }
 }
+
+
+/** Internal composition point: fixture keys never read the normal app credential. */
+export function createSessionCredentialPort(key:string):{read():Promise<string|null>;storage:StorageQueue} {
+  if(!key)throw new Error("missing-credential-key");
+  return Object.freeze({
+    // Unlike legacy readToken/clearToken, modern ownership observes failures.
+    read:()=>serialized(()=>SecureStore.getItemAsync(key)),
+    storage:{enqueue:job=>serialized(()=>job({
+      save:token=>SecureStore.setItemAsync(key,token,{keychainAccessible:SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY}),
+      clear:()=>SecureStore.deleteItemAsync(key),
+    }))},
+  });
+}
+
+/** Normal App composition preserves its existing device-only credential key. */
+export const sessionCredentials=createSessionCredentialPort(TOKEN_KEY);
+export const sessionStorageQueue=sessionCredentials.storage;

@@ -1,4 +1,4 @@
-<view xmlns="https://hyperview.org/hyperview" id="task-transition">
+<view xmlns="https://hyperview.org/hyperview" id="task-transition">{% if realtime_enabled and realtime_fragment == "fragments/task_transition.xml" %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
   <behavior trigger="load" action="show-snackbar" message="{{ notice_message }}" tone="success" once="true" />
   <!-- Mirrors category_transition.xml. This fragment `replace`s the whole form panel,
        so the form screen renders nothing any more and has to be POPPED. `back` does
@@ -10,6 +10,6 @@
        is time the user spends looking at a blank screen. Nothing needs it, because
        SnackbarHost sits outside the NavigationContainer (mobile/App.tsx:72-88) and
        holds the notice on its own timer. -->
-  <behavior trigger="load" action="dispatch-event" event-name="tasks-changed" once="true" />
+  {% if realtime_enabled %}<behavior trigger="load" action="notify-resources" resources="tasks" once="true" />{% else %}<behavior trigger="load" action="dispatch-event" event-name="tasks-changed" once="true" />{% endif %}
   <behavior trigger="load" action="back" />
 </view>

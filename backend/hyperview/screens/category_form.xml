@@ -45,10 +45,12 @@
     <style id="field-error" color="{{ theme.danger }}" fontSize="13" marginTop="6" />
   </styles>
     <body style="screen">
+      {% if realtime_enabled %}<app:realtime xmlns:app="https://hypertodo.app/components" resources="{{ realtime_resources }}" refresh-href="{{ realtime_refresh_href }}" target="{{ realtime_target }}" mode="{{ realtime_mode }}"><app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
       {% include "partials/screen_header.xml" with header_title=header_title back_id="category-back" %}
       <view id="screen-content" style="screen-content-style" scroll="true" shows-scroll-indicator="false" content-container-style="screen-content-inner" keyboard-dismiss-mode="on-drag">
         {% include "fragments/category_form_panel.xml" %}
       </view>
+    {% if realtime_enabled %}</app:realtime>{% endif %}
     </body>
   </screen>
 </doc>

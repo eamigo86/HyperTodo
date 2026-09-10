@@ -1,1 +1,1 @@
-<view xmlns="https://hyperview.org/hyperview" id="side-menu-host" />
+<view xmlns="https://hyperview.org/hyperview" id="side-menu-host" >{% if realtime_enabled and realtime_fragment == "fragments/side_menu_host.xml" %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}</view>

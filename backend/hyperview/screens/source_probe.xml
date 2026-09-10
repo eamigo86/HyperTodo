@@ -1,2 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<doc xmlns="https://hyperview.org/hyperview"><screen id="filesystem-probe"><body><text>Filesystem source</text></body></screen></doc>
+<doc xmlns="https://hyperview.org/hyperview"><screen id="filesystem-probe"><body>
+      {% if realtime_enabled %}<app:realtime xmlns:app="https://hypertodo.app/components" resources="{{ realtime_resources }}" refresh-href="{{ realtime_refresh_href }}" target="{{ realtime_target }}" mode="{{ realtime_mode }}"><app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}<text>Filesystem source</text>{% if realtime_enabled %}</app:realtime>{% endif %}
+    </body></screen></doc>

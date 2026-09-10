@@ -159,9 +159,7 @@ def assert_bare_fragment(response, label):
 def assert_document(response, label):
     """Assert a response survives loadDocument (parser.ts:242)."""
     assert response.__class__.__name__ == "HyperviewTemplateResponse"
-    assert response.headers["Content-Type"].startswith(
-        "application/vnd.hyperview+xml"
-    )
+    assert response.headers["Content-Type"].startswith("application/vnd.hyperview+xml")
     root = ElementTree.fromstring(response.content)
     assert root.tag == f"{{{HV}}}doc", f"{label} -> root is <{root.tag}>, not <doc>"
     screen = root.find("./hv:screen/hv:body", NS)
@@ -265,16 +263,22 @@ def test_every_template_href_declares_a_shape_the_scan_can_resolve(fixtures):
     assert scanned, "the href scan found nothing, so it is broken"
 
     custom = {attribute for attribute, *_ in scanned if attribute != "href"}
-    assert custom == set(CUSTOM_HREF_ACTIONS), (
+    assert custom == set(CUSTOM_HREF_ACTIONS) | {"refresh-href"}, (
         "a custom-component href attribute changed; declare its action in "
         "CUSTOM_HREF_ACTIONS so its response shape stays covered"
     )
     for attribute, href, verb, action in scanned:
-        assert action in UPDATE_ACTIONS | DOCUMENT_ACTIONS, (
-            f"{attribute}={href!r} (verb={verb}) has action={action!r}, which this "
-            "guard cannot classify"
-        )
-        _concrete(href, fixtures)
+        if attribute == "refresh-href":
+            # This is negotiated coordinator metadata, not an SDK onUpdate href.
+            # Its exact source inventory and actual document/fragment responses
+            # are checked by test_every_refresh_metadata_href_has_a_real_shape.
+            assert (href, verb, action) == ("{}", "get", None)
+        else:
+            assert action in UPDATE_ACTIONS | DOCUMENT_ACTIONS, (
+                f"{attribute}={href!r} (verb={verb}) has action={action!r}, which this "
+                "guard cannot classify"
+            )
+            _concrete(href, fixtures)
 
 
 def test_no_template_decides_its_action_at_render_time():
@@ -969,7 +973,60 @@ def _registered_local_names() -> set[str]:
         source = (MOBILE_ROOT / f"{path}.tsx").read_text()
         if APP_NAMESPACE in source:
             names.update(re.findall(r'localName:\s*"([\w-]+)"', source))
-    return names
+    surface = (MOBILE_ROOT / "src/realtime/app-session.tsx").read_text()
+    gate = (MOBILE_ROOT / "src/realtime/gate.tsx").read_text()
+    return names | _composed_gate_names(app, surface, gate)
+
+
+def _composed_gate_names(app, surface, gate):
+    """Follow the explicit App surface composition, not mere catalog existence.
+
+    This source inventory complements the mobile App/real-SDK runtime tests;
+    it is not a substitute for executing the mounted public Root.
+    """
+    assert re.search(
+        r"import\s*\{[^}]*\bAppSessionSurface\b[^}]*\}\s*from\s*"
+        r'"\./src/realtime/app-session"',
+        app,
+    ), "App must import the actual composed surface"
+    assert re.search(r"<AppSessionSurface\b[^>]*hyperviewProps=\{hyperviewProps\}", app)
+    compact = re.sub(r"\s+", "", surface)
+    assert "constRoot=presentation.gate.Root;" in compact
+    assert (
+        "[...presentation.gate.components,...(hyperviewProps.components??[])]"
+        in compact
+    )
+    root = re.search(r"<Root\b(.*?)/>", surface, re.S)
+    assert root and "components={components}" in root.group(1)
+    assert re.search(
+        r'import\s*\{\s*createRealtimeGate\s*\}\s*from\s*"\./gate"', surface
+    )
+    assert APP_NAMESPACE in gate
+    listed = re.search(r"const\s+components\s*=\s*\[(.*?)\];", gate, re.S)
+    assert listed, "Gate must provide its real component registrations"
+    return set(
+        re.findall(
+            r'localName:\s*"([\w-]+)",\s*namespaceURI: NAMESPACE', listed.group(1)
+        )
+    )
+
+
+@pytest.mark.parametrize("broken", ("surface", "composition", "root", "registration"))
+def test_custom_element_inventory_rejects_missing_composition_wiring(broken):
+    app = (MOBILE_ROOT / "App.tsx").read_text()
+    surface = (MOBILE_ROOT / "src/realtime/app-session.tsx").read_text()
+    gate = (MOBILE_ROOT / "src/realtime/gate.tsx").read_text()
+    assert _composed_gate_names(app, surface, gate) == {"realtime", "realtime-page"}
+    if broken == "surface":
+        app = re.sub(r"<AppSessionSurface\b", "<UnwiredSurface", app)
+    elif broken == "composition":
+        surface = re.sub(r"\.\.\.presentation\.gate\.components,\s*", "", surface)
+    elif broken == "root":
+        surface = surface.replace("components={components}", "")
+    else:
+        gate = re.sub(r"const\s+components\s*=", "const unusedComponents =", gate)
+    with pytest.raises(AssertionError):
+        _composed_gate_names(app, surface, gate)
 
 
 def test_no_template_ships_a_custom_element_the_client_cannot_render():

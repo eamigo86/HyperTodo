@@ -14,11 +14,13 @@
     </style>
   </styles>
     <body style="screen">
+      {% if realtime_enabled %}<app:realtime xmlns:app="https://hypertodo.app/components" resources="{{ realtime_resources }}" refresh-href="{{ realtime_refresh_href }}" target="{{ realtime_target }}" mode="{{ realtime_mode }}"><app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
       <view style="card">
         <text style="title">{% translate "Your session expired" %}</text>
         <text style="copy">{% translate "Sign in again to keep your tasks private." %}</text>
         <view style="button" href="/hv/login/" action="reload"><text style="button-text">{% translate "Return to sign in" %}</text></view>
       </view>
+    {% if realtime_enabled %}</app:realtime>{% endif %}
     </body>
   </screen>
 </doc>

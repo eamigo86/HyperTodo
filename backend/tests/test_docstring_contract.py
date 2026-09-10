@@ -21,5 +21,7 @@ def test_no_python_docstring_contains_backticks():
             docstring = ast.get_docstring(node, clean=False)
             if docstring and "`" in docstring:
                 name = getattr(node, "name", "module")
-                offenders.append(f"{path.relative_to(SOURCE_ROOT)}:{node.lineno}:{name}")
+                offenders.append(
+                    f"{path.relative_to(SOURCE_ROOT)}:{node.lineno}:{name}"
+                )
     assert not offenders, "docstrings containing backticks: " + ", ".join(offenders)

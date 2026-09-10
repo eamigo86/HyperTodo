@@ -1,5 +1,5 @@
 import * as SecureStore from "expo-secure-store";
-import { useSyncExternalStore } from "react";
+import { createContext, createElement, useContext, useSyncExternalStore, type ReactNode } from "react";
 
 /**
  * The colours the native shell paints, mirrored from the server's token layer.
@@ -55,62 +55,75 @@ export const THEME_TOKENS = {
 export type ThemeName = keyof typeof THEME_TOKENS;
 export type ThemeTokens = (typeof THEME_TOKENS)[ThemeName];
 
-// ponytail: SecureStore is the wrong store for a non-secret, but it is already a
-// dependency (src/biometrics/store.ts) and it is the only installed one with a
-// SYNCHRONOUS read, which is what lets the very first frame -- splash included --
-// be the right colour with no await. Swap in @react-native-async-storage/async-storage
-// the day a plaintext keychain entry actually bothers someone.
-const STORAGE_KEY = "hypertodo.theme";
-
+/** Internal synchronous palette persistence, injectable for the native fixture. */
+export type ThemePersistence = {
+  read(): unknown;
+  write(name: ThemeName): void;
+};
 function isThemeName(value: unknown): value is ThemeName {
   return value === "light" || value === "dark";
 }
 
-function seed(): ThemeName {
-  try {
-    const stored = SecureStore.getItem(STORAGE_KEY);
-    return isThemeName(stored) ? stored : "light";
-  } catch {
-    // A locked or unavailable keychain is not worth a crash before first paint.
-    return "light";
-  }
-}
-
-let current: ThemeName = seed();
-const listeners = new Set<() => void>();
-
-export function getThemeName(): ThemeName {
-  return current;
-}
-
-/** Adopt the palette a response named, if it named one we ship.
- *
- * Every document AND every fragment carries the header, so the unchanged case is
- * the overwhelmingly common one and has to be free: without that guard, routine
- * fragment traffic would wake every subscriber several times a screen.
- */
-export function publishTheme(name: string | null | undefined): void {
-  if (!isThemeName(name) || name === current) {
-    return;
-  }
-  current = name;
-  try {
-    SecureStore.setItem(STORAGE_KEY, name);
-  } catch {
-    // Persistence is an optimisation for the next cold start, never a
-    // precondition for painting this frame correctly.
-  }
-  listeners.forEach((listener) => listener());
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
+/** Capture a store without I/O; seed synchronously only when explicitly read. */
+export function createThemeStore(persistence: ThemePersistence) {
+  let current: ThemeName | undefined;
+  const listeners = new Set<() => void>();
+  const getSnapshot = (): ThemeName => {
+    if (current === undefined) {
+      try {
+        const stored = persistence.read();
+        current = isThemeName(stored) ? stored : "light";
+      } catch {
+        current = "light";
+      }
+    }
+    return current;
   };
+  return Object.freeze({
+    getSnapshot,
+    publish: (name: string | null | undefined) => {
+      if (!isThemeName(name) || name === getSnapshot()) return;
+      current = name;
+      try {
+        persistence.write(name);
+      } catch {/* Painting does not depend on persistence. */}
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    }
+  });
 }
-
-/** Subscribe a shell component to the server's palette. */
+export type ThemeStore = ReturnType<typeof createThemeStore>;
+const STORAGE_KEY = "hypertodo.theme";
+/** The normal App retains its existing key and synchronous first paint. */
+export const defaultThemeStore = createThemeStore({
+  read: () => SecureStore.getItem(STORAGE_KEY),
+  write: name => SecureStore.setItem(STORAGE_KEY, name)
+});
+const ThemeContext = createContext<ThemeStore | null>(null);
+export function ThemeProvider({
+  store,
+  children
+}: {
+  store: ThemeStore;
+  children: ReactNode;
+}) {
+  return createElement(ThemeContext.Provider, {
+    value: store
+  }, children);
+}
+export function getThemeName(): ThemeName {
+  return defaultThemeStore.getSnapshot();
+}
+export function publishTheme(name: string | null | undefined): void {
+  defaultThemeStore.publish(name);
+}
+/** Existing shell components automatically use their containing App's store. */
 export function useThemeName(): ThemeName {
-  return useSyncExternalStore(subscribe, getThemeName, getThemeName);
+  const store = useContext(ThemeContext) ?? defaultThemeStore;
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 }

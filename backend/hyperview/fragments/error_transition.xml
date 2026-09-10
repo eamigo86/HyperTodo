@@ -1,4 +1,4 @@
-<item xmlns="https://hyperview.org/hyperview" id="error-transition" key="error-transition">
+<item xmlns="https://hyperview.org/hyperview" id="error-transition" key="error-transition">{% if realtime_enabled and realtime_fragment == "fragments/error_transition.xml" %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
   <behavior trigger="load" action="show-snackbar" message="{{ message }}" tone="error" once="true" />
   <behavior trigger="load" action="reload" />
 </item>

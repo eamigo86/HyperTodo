@@ -1,5 +1,6 @@
 {% load i18n %}{% for task in tasks %}
 <item key="task-{{ task.id }}">
+  {% if realtime_enabled and forloop.first %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="{{ page_obj.number }}" />{% endif %}
   <form>
     {% load dj_hyperview %}{% hv_csrf_token %}
     <!-- Both action shapes at once, so no client version has to be guessed. A binary
@@ -24,5 +25,5 @@
   {% endif %}
 </item>
 {% empty %}
-{% if page_obj.number == 1 %}<item key="task-empty" style="empty-item"><view style="empty-card"><text style="empty-title">{% translate "Nothing here yet" %}</text><text style="empty-copy">{% translate "No tasks match these filters." %}</text></view></item>{% endif %}
+{% if page_obj.number == 1 %}<item key="task-empty" style="empty-item">{% if realtime_enabled %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="{{ page_obj.number }}" />{% endif %}<view style="empty-card"><text style="empty-title">{% translate "Nothing here yet" %}</text><text style="empty-copy">{% translate "No tasks match these filters." %}</text></view></item>{% endif %}
 {% endfor %}

@@ -2,10 +2,12 @@
 
 from django.urls import path
 
-from . import views
+from . import recovery_views, session_views, views
 
 app_name = "todo"
 urlpatterns = [
+    path("recovery/", recovery_views.recovery_view, name="recovery"),
+    path("session-state/", session_views.session_state, name="session-state"),
     path("", views.root, name="root"),
     path("source-probe/", views.source_probe, name="source-probe"),
     path("login/", views.login_view, name="login"),

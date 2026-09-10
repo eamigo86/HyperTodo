@@ -94,6 +94,7 @@ def test_configuration_declares_only_owned_extensions():
     configuration = _configuration_from_environment()
     registry = configuration["SCHEMA_EXTENSIONS"]
     behavior_attributes = {
+        "notify-resources": {"resources"},
         "show-snackbar": {"message", "tone"},
         "store-biometric-token": {"token"},
         "probe-biometrics": {"available-target", "token-target"},
@@ -106,7 +107,8 @@ def test_configuration_declares_only_owned_extensions():
         assert set(attributes) == names
         assert all(attribute["TYPE"] == "string" for attribute in attributes.values())
         assert all(
-            not attribute.get("REQUIRED", False) for attribute in attributes.values()
+            attribute.get("REQUIRED", False) == (action == "notify-resources")
+            for attribute in attributes.values()
         )
     assert registry["BEHAVIORS"]["show-snackbar"]["ATTRIBUTES"]["tone"]["ENUM"] == [
         "success",

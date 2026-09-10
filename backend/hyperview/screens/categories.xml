@@ -93,25 +93,27 @@
     <style id="nav-add-symbol" color="{{ theme.on_brand }}" fontSize="29" fontWeight="400" lineHeight="31" />
   </styles>
     <body style="screen">
+      {% if realtime_enabled %}<app:realtime xmlns:app="https://hypertodo.app/components" resources="{{ realtime_resources }}" refresh-href="{{ realtime_refresh_href }}" target="{{ realtime_target }}" mode="{{ realtime_mode }}">{% endif %}
       {% include "partials/screen_header.xml" with header_title=_("Categories") back_id="category-list-back" %}
       <view id="screen-content" style="screen-content-style">
         <!-- The listener has to sit OUTSIDE the element it replaces and on a tag that
              opts into HyperRef. HvList does neither: it never sets supportsHyperRef
              (components/hv-element/utils.tsx:16), so a listener parked on the <list>
              is never registered, and the replace would destroy it anyway. -->
-        <behavior trigger="on-event" event-name="categories-changed" href="/hv/categories/?fragment=list" action="replace" target="category-list" />
+        {% if not realtime_enabled %}<behavior trigger="on-event" event-name="categories-changed" href="/hv/categories/?fragment=list" action="replace" target="category-list" />{% endif %}
         <!-- Every row shows "{{ category.task_count }} tasks", which the task screens
              and the task form own. Same replace: it is the counts inside the list
              that go stale, not the chrome around it. -->
-        <behavior trigger="on-event" event-name="tasks-changed" href="/hv/categories/?fragment=list" action="replace" target="category-list" />
+        {% if not realtime_enabled %}<behavior trigger="on-event" event-name="tasks-changed" href="/hv/categories/?fragment=list" action="replace" target="category-list" />{% endif %}
         <!-- A sign-in or sign-out reached from a modal on top of this screen leaves
              it parked with the old account's categories. -->
-        <behavior trigger="on-event" event-name="session-changed" action="reload" />
+        {% if not realtime_enabled %}<behavior trigger="on-event" event-name="session-changed" action="reload" />{% endif %}
         {% include "fragments/category_list.xml" %}
         <view id="category-list-spinner" style="list-spinner" hide="true"><spinner color="{{ theme.spinner }}" /></view>
         <view style="primary" href="/hv/categories/new/" action="navigate"><text style="primary-text">{% translate "+ Add category" %}</text></view>
       </view>
       {% include "fragments/bottom_navigation.xml" with active_nav="categories" %}
+    {% if realtime_enabled %}</app:realtime>{% endif %}
     </body>
   </screen>
 </doc>

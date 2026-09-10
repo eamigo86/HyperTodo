@@ -28,14 +28,20 @@ INSTALLED_APPS = [
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Response order reverses: finalize identity after Django saves its session.
+    "todo.session_middleware.SessionBindingResponseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     # Before CommonMiddleware because APPEND_SLASH redirects and any i18n URL
     # resolution need a language already active; it also owns Content-Language and
     # the Vary: Accept-Language patch, which is why we do not hand-roll it.
     "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # Reject non-GET on the exact SSE path before CSRF; all GET guards remain.
+    "todo.realtime_middleware.RealtimeMethodMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Before profile/theme queries and application writes; Django still owns auth.
+    "todo.session_middleware.SessionContractMiddleware",
     # After AuthenticationMiddleware, because that is what puts request.user on the
     # request. Response middleware unwinds bottom-up, so the language this installs
     # is still active when LocaleMiddleware writes Content-Language.
@@ -124,6 +130,9 @@ HYPERVIEW = {
     "ADMIN": {"EDITOR": True},
     "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
     "SCHEMA_EXTENSIONS": schema_extensions(),
+    # Opt-in transport, independent of cache and automatic schema validation.
+    # Enable with explicit REDIS_URL and an app/environment-specific NAMESPACE.
+    "REALTIME": None,
 }
 if ENABLE_REDIS_CACHE:
     HYPERVIEW["CACHE"] = {

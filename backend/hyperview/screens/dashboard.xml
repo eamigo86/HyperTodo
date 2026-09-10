@@ -279,28 +279,30 @@
     <style id="edge-menu-opener" bottom="72" left="0" position="absolute" top="0" width="24" zIndex="40" />
   </styles>
     <body style="screen">
+      {% if realtime_enabled %}<app:realtime xmlns:app="https://hypertodo.app/components" resources="{{ realtime_resources }}" refresh-href="{{ realtime_refresh_href }}" target="{{ realtime_target }}" mode="{{ realtime_mode }}"><app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
       <view id="screen-content" style="screen-content-style" scroll="true" shows-scroll-indicator="false" over-scroll="false">
         <!-- A task form opened from a dashboard row is a modal ON TOP of this screen;
              `close` pops it without refetching anything (hv-doc.tsx:178-194), so
              without this the user comes back to the old title. An href-less reload
              re-requests this screen's own url (hyperview.tsx:74-82). -->
-        <behavior trigger="on-event" event-name="tasks-changed" action="reload" />
+        {% if not realtime_enabled %}<behavior trigger="on-event" event-name="tasks-changed" action="reload" />{% endif %}
         <!-- This screen is the one that sits at index 0 of the root stack, so a
              sign-in or sign-out that happens inside a pushed route leaves it
              mounted with the previous account's document. The same href-less
              reload re-requests it under the new session (or 401s to
              session_expired), which is what keeps it off an iOS swipe-back. -->
-        <behavior trigger="on-event" event-name="session-changed" action="reload" />
+        {% if not realtime_enabled %}<behavior trigger="on-event" event-name="session-changed" action="reload" />{% endif %}
         <!-- The category chips are rendered from summary.category_counts, which the
              Categories screen owns. Home is now a truncation back to this route
              rather than a fresh push, and StackRouter leaves params.url untouched,
              so nothing refetches this screen on its own (hv-doc.tsx:186-193). -->
-        <behavior trigger="on-event" event-name="categories-changed" action="reload" />
+        {% if not realtime_enabled %}<behavior trigger="on-event" event-name="categories-changed" action="reload" />{% endif %}
         {% include "fragments/dashboard_content.xml" %}
       </view>
       {% include "fragments/bottom_navigation.xml" with active_nav="dashboard" %}
       <app:edge-menu-opener xmlns:app="https://hypertodo.app/components" id="dashboard-edge-menu" style="edge-menu-opener" href="/hv/menu/?active=dashboard" action="replace" target="side-menu-host" />
       {% include "fragments/side_menu_host.xml" %}
+    {% if realtime_enabled %}</app:realtime>{% endif %}
     </body>
   </screen>
 </doc>

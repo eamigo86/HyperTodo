@@ -1,5 +1,6 @@
 {% load dj_hyperview i18n %}{% for category in categories %}
 <item key="category-{{ category.id }}"{% if not swipe_actions %} style="card"{% endif %}>
+  {% if realtime_enabled and forloop.first %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="{{ page_obj.number }}" />{% endif %}
   {% if swipe_actions %}
   <form>{% hv_csrf_token %}
     <app:swipe-row xmlns:app="https://hypertodo.app/components" id="category-swipe-{{ category.id }}" style="card-fill {{ category.color }}">
@@ -29,5 +30,5 @@
   {% endif %}
 </item>
 {% empty %}
-{% if page_obj.number == 1 %}<item key="category-empty" style="empty-item"><view style="empty-card"><text style="empty-title">{% translate "No categories yet" %}</text><text style="empty-copy">{% translate "Create a category to organize your tasks." %}</text></view></item>{% endif %}
+{% if page_obj.number == 1 %}<item key="category-empty" style="empty-item">{% if realtime_enabled %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="{{ page_obj.number }}" />{% endif %}<view style="empty-card"><text style="empty-title">{% translate "No categories yet" %}</text><text style="empty-copy">{% translate "Create a category to organize your tasks." %}</text></view></item>{% endif %}
 {% endfor %}

@@ -1,4 +1,4 @@
-{% load i18n %}<view xmlns="https://hyperview.org/hyperview" id="settings-form-panel">
+{% load i18n %}<view xmlns="https://hyperview.org/hyperview" id="settings-form-panel">{% if realtime_enabled and realtime_fragment == "fragments/settings_transition.xml" %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
   <behavior trigger="load" action="show-snackbar" message="{% translate "Settings saved." %}" tone="success" once="true" />
   {% if biometrics_forgotten %}<!-- The device's own copy of the key, wiped here rather than left to expire.
        No version gate is needed and the argument is stronger than a header: the
@@ -16,5 +16,5 @@
   <!-- This screen listens for it too, so the dispatch repaints this route as well;
        an href-less reload beside it would be a second concurrent GET of the same
        url whose render is thrown away (hyperview.tsx:291-299). -->
-  <behavior trigger="load" action="dispatch-event" event-name="session-changed" once="true" />
+  {% if realtime_enabled %}<behavior trigger="load" action="notify-resources" resources="ui" once="true" />{% else %}<behavior trigger="load" action="dispatch-event" event-name="session-changed" once="true" />{% endif %}
 </view>

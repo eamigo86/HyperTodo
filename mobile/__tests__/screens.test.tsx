@@ -1,6 +1,6 @@
 import React from "react";
-import { act, fireEvent, render } from "@testing-library/react-native";
-import { ActivityIndicator, StyleSheet } from "react-native";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { ActivityIndicator, StyleSheet, AppState } from "react-native";
 
 import App, { ErrorScreen, LoadingScreen } from "../App";
 import ElementErrorBanner from "../src/components/ElementErrorBanner";
@@ -15,10 +15,11 @@ jest.mock("expo-splash-screen", () => ({ preventAutoHideAsync: jest.fn(), hideAs
 // refreshControl from App.tsx is a silent, type-clean regression otherwise, and the
 // symptom on device is a dead button or a spinner that never stops.
 const mockHyperviewProps: Record<string, unknown> = {};
-jest.mock("hyperview", () => (props: Record<string, unknown>) => {
+jest.mock("react-native-webview",()=>({WebView:()=>null}));
+jest.mock("hyperview", () => ({...jest.requireActual("hyperview"), __esModule:true, default:(props: Record<string, unknown>) => {
   Object.assign(mockHyperviewProps, props);
   return null;
-});
+}}));
 jest.mock("lottie-react-native", () => {
   const { forwardRef, useImperativeHandle } = require("react");
   const { View } = require("react-native");
@@ -34,7 +35,11 @@ jest.mock("react-native-safe-area-context", () => {
   const { View } = jest.requireActual("react-native");
   return { SafeAreaProvider: View, SafeAreaView: View };
 });
-jest.mock("@react-navigation/native", () => ({ NavigationContainer: ({ children }: { children: React.ReactNode }) => children }));
+jest.mock("@react-navigation/native", () => ({ ...jest.requireActual("@react-navigation/native"), NavigationContainer: ({ children }: { children: React.ReactNode }) => children }));
+
+const priorFetch=globalThis.fetch,priorState=AppState.currentState;
+beforeEach(()=>{AppState.currentState="active";for(const key of Object.keys(mockHyperviewProps))delete mockHyperviewProps[key];globalThis.fetch=jest.fn(async(input:RequestInfo|URL)=>{const binding="hvs1."+"A".repeat(43);const response=new Response(JSON.stringify({version:1,authenticated:false,binding}),{headers:{"X-HyperTodo-Session-Binding":binding}});Object.defineProperty(response,"url",{value:input.toString()});return response;});});
+afterEach(()=>{globalThis.fetch=priorFetch;AppState.currentState=priorState;});
 
 describe("owned shell screens", () => {
   it("keeps the server-driven UI inside the device safe area", () => {
@@ -43,17 +48,20 @@ describe("owned shell screens", () => {
     expect(screen.getByTestId("animated-splash")).toBeTruthy();
   });
 
-  it("hands hyperview every behavior and shell component the HXML depends on", () => {
+  it("hands hyperview every behavior and shell component the HXML depends on", async () => {
     render(<App />);
+    await waitFor(()=>expect(mockHyperviewProps.behaviors).toBeDefined());
 
     const behaviors = mockHyperviewProps.behaviors as { action: string }[];
     expect(behaviors.map((behavior) => behavior.action).sort()).toEqual([
       "biometric-unlock",
+      "notify-resources",
       "pick-avatar",
       "probe-biometrics",
       "show-snackbar",
       "store-biometric-token",
     ]);
+    expect((mockHyperviewProps.components as Array<{localName:string}>).map(value=>value.localName)).toEqual(expect.arrayContaining(["realtime","realtime-page","swipe-row"]));
     expect(mockHyperviewProps.loadingScreen).toBe(LoadingScreen);
     expect(mockHyperviewProps.errorScreen).toBe(ErrorScreen);
     expect(mockHyperviewProps.elementErrorComponent).toBe(ElementErrorBanner);
@@ -125,11 +133,12 @@ describe("the shell follows the palette the server named", () => {
     expect(bg(screen.getByLabelText("HyperTodo safe area", { includeHiddenElements: true }))).toBe("#0F1118");
   });
 
-  it("hands Hyperview identical props across a palette flip", () => {
+  it("hands Hyperview identical props across a palette flip", async () => {
     // Hyperview is a PureComponent. Inline `behaviors={[...]}` or an inline
     // formatDate closure would fail its shallow compare on every theme change and
     // re-render the entire server-driven tree to repaint two insets.
     render(<App />);
+    await waitFor(()=>expect(mockHyperviewProps.behaviors).toBeDefined());
     const before = { ...mockHyperviewProps };
 
     act(() => publishTheme("dark"));

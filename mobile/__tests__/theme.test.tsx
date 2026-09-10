@@ -123,3 +123,18 @@ describe("theme store", () => {
     expect(() => act(() => theme.publishTheme("light"))).not.toThrow();
   });
 });
+
+it("imports theme tokens/helpers without touching the normal native store",()=>{
+ mockGetItem.mockClear();mockSetItem.mockClear();loadTheme();expect(mockGetItem).not.toHaveBeenCalled();expect(mockSetItem).not.toHaveBeenCalled();
+});
+
+it("initializes a captured isolated store lazily and never reads or writes the default key",()=>{
+ mockGetItem.mockClear();mockSetItem.mockClear();const read=jest.fn(()=>"dark"),write=jest.fn();const store=sharedTheme.createThemeStore({read,write});
+ expect(read).not.toHaveBeenCalled();expect(store.getSnapshot()).toBe("dark");expect(read).toHaveBeenCalledTimes(1);store.publish("light");expect(write).toHaveBeenCalledWith("light");expect(mockGetItem).not.toHaveBeenCalled();expect(mockSetItem).not.toHaveBeenCalled();
+});
+
+it("uses the injected provider for all existing shell hooks without default persistence",()=>{
+ mockGetItem.mockClear();mockSetItem.mockClear();const write=jest.fn(),store=sharedTheme.createThemeStore({read:()=>"dark",write});
+ function ExistingConsumer(){return <Text>{sharedTheme.useThemeName()}</Text>;}
+ const ui=render(<sharedTheme.ThemeProvider store={store}><ExistingConsumer/></sharedTheme.ThemeProvider>);expect(ui.getByText("dark")).toBeTruthy();act(()=>store.publish("light"));expect(ui.getByText("light")).toBeTruthy();expect(write).toHaveBeenCalledWith("light");expect(mockGetItem).not.toHaveBeenCalled();expect(mockSetItem).not.toHaveBeenCalled();
+});

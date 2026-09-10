@@ -72,4 +72,53 @@
       <xs:attribute name="target" type="xs:string" use="required" />
     </xs:complexType>
   </xs:element>
+
+  <!-- Gate 0 only: declarations do not register mobile components or enable SSE. -->
+  <xs:simpleType name="realtime-request-id">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1" />
+      <xs:maxLength value="80" />
+      <xs:pattern value="[A-Za-z0-9_-]+" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="realtime-resources">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="tasks" />
+      <xs:enumeration value="categories" />
+      <xs:enumeration value="ui" />
+      <xs:enumeration value="tasks categories" />
+      <xs:enumeration value="tasks ui" />
+      <xs:enumeration value="categories ui" />
+      <xs:enumeration value="tasks categories ui" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:element name="realtime">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:any namespace="https://hyperview.org/hyperview" processContents="strict" minOccurs="0" maxOccurs="unbounded" />
+        <xs:element ref="app:realtime-page" />
+        <xs:element ref="app:edge-menu-opener" />
+      </xs:choice>
+      <xs:attribute name="resources" type="app:realtime-resources" use="required" />
+      <xs:attribute name="refresh-href" type="xs:anyURI" use="required" />
+      <xs:attribute name="target" type="xs:string" use="required" />
+      <xs:attribute name="mode" use="required">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="list" />
+            <xs:enumeration value="notice" />
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="realtime-page">
+    <xs:complexType>
+      <xs:attribute name="request-id" type="app:realtime-request-id" use="required" />
+      <xs:attribute name="page" type="xs:positiveInteger" use="required" />
+    </xs:complexType>
+  </xs:element>
 </xs:schema>

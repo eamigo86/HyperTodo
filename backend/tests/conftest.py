@@ -7,6 +7,14 @@ from django.utils import translation
 
 
 @pytest.fixture(autouse=True)
+def private_fixture_workspace(monkeypatch, tmp_path_factory):
+    """Allocate fixture data only under pytest's explicit private workspace."""
+    monkeypatch.setenv(
+        "HYPERTODO_FIXTURE_WORKSPACE", str(tmp_path_factory.getbasetemp())
+    )
+
+
+@pytest.fixture(autouse=True)
 def clear_throttle_cache():
     """Keep the biometric throttle counters out of every other test.
 

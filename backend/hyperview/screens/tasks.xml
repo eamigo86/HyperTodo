@@ -49,22 +49,23 @@
     <style id="nav-add-symbol" color="{{ theme.on_brand }}" fontSize="29" fontWeight="400" lineHeight="31" />
   </styles>
     <body style="screen">
+      {% if realtime_enabled %}<app:realtime xmlns:app="https://hypertodo.app/components" resources="{{ realtime_resources }}" refresh-href="{{ realtime_refresh_href }}" target="{{ realtime_target }}" mode="{{ realtime_mode }}">{% endif %}
       {% include "partials/screen_header.xml" with header_title=_("Tasks") back_id="task-list-back" %}
       <view id="screen-content" style="screen-content-style">
         <!-- Fires when a task form closes. It must sit here, not on the <list>: HvList
              never sets supportsHyperRef (components/hv-element/utils.tsx:16) so it
              registers no on-event listener, and this element is also the replace
              target, which would destroy the listener with it. -->
-        <behavior trigger="on-event" event-name="tasks-changed" href="/hv/tasks/?status={{ status_filter }}{% if selected_category %}&amp;category={{ selected_category.id }}{% endif %}&amp;fragment=list" action="replace" target="task-list" />
+        {% if not realtime_enabled %}<behavior trigger="on-event" event-name="tasks-changed" href="/hv/tasks/?status={{ status_filter }}{% if selected_category %}&amp;category={{ selected_category.id }}{% endif %}&amp;fragment=list" action="replace" target="task-list" />{% endif %}
         <!-- A sign-in or sign-out reached from a modal on top of this screen leaves
              it parked with the old account's tasks. An href-less reload re-requests
              this screen's own url, filter and all (hyperview.tsx:74-82). -->
-        <behavior trigger="on-event" event-name="session-changed" action="reload" />
+        {% if not realtime_enabled %}<behavior trigger="on-event" event-name="session-changed" action="reload" />{% endif %}
         <!-- One filter chip per category is rendered by name and id below, OUTSIDE
              the task-list replace target, so the tasks-changed listener above never
              refreshes them. A rename left the old label on a parked screen, and a
              delete left a chip whose tap 404s on a category that is gone. -->
-        <behavior trigger="on-event" event-name="categories-changed" action="reload" />
+        {% if not realtime_enabled %}<behavior trigger="on-event" event-name="categories-changed" action="reload" />{% endif %}
         <text id="filter-summary" style="filter-summary-style">{% if status_filter == 'active' %}{% translate "Active tasks" %}{% elif status_filter == 'completed' %}{% translate "Completed tasks" %}{% elif status_filter == 'today' %}{% translate "Today's tasks" %}{% elif status_filter == 'scheduled' %}{% translate "Scheduled tasks" %}{% elif status_filter == 'overdue' %}{% translate "Overdue tasks" %}{% else %}{% translate "All tasks" %}{% endif %}{% if selected_category %} · {{ selected_category.name }}{% endif %}</text>
         <view style="filters">
           <view id="filter-all" style="chip{% if status_filter == 'all' %} chip-active{% endif %}" href="/hv/tasks/?status=all" action="reload"><text style="chip-text{% if status_filter == 'all' %} chip-text-active{% endif %}">{% translate "All" %}</text></view>
@@ -83,6 +84,7 @@
         <view id="task-list-spinner" style="list-spinner" hide="true"><spinner color="{{ theme.spinner }}" /></view>
       </view>
       {% include "fragments/bottom_navigation.xml" with active_nav="tasks" %}
+    {% if realtime_enabled %}</app:realtime>{% endif %}
     </body>
   </screen>
 </doc>

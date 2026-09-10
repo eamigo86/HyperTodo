@@ -3,12 +3,14 @@ import "react-native-gesture-handler";
 import { NavigationContainer } from "@react-navigation/native";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import Hyperview from "hyperview";
+import { fetch as expoFetch } from "expo/fetch";
+
+import type Hyperview from "hyperview";
 import type { ErrorScreenProps } from "hyperview/src/types";
 import type { Props as LoadingProps } from "hyperview/src/components/loading/types";
 import moment from "moment";
-import React from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useState, useSyncExternalStore } from "react";
+import { ActivityIndicator, AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { getApiUrl } from "./src/config";
@@ -16,18 +18,16 @@ import AnimatedSideMenu from "./src/components/AnimatedSideMenu";
 import EdgeMenuOpener from "./src/components/EdgeMenuOpener";
 import ElementErrorBanner from "./src/components/ElementErrorBanner";
 import OfflineRefreshControl from "./src/components/OfflineRefreshControl";
-import { FAILURE_COPY, classifyFailure } from "./src/feedback/failure";
+import { FAILURE_COPY, classifyFailure, publishNetworkFailure } from "./src/feedback/failure";
 import { hyperviewLogger, reportHyperviewError } from "./src/feedback/logging";
 import AnimatedSplash from "./src/components/AnimatedSplash";
 import SwipeRow from "./src/components/SwipeRow";
 import SnackbarHost from "./src/components/SnackbarHost";
-import ShowSnackbarBehavior from "./src/behaviors/ShowSnackbarBehavior";
-import BiometricUnlockBehavior from "./src/behaviors/BiometricUnlockBehavior";
-import PickAvatarBehavior from "./src/behaviors/PickAvatarBehavior";
-import ProbeBiometricsBehavior from "./src/behaviors/ProbeBiometricsBehavior";
-import StoreBiometricTokenBehavior from "./src/behaviors/StoreBiometricTokenBehavior";
-import { createHyperviewFetch } from "./src/network";
-import { THEME_TOKENS, useThemeName, type ThemeTokens } from "./src/theme";
+import { createAppSession, AppSessionSurface, type AppSessionOptions } from "./src/realtime/app-session";
+import { createOwnedNativePorts } from "./src/behaviors/owned-native";
+import { sessionCredentials } from "./src/biometrics/store";
+import { publishSnackbar } from "./src/feedback/snackbar";
+import { THEME_TOKENS, useThemeName, ThemeProvider, defaultThemeStore, type ThemeStore, type ThemeTokens } from "./src/theme";
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -60,19 +60,95 @@ export function ErrorScreen({ error, onPressReload }: ErrorScreenProps): React.J
   );
 }
 
-const entrypointUrl = getApiUrl();
-const hyperviewFetch = createHyperviewFetch(entrypointUrl);
-// Module scope, not inline props. App re-renders whenever the server names a new
-// palette, and Hyperview is a PureComponent: a fresh array or closure on each
-// render would fail its shallow compare and re-render the whole server-driven tree
-// for a change that only repaints two insets.
-const behaviors = [ShowSnackbarBehavior, StoreBiometricTokenBehavior, ProbeBiometricsBehavior, BiometricUnlockBehavior, PickAvatarBehavior];
 const components = [AnimatedSideMenu, EdgeMenuOpener, SwipeRow];
 const formatDate = (date?: Date | null, format?: string) =>
   date && format ? moment(date).format(format) : undefined;
 
-export default function App(): React.JSX.Element {
+const hyperviewProps = {
+  components,
+  formatDate,
+  loadingScreen: LoadingScreen,
+  errorScreen: ErrorScreen,
+  elementErrorComponent: ElementErrorBanner,
+  refreshControl: OfflineRefreshControl,
+  logger: hyperviewLogger,
+  onError: reportHyperviewError,
+};
+
+type HyperviewProps = React.ComponentProps<typeof Hyperview>;
+
+/** Only diagnostics may be replaced by the isolated native fixture. */
+export type SessionAppDiagnostics = {
+  logger: NonNullable<HyperviewProps["logger"]>;
+  onError: NonNullable<HyperviewProps["onError"]>;
+};
+
+function fixtureDiagnostics(diagnostics: SessionAppDiagnostics): SessionAppDiagnostics {
+  const logger = diagnostics.logger;
+  const onError = diagnostics.onError;
+  const contain = (level: keyof SessionAppDiagnostics["logger"]) => (...args: unknown[]): void => {
+    try {
+      logger[level](...args);
+    } catch {
+      // Diagnostics cannot change SDK outcomes.
+    }
+  };
+  return {
+    logger: { error: contain("error"), warn: contain("warn"), info: contain("info"), log: contain("log") },
+    onError: error => {
+      // Keep refresh/error UI behavior without forwarding raw fixture errors to the default log.
+      publishNetworkFailure();
+      try {
+        onError(error);
+      } catch {
+        // The real error remains visible through the existing UI.
+      }
+    },
+  };
+}
+
+/** Same App composition for normal launch and an isolated, injected native fixture. */
+export function createSessionApp(
+  options: Omit<AppSessionOptions, "onTheme">,
+  theme: ThemeStore,
+  diagnostics?: SessionAppDiagnostics,
+) {
+  const props = diagnostics ? { ...hyperviewProps, ...fixtureDiagnostics(diagnostics) } : hyperviewProps;
+  return function SessionApp(): React.JSX.Element {
+    const [session] = useState(() => createAppSession({ ...options, onTheme: theme.publish }));
+    return (
+      <ThemeProvider store={theme}>
+        <AppFrame session={session} hyperviewProps={props} />
+      </ThemeProvider>
+    );
+  };
+}
+
+/** Navigation state belongs to this presentation/generation, not a retired account. */
+function SessionNavigation({ session, children }: { session: ReturnType<typeof createAppSession>; children: React.ReactNode }) {
+  const state = useSyncExternalStore(session.subscribe, session.snapshot, session.snapshot);
+  const key = (state.recovery ? "recovery:" : "primary:") + state.session.generation;
+  return <NavigationContainer key={key}>{children}</NavigationContainer>;
+}
+
+type AppHyperviewProps = typeof hyperviewProps;
+
+function AppFrame({ session, hyperviewProps }: {
+  session: ReturnType<typeof createAppSession>;
+  hyperviewProps: AppHyperviewProps;
+}): React.JSX.Element {
   const styles = STYLES[useThemeName()];
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", state => {
+      if (state === "active") void session.foreground();
+      else session.pause();
+    });
+    if (AppState.currentState !== "active") session.pause();
+    return () => {
+      subscription.remove();
+      session.dispose();
+    };
+  }, [session]);
   return (
     <SafeAreaProvider>
       <AnimatedSplash>
@@ -85,21 +161,9 @@ export default function App(): React.JSX.Element {
             edges={["bottom"]}
             style={styles.safeArea}
           >
-            <NavigationContainer>
-              <Hyperview
-                behaviors={behaviors}
-                components={components}
-                entrypointUrl={entrypointUrl}
-                fetch={hyperviewFetch}
-                formatDate={formatDate}
-                loadingScreen={LoadingScreen}
-                errorScreen={ErrorScreen}
-                elementErrorComponent={ElementErrorBanner}
-                refreshControl={OfflineRefreshControl}
-                logger={hyperviewLogger}
-                onError={reportHyperviewError}
-              />
-            </NavigationContainer>
+            <SessionNavigation session={session}>
+              <AppSessionSurface session={session} hyperviewProps={hyperviewProps} />
+            </SessionNavigation>
             <SnackbarHost />
           </SafeAreaView>
         </SafeAreaView>
@@ -107,6 +171,18 @@ export default function App(): React.JSX.Element {
     </SafeAreaProvider>
   );
 }
+
+const DefaultApp = createSessionApp({
+  entrypointUrl: getApiUrl(),
+  http: (input, init) => fetch(input, init),
+  credentials: sessionCredentials,
+  native: createOwnedNativePorts(sessionCredentials.read, Platform.OS === "ios" ? "ios" : "android"),
+  onNotice: publishSnackbar,
+  stream: {fetch: expoFetch},
+  // Kept as the optional external cleanup observer; the session owns its stream.
+  stopStream: () => {},
+}, defaultThemeStore);
+export default DefaultApp;
 
 // Two frozen sheets built once at import, rather than a sheet rebuilt per render or
 // an inline colour override per element: `style` stays a single object, so every

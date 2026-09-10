@@ -1,0 +1,752 @@
+import { useIsFocused, useRoute, useNavigation } from "@react-navigation/native";
+import Hyperview, { Parser, renderChildren, shallowCloneToRoot, type HvComponentOnUpdate, type HvComponentProps, type HvBehavior } from "hyperview";
+import React, { createContext, useContext, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
+
+import type { FetchImplementation } from "../network";
+import { decorateOperationHref, hasReservedBody, readOperationUrl, nextCounter, OPERATION_PARAMETER } from "./operation";
+
+import {findTarget, fragmentReplacement} from "./fragment";
+import {navigationTarget, prepareReload, reloadUrl, screenCallbacks, UnsupportedDocument, type NavigationHandle} from "./navigation";
+
+import {parseOwnedAuthPanel,type GatePorts,type GateObservation,type Outcome,type TerminalReason} from "./auth";
+import {classifyAuth} from "./session-protocol";
+import type {AuthResult} from "./session";
+import {createRetention} from "./retention";
+import {dependencies,neededVersion,parseResources,readNoticeLabels,resourceReloadUrl,ResourceNotice,type ResourceName,type ResourceVersions} from "./resources";
+
+let nextInstance = 0;
+
+const NAMESPACE = "https://hypertodo.app/components";
+const REQUEST_HEADER = "X-HyperTodo-Request-ID";
+const ROOT_PROVENANCE = Symbol("realtime-root-provenance");
+const DOCUMENT_PROVENANCE = Symbol("realtime-document-provenance");
+type DocumentProvenance = Readonly<{instance:number;epoch:number;operation:Operation;url:string}>;
+type RootProvenance = Readonly<{instance: number; epoch: number}>;
+type RootRequestInit = RequestInit & {[ROOT_PROVENANCE]?: RootProvenance;[DOCUMENT_PROVENANCE]?:DocumentProvenance};
+type Update = Parameters<HvComponentOnUpdate>;
+type RouteSnapshot = {
+  key: string;
+  focused: boolean;
+  pages: number[];
+  refreshHref: string;
+  notice: boolean;
+  noticeCode?: "auth-refused";
+};
+type Runtime = {fetch:FetchImplementation;before?:React.ComponentProps<typeof Hyperview>["onParseBefore"];after?:React.ComponentProps<typeof Hyperview>["onParseAfter"];parser: Parser; onError?: React.ComponentProps<typeof Hyperview>["onError"]};
+const RuntimeContext = createContext<Runtime | null>(null);
+class NoDocument extends Error {}
+class UncorrelatedResult extends Error {}
+
+type Route = RouteSnapshot & {
+  runtime: Runtime | null;
+  navigation:NavigationHandle;
+  options: HvComponentProps["options"];
+  failedVersion?: number;
+  ready?: boolean;
+  element: Element;
+  onUpdate: HvComponentOnUpdate;
+  target: string;
+  mode: string;
+  observed: number;
+  baseUrl: string;
+  resources:readonly ResourceName[];
+  observedResources:ResourceVersions;
+  resourceFailure?:number;
+};
+type Operation = { key: string; epoch: number; token: string; canonicalUrl: string; args: Readonly<Update>; method: "get" | "post"; kind: "ordinary" | "refresh"; phase: "pending" | "submitted"; version: number; id?: string; local?: boolean; syncId?: string; timer?: ReturnType<typeof setTimeout>; result?: Element;document?:Document;cleanup?:()=>void;navigationCheck?:()=>void;authHeld?:boolean;authPreparing?:boolean;authDelivery?:AuthResult;authDelivered?:boolean;authReceipt?:object;responseStatus?:number;resourceRefresh?:boolean;resourceVersion?:number };
+
+/** App-owned public Hyperview coordinator; transports never grant XML ACK authority. */
+export function createRealtimeGate(ports:GatePorts={}) {
+  const instance = nextCounter(nextInstance);
+  nextInstance = instance;
+  const activeRoots = new WeakSet<RootProvenance>();
+  const documentRequests = new WeakSet<DocumentProvenance>();
+  const retention=createRetention();
+  const authSignals=new WeakMap<object,{operation:Operation;result:AuthResult}>();
+  const effectReceipts=new WeakMap<Element,object>();
+  const settingsClears=new WeakSet<Element>();
+  const sourceAuthorities=new WeakMap<object,Element>();
+  let readyEpoch:number|undefined;
+  let operationSequence = 0;
+  let sequence = 0;
+  let lastTerminal: {outcome: Outcome; reason: TerminalReason; routeKey: string} | null = null;
+  const localCommits = new WeakMap<Element, Operation>();
+  let lastRejection: {reason: string; routeKey?: string} | null = null;
+  let epoch = 0;
+  let resumableEpoch: number | null = null;
+  let version = 0;
+  let resourceSequence=0;
+  let resourceVersions:ResourceVersions={tasks:0,categories:0,ui:0};
+  let changedResourceVersions:ResourceVersions={tasks:0,categories:0,ui:0};
+  let noticeRevision=0;
+  const noticeListeners=new Set<()=>void>();
+  const subscribeNotice=(listener:()=>void)=>{noticeListeners.add(listener);return()=>{noticeListeners.delete(listener);};};
+  const noticeSnapshot=()=>noticeRevision;
+  const notifyNotice=()=>{if(!ports.noticeLabels)return;noticeRevision+=1;for(const listener of noticeListeners)listener();};
+  let blocked = false;
+  let suspended = false;
+  let rootRevision = 0;
+  const rootListeners = new Set<() => void>();
+  let active: Operation | undefined;
+  const pending = new Map<string, { epoch: number; version: number; url: string; operation?: Operation;resources:ResourceVersions }>();
+  const operations = new Map<string, Operation>();
+  const routes = new Map<string, Route>();
+  const queue: Operation[] = [];
+
+  const subscribeRoot = (listener: () => void) => {
+    rootListeners.add(listener);
+    return () => { rootListeners.delete(listener); };
+  };
+  const rootSnapshot = () => rootRevision;
+  const notifyRoot = () => {
+    rootRevision += 1;
+    for (const listener of rootListeners) listener();
+  };
+
+  /** Own the entire HXML tree; a boundary cannot hide stale sibling content. */
+  function Root(props: React.ComponentProps<typeof Hyperview>) {
+    const revision = useSyncExternalStore(subscribeRoot, rootSnapshot, rootSnapshot);
+    // App locale changes can rerender Root while Hyperview's PureComponent
+    // correctly retains its tree; update only the independent notice store.
+    useLayoutEffect(()=>{notifyNotice();});
+    const renderEpoch = epoch;
+    const provenance = useMemo(() => Object.freeze({instance, epoch:renderEpoch}), [renderEpoch]);
+    useLayoutEffect(() => {
+      if (!suspended) activeRoots.add(provenance);
+      return () => {activeRoots.delete(provenance);};
+    }, [provenance, revision]);
+    const fetch = useMemo<FetchImplementation>(() => async (input, init) => {
+      // Native/custom callbacks can retain the old tree's public onUpdate even
+      // after it unmounts. Never admit those requests under a new session.
+      if (renderEpoch !== epoch) throw new Error("Stale realtime root");
+      if (suspended) throw new Error("Realtime authentication is suspended");
+      if (!activeRoots.has(provenance)) throw new Error("Stale realtime root");
+      const ownedInit: RootRequestInit = {...init, [ROOT_PROVENANCE]:provenance};
+      return props.fetch(input, ownedInit);
+    }, [renderEpoch, props.fetch, provenance]);
+    const runtime = useMemo<Runtime>(()=>({fetch,before:props.onParseBefore,after:props.onParseAfter,parser:new Parser(fetch, props.onParseBefore, props.onParseAfter), onError:props.onError}), [fetch,props.onParseBefore,props.onParseAfter,props.onError]);
+    // Suspend instead of immediately fetching under cookies that may still
+    // belong to the old session. Authentication must confirm before resuming.
+    return suspended ? null : <RuntimeContext.Provider value={runtime}><Hyperview key={renderEpoch} {...props} fetch={fetch} /></RuntimeContext.Provider>;
+  }
+
+  function observe(event:GateObservation){
+    try{ports.onObservation?.(Object.freeze({...event}));}catch{ /* Observation cannot change an already decided lifecycle. */ }
+  }
+
+  function ready(route:Route){
+    if(retention.isPaused()||suspended||!route.focused||!route.ready||readyEpoch===epoch)return;
+    readyEpoch=epoch;
+    observe({kind:"ready",epoch,routeKey:route.key});
+    try{ports.onReady?.(Object.freeze({epoch,routeKey:route.key}));}catch{ /* Reporting cannot invent another readiness. */ }
+  }
+
+  function reject(reason: string, routeKey?: string) {
+    lastRejection = {reason, ...(routeKey ? {routeKey} : {})};
+  }
+
+  function retire(operation: Operation) {
+    operation.cleanup?.();
+    if (operation.timer) clearTimeout(operation.timer);
+    operations.delete(operation.token);
+    if (operation.id) pending.delete(operation.id);
+    if (active === operation) active = undefined;
+    retention.wake();
+  }
+
+  function indicators(operation: Operation, before: boolean) {
+    const route = routes.get(operation.key);
+    if (!route || operation.epoch !== epoch) return;
+    const options = operation.args[3];
+    for (const [names, visible] of [[options.showIndicatorIds,before],[options.hideIndicatorIds,!before]] as const) {
+      for (const id of (names || "").split(/\s+/).filter(Boolean)) {
+        const target = Array.from(currentDocument(route.element)?.getElementsByTagName("*") || []).find(node=>node.getAttribute("id")===id);
+        if (!target) continue;
+        const replacement = target.cloneNode(false) as Element;
+        for (const child of Array.from(target.childNodes)) replacement.appendChild(child);
+        replacement.setAttribute("hide",visible ? "false" : "true");
+        route.onUpdate(null,"swap",target,{newElement:replacement});
+        // Swap updates XML synchronously; observe its new tree without calling
+        // this an ACK. Only Boundary's later layout may acknowledge a result.
+        const current = currentDocument(replacement)?.getElementsByTagNameNS(NAMESPACE,"realtime")[0];
+        if (current) route.element = current;
+      }
+    }
+  }
+
+  function finish(operation: Operation, outcome: Outcome, reason: TerminalReason, progress = true) {
+    if (operations.get(operation.token) !== operation) return;
+    lastTerminal = {outcome, reason, routeKey:operation.key};
+    if (outcome !== "ack") indicators(operation,false);
+    const route = routes.get(operation.key);
+    if (route && outcome === "ack") {route.failedVersion = undefined;route.noticeCode=undefined;if(operation.args[1]==="reload")route.resourceFailure=undefined;}
+    else if (route && !["once","sync-replaced","sdk-on-end","navigation-changed","navigation-no-op","missing-destination"].includes(reason)) {route.notice = true; route.failedVersion = version;}
+    if(route&&operation.resourceRefresh&&outcome!=="ack"&&reason!=="owner-unavailable")route.resourceFailure=operation.resourceVersion;
+    retire(operation);
+    observe({kind:"terminal",epoch:operation.epoch,routeKey:operation.key,operation:operation.id??null,outcome,reason});
+    notifyNotice();
+    if (progress) drain();
+  }
+
+  function reportError(route: Route, error: Error) {
+    try {route.runtime?.onError?.(error);} catch {
+      // Caller reporting cannot skip our cleanup or create an unhandled rejection.
+      if (lastTerminal?.routeKey === route.key && lastTerminal.outcome !== "ack") lastTerminal = {...lastTerminal,reason:"caller-error"};
+    }
+  }
+
+  function callEnd(route: Route, operation: Operation) {
+    try {operation.args[3].onEnd?.();} catch (error) {reportError(route,error as Error);}
+  }
+
+  function cancelOwner(key: string, refreshOnly = false) {
+    for (const operation of operations.values()) {
+      if (operation.key === key && (!refreshOnly || operation.kind === "refresh")) { operation.navigationCheck?.(); finish(operation,"cancelled","owner-unavailable",false); }
+    }
+  }
+
+  function currentDocument(element: Element): Document | null {
+    let root: Node = element;
+    while (root.parentNode) root = root.parentNode;
+    return root.nodeType === 9 ? root as Document : null;
+  }
+
+  function hasReservedForm(element: Element): boolean {
+    let ancestor: Node | null = element;
+    while (ancestor?.nodeType === 1) {
+      const current = ancestor as Element;
+      if (current.localName === "form" && current.namespaceURI === "https://hyperview.org/hyperview") {
+        return Array.from(current.getElementsByTagName("*")).some(field => field.getAttribute("name") === OPERATION_PARAMETER);
+      }
+      ancestor = ancestor.parentNode;
+    }
+    return false;
+  }
+
+  function enqueue(key: string, args: Update, kind: Operation["kind"], ownerEpoch = epoch,resourceRefresh=false) {
+    const route = routes.get(key);
+    if(retention.isPaused()){reject("paused-owner",key);return;}
+    if (route && currentDocument(route.element)?.getElementsByTagNameNS(NAMESPACE, "realtime").length !== 1) { reject("ambiguous-owner", key); return; }
+    if (ownerEpoch !== epoch || suspended) { reject("stale-owner", key); return; }
+    if (!route?.focused) { reject("inactive-owner", key); return; }
+    const [href, action] = args;
+    if (!Array.from(currentDocument(route.element)!.getElementsByTagName("*")).includes(args[2])) { reject("missing-origin", key); return; }
+    if (!["append","replace","reload","navigate","back"].includes(action??"")) {
+      // Native input callbacks can arrive after their panel was replaced. Only
+      // a live node may reach SDK swap: its detached ancestor is not a Document.
+      route.onUpdate(...args);
+      // SDK swap moves the live tree synchronously, before React layout. Carry
+      // that authority forward for another current edit; this is never an ACK.
+      const document=route.options.onUpdateCallbacks?.getDoc();
+      const boundaries=document?.getElementsByTagNameNS(NAMESPACE,"realtime");
+      if(ownerEpoch===epoch&&routes.get(key)===route&&boundaries?.length===1)route.element=boundaries[0];
+      return;
+    }
+    const navigationAction=action==="navigate"||action==="back";
+    if ((!href || !href.trim()) && action!=="reload" && !navigationAction) { reject("missing-href", key); return; }
+    const local = !navigationAction && action!=="reload" && !!href?.startsWith("#");
+    if (local) {
+      const found = Array.from(currentDocument(route.element)!.getElementsByTagName("*")).some(element => element.getAttribute("id") === href!.slice(1));
+      if (!found) { reject("missing-local-source", key); return; }
+
+    }
+    let canonicalUrl = href??"";
+    if(action==="reload")try{canonicalUrl=reloadUrl(href,typeof route.options.screenUrl==="string"?route.options.screenUrl:route.baseUrl);}catch{reject("unsupported-href",key);return;}
+    else if (!local && !navigationAction) try {
+      const url = new URL(href!, route.baseUrl);
+      const base = new URL(route.baseUrl);
+      if (url.hash || !["http:", "https:"].includes(url.protocol) || url.origin !== base.origin) throw new Error("unsupported-href");
+      canonicalUrl = url.toString();
+      decorateOperationHref(href!, "g0-1-0-1");
+    } catch (error) { reject(error instanceof Error && error.message === "reserved-parameter" ? "reserved-parameter" : "unsupported-href", key); return; }
+    if (hasReservedForm(args[2])) { reject("reserved-parameter", key); return; }
+    if (args[3]?.once && args[3].behaviorElement?.getAttribute("ran-once")) {
+      lastTerminal = {outcome:"no-document",reason:"once",routeKey:key};
+      observe({kind:"terminal",epoch,routeKey:key,operation:null,outcome:"no-document",reason:"once"});
+      try {args[3].onEnd?.();} catch(error) {reportError(route,error as Error);}
+      return;
+    }
+    const syncId = args[3]?.syncId || undefined;
+    if (syncId) {
+      // Submitted XML is no longer replaceable network work, but still owns
+      // the serialization barrier until its matching real boundary layout.
+      const existing = [...operations.values()].filter(candidate=>candidate.key===key && candidate.syncId===syncId && candidate.phase!=="submitted");
+      if (existing.length && args[3]?.syncMethod !== "replace") {lastTerminal={outcome:"dropped",reason:"sync-drop",routeKey:key};observe({kind:"terminal",epoch,routeKey:key,operation:null,outcome:"dropped",reason:"sync-drop"});return;}
+      for (const candidate of existing) finish(candidate,"cancelled","sync-replaced",false);
+    }
+    if (operations.size >= 64) { reject("operation-capacity", key); return; }
+    try { operationSequence = nextCounter(operationSequence); }
+    catch { reject("operation-counter", key); return; }
+    const token = `g0-${instance}-${epoch}-${operationSequence}`;
+    // Keep immutable dispatch authority separate from the caller's retained options.
+    const options = Object.freeze({...args[3]});
+    const admitted: Readonly<Update> = Object.freeze([args[0], args[1], args[2], options]);
+    const method = action!=="reload" && options.verb === "post" ? "post" : "get";
+    const operation: Operation = {key, epoch, token, canonicalUrl, args:admitted, method, kind, phase:"pending", version, local, syncId,resourceRefresh,resourceVersion:resourceRefresh?neededVersion(route.resources,resourceVersions,route.observedResources):undefined};
+    operations.set(token, operation);
+    queue.push(operation);
+    drain();
+  }
+
+  function run(operation: Operation) {
+    const route = routes.get(operation.key);
+    if (!route || (operation.kind === "refresh" && !route.focused) || operation.epoch !== epoch) { finish(operation,"cancelled","owner-unavailable",false); return; }
+    active = operation;
+    const [href, action, element, options] = operation.args;
+    if(action==="navigate"||action==="back"){runNavigation(operation,route);return;}
+    if(action==="reload"){void runReload(operation,route);return;}
+    // Bare Hyperview remains a C1-only harness; owned lifecycles require Root.
+    if (!route.runtime) {
+      route.onUpdate(decorateOperationHref(href!, operation.token), action, element, {...options,onEnd:()=>{if(active===operation&&!operation.id)finish(operation,"no-document","sdk-on-end",false);try{callEnd(route,operation);}finally{drain();}}});
+      return;
+    }
+    const behavior = options.behaviorElement;
+    if (options.once && behavior) {
+      if (behavior.getAttribute("ran-once")) {finish(operation,"no-document","once",false);try{callEnd(route,operation);}finally{drain();}return;}
+      behavior.setAttribute("ran-once","true");
+    }
+    const form = route.options.componentRegistry?.getFormData(element) ?? null;
+    const retryAction = behavior?.getAttribute("network-retry-action") as Parameters<Parser["loadElement"]>[3];
+    const retryEvent = behavior?.getAttribute("network-retry-event");
+    indicators(operation,true);
+    const execute = async () => {
+      operation.timer = undefined;
+      const current = routes.get(operation.key);
+      if (operations.get(operation.token)!==operation || suspended || operation.epoch!==epoch) return;
+      if(retention.isPaused()&&!await retention.wait(()=>operations.get(operation.token)===operation&&!suspended&&operation.epoch===epoch))return;
+      if (!current || !findTarget(current.element,element,options)) {finish(operation,"cancelled","missing-target");return;}
+      if (options.delay && behavior && !Array.from(currentDocument(current.element)!.getElementsByTagName("*")).includes(behavior)) {finish(operation,"cancelled","removed-delayed-origin",false);try{callEnd(route,operation);}finally{drain();}return;}
+      try {
+        let source: Element;
+        if (operation.local) {
+          const original = Array.from(currentDocument(current.element)!.getElementsByTagName("*")).find(node=>node.getAttribute("id")===href!.slice(1));
+          if (!original) {finish(operation,"no-document","missing-local-source");return;}
+          source = original.cloneNode(true) as Element;
+        } else {
+          const result = await route.runtime!.parser.loadElement(decorateOperationHref(operation.canonicalUrl,operation.token),form,operation.method,retryAction,retryEvent);
+          if (typeof result === "symbol") {finish(operation,"no-document","parser-no-op");return;}
+          source = result.doc.documentElement;
+          const markers = [source,...Array.from(source.getElementsByTagNameNS(NAMESPACE,"realtime-page"))];
+          if (!markers.some(marker=>marker.namespaceURI===NAMESPACE && marker.localName==="realtime-page" && marker.getAttribute("request-id")===operation.id)) throw new UncorrelatedResult("Uncorrelated realtime result");
+        }
+        // This is the owned delivery seam: public Parser completion is NOT an ACK.
+        if(!await retention.wait(()=>operations.get(operation.token)===operation&&!suspended&&operation.epoch===epoch))return;
+        indicators(operation,false);
+        const owner = routes.get(operation.key);
+        const target = owner && findTarget(owner.element,element,options);
+        if (!owner || !target) {finish(operation,"cancelled","missing-target");return;}
+        const replacement = fragmentReplacement(target,source,action!);
+        const settingsUrl=operation.responseStatus===200&&operation.method==="post"?new URL(operation.canonicalUrl):null;
+        if(settingsUrl&&operation.method==="post"&&operation.responseStatus===200&&action==="replace"&&options.targetId==="settings-form-panel"&&settingsUrl.origin===new URL(owner.baseUrl).origin&&settingsUrl.pathname==="/hv/settings/"&&!settingsUrl.search&&source.namespaceURI==="https://hyperview.org/hyperview"&&source.localName==="view"&&source.getAttribute("id")==="settings-form-panel"){
+          for(const node of Array.from(source.childNodes))if(node.nodeType===1){
+            const behavior=node as Element;
+            if(behavior.namespaceURI==="https://hyperview.org/hyperview"&&behavior.localName==="behavior"&&behavior.getAttribute("action")==="store-biometric-token"&&behavior.getAttribute("trigger")==="load"&&behavior.hasAttribute("token")&&behavior.getAttribute("token")===""&&behavior.getAttribute("once")==="true"&&behavior.getAttribute("immediate")==="true")settingsClears.add(behavior);
+          }
+        }
+        operation.result = replacement;
+        operation.phase = "submitted";
+        if (operation.local) localCommits.set(replacement,operation);
+        owner.onUpdate(null,"swap",target,{newElement:replacement});
+        // Public swap synchronously moves live nodes into a cloned tree before
+        // React layout. Carry only this owned tree forward; this is not an ACK.
+        const boundaries = currentDocument(replacement)?.getElementsByTagNameNS(NAMESPACE,"realtime");
+        if (routes.get(operation.key)===owner && operations.get(operation.token)===operation && boundaries?.length===1) owner.element=boundaries[0];
+        callEnd(owner,operation);
+      } catch (error) {
+        const signal=error&&typeof error==="object"?authSignals.get(error):undefined;
+        if(signal&&signal.operation===operation){authSignals.delete(error as object);await deliverAuth(operation,signal.result);return;}
+        if (operations.get(operation.token)!==operation) return;
+        const outcome = error instanceof NoDocument ? "no-document" : error instanceof Error && error.name === "AbortError" ? "cancelled" : "error";
+        finish(operation,outcome,error instanceof NoDocument ? "empty-response" : error instanceof UncorrelatedResult ? "uncorrelated-result" : "request-error",false);
+        try {if (outcome === "error") reportError(route,error as Error);} finally {drain();}
+      }
+    };
+    if (options.delay) operation.timer=setTimeout(()=>{void execute();},parseInt(options.delay,10));
+    else void execute();
+  }
+
+  function runNavigation(operation:Operation,route:Route){
+    try{
+      const [href,action,element,options]=operation.args;
+      const target=navigationTarget(route.navigation,href,action!,route.baseUrl);
+      if(target.reason){finish(operation,"no-document",target.reason as TerminalReason);return;}
+      const before=JSON.stringify(target.navigation.getState());
+      const check=()=>{
+        if(operations.get(operation.token)!==operation||operation.epoch!==epoch||suspended)return;
+        const state=target.navigation.getState(),focused=state.routes[state.index];
+        if(JSON.stringify(state)===before)return;
+        if(target.name && focused?.name!==target.name)return;
+        if(target.url && new URL(String((focused?.params as {url?:string})?.url),route.baseUrl).pathname!==new URL(target.url).pathname)return;
+        finish(operation,"no-document","navigation-changed");
+      };
+      operation.navigationCheck=check;
+      operation.cleanup=target.navigation.addListener("state",check);
+      route.onUpdate(href,action,element,options);
+      check();
+    }catch(error){finish(operation,"error","request-error",false);reportError(route,error as Error);drain();}
+  }
+
+  async function runReload(operation:Operation,route:Route){
+    try{
+      if(!route.runtime)throw new Error("missing-screen-runtime");
+      const callbacks=screenCallbacks(route.options);
+      const options=operation.args[3];
+      if(options.once&&options.behaviorElement)options.behaviorElement.setAttribute("ran-once","true");
+      indicators(operation,true);
+      const parser=new Parser(async(input,init)=>{
+        const url=input;
+        const authority=Object.freeze({instance,epoch:operation.epoch,operation,url});
+        documentRequests.add(authority);
+        try{return await route.runtime!.fetch(input,{...init,[DOCUMENT_PROVENANCE]:authority} as RootRequestInit);}
+        finally{documentRequests.delete(authority);}
+      },route.runtime.before,route.runtime.after);
+      const result=await parser.loadDocument(operation.canonicalUrl);
+      if(!await retention.wait(()=>operations.get(operation.token)===operation&&!suspended&&operation.epoch===epoch))return;
+      const prepared=prepareReload(result.doc,operation.id);
+      indicators(operation,false);
+      operation.document=result.doc;operation.result=result.doc.documentElement;operation.phase="submitted";
+      callbacks.setState({doc:result.doc,styles:prepared.styles,url:operation.canonicalUrl,error:null,elementError:null,staleHeaderType:result.staleHeaderType});
+      if(routes.get(operation.key)===route&&operations.get(operation.token)===operation)route.element=prepared.boundary;
+      callEnd(route,operation);
+    }catch(error){
+      if(operations.get(operation.token)!==operation)return;
+      const outcome=error instanceof NoDocument?"no-document":error instanceof Error&&error.name==="AbortError"?"cancelled":"error";
+      finish(operation,outcome,error instanceof UnsupportedDocument?"unsupported-document":error instanceof NoDocument?"empty-response":"request-error",false);
+      if(outcome==="error")reportError(route,error as Error);drain();
+    }
+  }
+
+  function drain() {
+    notifyNotice();
+    if (blocked || active || suspended || retention.isPaused()) return;
+    while (queue.length) {
+      const next = queue.shift()!;
+      if (!operations.has(next.token)) continue;
+      run(next);
+      if (active) return;
+    }
+    for (const route of routes.values()) {
+      const legacyNotice=route.observed < version || route.failedVersion === version;
+      const dirty=neededVersion(route.resources,resourceVersions,route.observedResources);
+      route.notice=legacyNotice||dirty>0;
+      if(dirty&&route.ready&&route.focused&&route.mode==="list"&&route.pages.length===1&&route.pages[0]===1&&route.resourceFailure!==dirty){
+        refreshResources(route);break;
+      }
+      if (legacyNotice && route.focused && route.mode === "list" && route.pages.length === 1 && route.failedVersion !== version) {
+        enqueue(route.key, [route.refreshHref, "replace", route.element, {targetId:route.target,verb:"get"}], "refresh");
+        break;
+      }
+    }
+  }
+
+  function refreshResources(route:Route){
+    if(!route.ready||!route.focused||retention.isPaused()||suspended||!readNoticeLabels(ports.noticeLabels)||[...operations.values()].some(operation=>operation.key===route.key&&operation.resourceRefresh))return;
+    try{const url=resourceReloadUrl(route.refreshHref,route.baseUrl,route.mode);enqueue(route.key,[url,"reload",route.element,{}],"refresh",epoch,true);}
+    catch{route.resourceFailure=neededVersion(route.resources,resourceVersions,route.observedResources);route.notice=true;notifyNotice();}
+  }
+
+  function containsBoundary(document: Document | null | undefined, route: Route): boolean {
+    // XML clone operations can retain an old ownerDocument pointer. Match the
+    // current boundary node inside the actual getRoot() tree, not that pointer.
+    return !!document && Array.from(document.getElementsByTagNameNS(NAMESPACE, "realtime")).includes(route.element);
+  }
+
+  /** Capture actual live source ownership before any native await. */
+  function bindSource(element:Element,callbacks:{getRoot:()=>Document|undefined;updateRoot:(doc:Document)=>void}){
+    const document=callbacks.getRoot();
+    const owners=[...routes.values()].filter(route=>containsBoundary(document,route));
+    if(document?.getElementsByTagNameNS(NAMESPACE,"realtime").length!==1||owners.length!==1){reject("ambiguous-owner");return null;}
+    const key=owners[0].key,ownerEpoch=epoch;
+    const isAlive=()=>{
+      const current=callbacks.getRoot(),route=routes.get(key);
+      return ownerEpoch===epoch&&!suspended&&!!route&&containsBoundary(current,route)&&current?.getElementsByTagNameNS(NAMESPACE,"realtime").length===1&&Array.from(current.getElementsByTagName("*")).includes(element);
+    };
+    const sourceIsCurrent=()=>isAlive()&&!retention.isPaused()&&routes.get(key)?.focused===true;
+    if(!isAlive()){reject("missing-origin",key);return null;}
+    const dispatch:HvComponentOnUpdate=(...args)=>{
+      if(!sourceIsCurrent()){const route=routes.get(key);reject(ownerEpoch!==epoch||suspended?"stale-owner":retention.isPaused()?"paused-owner":!route||!containsBoundary(callbacks.getRoot(),route)?"missing-owner":!route.focused?"inactive-owner":"missing-origin",key);return;}
+      enqueue(key,args,"ordinary",ownerEpoch);
+    };
+    const authority=Object.freeze({isAlive,sourceIsCurrent,onUpdate:dispatch,effectReceipt:()=>sourceIsCurrent()?effectReceipts.get(element)??null:null,
+      bindBiometricSubmit:()=>{
+        if(!sourceIsCurrent())return null;
+        const route=routes.get(key)!,current=callbacks.getRoot()!;
+        const field=Array.from(current.getElementsByTagName("*")).find(node=>node.getAttribute("id")===element.getAttribute("target"));
+        let form:Node|null=element;while(form?.nodeType===1&&(form as Element).localName!=="form")form=form.parentNode;
+        const submit=form?.nodeType===1?Array.from((form as Element).getElementsByTagName("behavior")).filter(node=>node.getAttribute("trigger")==="on-event"&&node.getAttribute("event-name")===element.getAttribute("event-name")):[];
+        if(!field||!form||!Array.from((form as Element).getElementsByTagName("*")).includes(field)||submit.length!==1)return null;
+        const behavior=submit[0],href=behavior.getAttribute("href"),targetId=behavior.getAttribute("target");
+        if(!href||behavior.getAttribute("verb")!=="post"||behavior.getAttribute("action")!=="replace"||targetId!=="login-panel"||classifyAuth(new URL(href,route.baseUrl).toString(),"POST",new URL(route.baseUrl).origin)!=="biometric")return null;
+        let consumed=false;
+        return(token:string)=>{
+          if(consumed||!sourceIsCurrent()||!/^[A-Za-z0-9_-]{43}$/.test(token))return false;
+          const live=callbacks.getRoot()!;
+          if(![field,behavior].every(node=>Array.from(live.getElementsByTagName("*")).includes(node)))return false;
+          consumed=true;field.setAttribute("value",token);callbacks.updateRoot(shallowCloneToRoot(field));
+          const owned=routes.get(key),boundaries=callbacks.getRoot()?.getElementsByTagNameNS(NAMESPACE,"realtime");
+          if(owned&&boundaries?.length===1)owned.element=boundaries[0];
+          if(!sourceIsCurrent())return false;
+          dispatch(href,"replace",behavior.parentNode as Element,{verb:"post",targetId,behaviorElement:behavior});return true;
+        };
+      },
+    });
+    sourceAuthorities.set(authority,element);
+    return authority;
+  }
+
+  /** Explicit opt-in adapter for app-owned callbacks, never SDK defaults. */
+  function ownBehavior(behavior: HvBehavior): HvBehavior {
+    return {...behavior,callback:(element,_onUpdate,getRoot,updateRoot)=>{
+      const source=bindSource(element,{getRoot,updateRoot});
+      if(!source?.sourceIsCurrent())return;
+      behavior.callback(element,source.onUpdate,getRoot,updateRoot);
+    }};
+  }
+
+  async function deliverAuth(operation:Operation,result:AuthResult){
+    if(operations.get(operation.token)!==operation||operation.epoch!==epoch||suspended)return;
+    const route=routes.get(operation.key);if(!route){finish(operation,"cancelled","owner-unavailable");return;}
+    if(result.kind==="held"){
+      operation.authPreparing=false;operation.authHeld=true;
+      const queued=operation.authDelivery;operation.authDelivery=undefined;
+      if(queued){operation.authHeld=false;await deliverAuth(operation,queued);}
+      return;
+    }
+    operation.authPreparing=false;operation.authHeld=false;operation.authDelivery=undefined;
+    if(result.kind==="transition"){finish(operation,"no-document","auth-transition");return;}
+    if(!await retention.wait(()=>operations.get(operation.token)===operation&&!suspended&&operation.epoch===epoch))return;
+    if(result.kind==="panel"){
+      try{
+        const source=parseOwnedAuthPanel(result,operation.id);
+        const owner=routes.get(operation.key),target=owner&&findTarget(owner.element,operation.args[2],operation.args[3]);
+        if(!owner||!target){finish(operation,"cancelled","missing-target");return;}
+        for(const behavior of Array.from(source.getElementsByTagName("behavior")))if(behavior.getAttribute("action")==="store-biometric-token")effectReceipts.set(behavior,result.receipt);
+        indicators(operation,false);operation.result=source;operation.authReceipt=result.receipt;operation.phase="submitted";localCommits.set(source,operation);
+        owner.onUpdate(null,"swap",target,{newElement:source});
+        const boundaries=currentDocument(source)?.getElementsByTagNameNS(NAMESPACE,"realtime");
+        if(operations.get(operation.token)===operation&&boundaries?.length===1)owner.element=boundaries[0];
+        callEnd(owner,operation);
+      }catch(error){finish(operation,"error","request-error",false);reportError(route,error as Error);drain();}
+      return;
+    }
+    if(result.kind==="refused")route.noticeCode="auth-refused";
+    finish(operation,result.kind==="busy"?"dropped":"no-document",result.kind==="refused"?"auth-refused":result.kind==="busy"?"auth-busy":"auth-uncertain",false);
+    callEnd(route,operation);drain();
+  }
+
+  function Boundary({ element, stylesheets, onUpdate, options }: HvComponentProps) {
+    const { key } = useRoute();
+    const navigation = useNavigation<NavigationHandle>();
+    const focused = useIsFocused();
+    const runtime = useContext(RuntimeContext);
+    useSyncExternalStore(subscribeNotice,noticeSnapshot,noticeSnapshot);
+    const boundaryEpoch=epoch;
+    useLayoutEffect(() => {
+      const previous = routes.get(key);
+      let hasReady=previous?.ready??false;
+      let observedResources=previous?.observedResources??{tasks:0,categories:0,ui:0};
+      for (const node of [element,...Array.from(element.getElementsByTagName("*"))]) {
+        const local = localCommits.get(node);
+        if (local && local.key===key && local.epoch===epoch && local.result===node&&!retention.isPaused()) finish(local,"ack",local.authReceipt?"auth-panel-layout":"local-layout",false);
+      }
+      const pages = new Set<number>();
+      let observed = routes.get(key)?.observed ?? version;
+      let baseUrl = routes.get(key)?.baseUrl ?? "";
+      for (const marker of Array.from(element.getElementsByTagNameNS(NAMESPACE, "realtime-page"))) {
+        const page = Number(marker.getAttribute("page"));
+        if (Number.isInteger(page) && page >= 1) pages.add(page);
+        const requestId = marker.getAttribute("request-id") ?? "";
+        const request = pending.get(requestId);
+        if (request?.epoch !== epoch) continue;
+        hasReady=true;
+        if(retention.isPaused())continue;
+        const operation = request.operation;
+        if (operation?.document && operation.document!==currentDocument(element)) continue;
+        if (operation && (operation.key !== key || operation.epoch !== epoch || operations.get(operation.token) !== operation)) continue;
+        if (!routes.has(key)) observed = Math.min(observed, request.version);
+        if (!operation || operation.args[1]==="reload"){baseUrl=request.url;observedResources=request.resources;}
+        pending.delete(requestId);
+        if (operation) {
+          if (operation.kind === "refresh" || operation.args[1]==="reload") observed = operation.version;
+          finish(operation,"ack",operation.args[1]==="reload"?"reload-layout":"remote-layout",false);
+        }
+      }
+      routes.set(key, {
+        key, focused, element, onUpdate, observed, baseUrl, runtime, options, navigation, failedVersion:previous?.failedVersion,ready:hasReady,noticeCode:previous?.noticeCode,
+        resources:dependencies(element),observedResources,resourceFailure:previous?.resourceFailure,
+        pages: [...pages].sort((a, b) => a - b),
+        refreshHref: element.getAttribute("refresh-href") ?? "",
+        target: element.getAttribute("target") ?? "",
+        mode: element.getAttribute("mode") ?? "notice",
+        notice: observed < version || previous?.failedVersion === version || neededVersion(dependencies(element),resourceVersions,observedResources)>0,
+      });
+      ready(routes.get(key)!);
+      if (!focused) cancelOwner(key, true);
+      drain();
+    }, [element, focused, key, onUpdate, runtime, options,navigation]);
+    useLayoutEffect(() => () => {
+      routes.delete(key);
+      cancelOwner(key);
+      drain();
+    }, [key]);
+    const dispatch: HvComponentOnUpdate = (...args) => enqueue(key, args, "ordinary", boundaryEpoch);
+    const route=routes.get(key),labels=readNoticeLabels(ports.noticeLabels);
+    const visible=route?.notice&&focused&&labels;
+    const resyncOnly=route&&neededVersion(route.resources,resourceVersions,route.observedResources)>0&&neededVersion(route.resources,changedResourceVersions,route.observedResources)===0;
+    const message=route?.noticeCode==="auth-refused"?labels?.csrf:route?.failedVersion===version?labels?.error:resyncOnly?labels?.resync:labels?.changed;
+    return <>{visible&&message?<ResourceNotice message={message} label={labels.update} disabled={retention.isPaused()||suspended||!!active} onUpdate={route.noticeCode==="auth-refused"?undefined:()=>{if(epoch===boundaryEpoch&&routes.get(key)===route)refreshResources(route);}}/>:null}{renderChildren(element, stylesheets, dispatch, options)}</>;
+  }
+
+  const components = [
+    Object.assign(Boundary, { localName: "realtime", namespaceURI: NAMESPACE }),
+    Object.assign(() => null, { localName: "realtime-page", namespaceURI: NAMESPACE }),
+  ];
+
+  function wrapFetch(transport: FetchImplementation): FetchImplementation {
+    return async (input, init = {}) => {
+      // A retained callback can outlive the mounted Root during login/logout.
+      // Deny admission before transport, request IDs or pending state exist.
+      if (suspended) throw new Error("Realtime authentication is suspended");
+      const requestEpoch = epoch;
+      const hosted = Object.prototype.hasOwnProperty.call(init, ROOT_PROVENANCE);
+      const {[ROOT_PROVENANCE]:provenance,[DOCUMENT_PROVENANCE]:documentProvenance, ...transportInit} = init as RootRequestInit;
+      if (hosted && (!provenance || typeof provenance !== "object" || !activeRoots.has(provenance) || provenance.instance !== instance || provenance.epoch !== epoch)) throw new Error("Invalid realtime root provenance");
+      const inputUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const parsed = readOperationUrl(inputUrl);
+      if(documentProvenance && (!documentRequests.has(documentProvenance)||documentProvenance.instance!==instance||documentProvenance.epoch!==epoch||documentProvenance.url!==inputUrl))throw new Error("invalid-document-operation");
+      const operation = documentProvenance?.operation ?? (parsed.token ? operations.get(parsed.token) : undefined);
+      if(documentProvenance && (!operation||operations.get(operation.token)!==operation||operation.id))throw new Error("unknown-document-operation");
+      if (parsed.token && (!operation || operation.epoch !== epoch || operation.id)) throw new Error("unknown-operation");
+      if (operation && (operation !== active || !routes.has(operation.key) || (operation.kind === "refresh" && !routes.get(operation.key)?.focused) || (!documentProvenance && parsed.prefix !== operation.canonicalUrl) || (init.method ?? "get").toLowerCase() !== operation.method)) throw new Error("operation-owner-mismatch");
+      if(retention.isPaused()&&!operation)throw new Error("Paused realtime root");
+      if (hasReservedBody(init.body)) {
+        if (operation) {reject("reserved-parameter", operation.key);retire(operation);drain();}
+        throw new Error("reserved-parameter");
+      }
+      try { sequence = nextCounter(sequence); }
+      catch { throw new Error("attempt-counter"); }
+      const requestId = `gate-${instance}-${epoch}-${sequence}`;
+      pending.set(requestId, {epoch, version, url:parsed.canonicalUrl, operation,resources:resourceVersions});
+      if (operation) operation.id = requestId;
+      const assertCurrent = () => {
+        if (epoch !== requestEpoch) throw new Error("Stale realtime epoch");
+        if (operation && operations.get(operation.token) !== operation) throw new Error("Cancelled realtime operation");
+      };
+      const headers = new Headers(init.headers);
+      headers.set(REQUEST_HEADER, requestId);
+      try {
+        const prepared={...transportInit,headers};
+        if(operation&&ports.authenticate&&classifyAuth(parsed.canonicalUrl,operation.method,new URL(parsed.canonicalUrl).origin)){
+          operation.authPreparing=true;
+          const resume=(result:AuthResult)=>{
+            if(result.kind==="held"||operation.authDelivered||(!operation.authPreparing&&!operation.authHeld)||operations.get(operation.token)!==operation||operation.epoch!==epoch||suspended)return false;
+            operation.authDelivered=true;
+            // Foreground may settle before Parser propagates our private held
+            // signal. Buffer one result, never invent a Response or early ACK.
+            if(operation.authPreparing)operation.authDelivery=result;
+            else{operation.authHeld=false;void deliverAuth(operation,result);}
+            return true;
+          };
+          const result=await ports.authenticate(parsed.canonicalUrl,prepared,resume);
+          const signal=Object.freeze({});authSignals.set(signal,{operation,result});throw signal;
+        }
+        const response = await transport(parsed.token ? parsed.canonicalUrl : input, prepared);
+        assertCurrent();
+        if(operation)operation.responseStatus=response.status;
+        if (operation && (response.status === 204 || response.status === 205)) throw new NoDocument();
+        // Parser reads the body later. A headers-only epoch check lets a
+        // logout during response.text() expose the previous session's document.
+        return new Proxy(response, {
+          get(target, property) {
+            if (property === "text") {
+              return async () => {
+                try {
+                  if(!await retention.wait(()=>epoch===requestEpoch&&!suspended&&(!operation||operations.get(operation.token)===operation)))throw new Error("Stale retained response");
+                  const text = await target.text();
+                  if(!await retention.wait(()=>epoch===requestEpoch&&!suspended&&(!operation||operations.get(operation.token)===operation)))throw new Error("Stale retained response");
+                  assertCurrent();
+                  if (operation && !text.trim()) throw new NoDocument();
+                  return text;
+                } catch (error) {
+                  pending.delete(requestId);
+                  if (operation) { /* The owned parser catch retires this exact attempt. */ }
+                  else if (!operation && !hosted && epoch === requestEpoch) blocked = true;
+                  throw error;
+                }
+              };
+            }
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      } catch (error) {
+        pending.delete(requestId);
+        if (operation) { /* The owned parser catch retires this exact attempt. */ }
+        else if (!operation && !hosted && epoch === requestEpoch) blocked = true;
+        throw error;
+      }
+    };
+  }
+
+  return {
+    Root,
+    components,
+    wrapFetch,
+    ownBehavior,
+    bindSource,
+    isSettingsClear:(element:Element,source:{sourceIsCurrent():boolean})=>sourceAuthorities.get(source)===element&&settingsClears.has(element)&&source.sourceIsCurrent(),
+    setRetainedPaused:(ownedEpoch:number,paused:boolean)=>{
+      if(ownedEpoch!==epoch||suspended)return false;
+      retention.set(paused);
+      if(!paused){for(const route of routes.values()){route.options.onUpdateCallbacks?.setState({});ready(route);}drain();}
+      return true;
+    },
+    snapshot: () => ({
+      pending: pending.size, queued: queue.filter(operation => operations.has(operation.token)).length, operations: operations.size, lastRejection, lastTerminal, blocked, suspended, epoch,retainedPaused:retention.isPaused(),
+      routes: [...routes.values()].map(({ key, focused, pages, refreshHref, notice,noticeCode }) => ({ key, focused, pages, refreshHref, notice,noticeCode })),
+    }),
+    invalidateResources:(capturedEpoch:number,resources:readonly ResourceName[],cause:"invalidate"|"resync"="invalidate"):boolean=>{
+      const names=parseResources(resources);
+      if(capturedEpoch!==epoch||suspended||!names||!["invalidate","resync"].includes(cause)||!readNoticeLabels(ports.noticeLabels))return false;
+      if(resourceSequence>=Number.MAX_SAFE_INTEGER)return false;
+      resourceSequence+=1;resourceVersions={...resourceVersions,...Object.fromEntries(names.map(name=>[name,resourceSequence]))};
+      // Reconciliation cannot erase a still-unacknowledged real invalidation.
+      if(cause==="invalidate")changedResourceVersions={...changedResourceVersions,...Object.fromEntries(names.map(name=>[name,resourceSequence]))};
+      drain();return true;
+    },
+    invalidate: () => {
+      version += 1;
+      for (const route of routes.values()) route.notice = true;
+      drain();
+    },
+    resetEpoch: () => {
+      // Revoke before allocation: exhaustion must not revive a consumed epoch.
+      resumableEpoch = null;
+      pending.clear();
+      for (const operation of operations.values()) retire(operation);
+      operations.clear();
+      queue.length = 0;
+      active = undefined;
+      blocked = true;
+      suspended = true;
+      routes.clear();
+      resourceSequence=0;resourceVersions={tasks:0,categories:0,ui:0};
+      changedResourceVersions={tasks:0,categories:0,ui:0};
+      retention.wake();readyEpoch=undefined;
+      try {
+        epoch = nextCounter(epoch);
+        resumableEpoch = epoch;
+      } finally { notifyRoot(); }
+      return epoch;
+    },
+    /** Resume only after the caller confirms authentication for this token. */
+    resumeEpoch: (token: number): boolean => {
+      if (token !== epoch || token !== resumableEpoch || !suspended) return false;
+      resumableEpoch = null;
+      suspended = false;
+      blocked = false;
+      notifyRoot();
+      return true;
+    },
+  };
+}

@@ -1,4 +1,4 @@
-{% load i18n %}<view xmlns="https://hyperview.org/hyperview" id="preference-panel">
+{% load i18n %}<view xmlns="https://hyperview.org/hyperview" id="preference-panel">{% if realtime_enabled and realtime_fragment == "fragments/preference_transition.xml" %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
   <!-- No style id anywhere in this fragment. `replace` does not rebuild stylesheets,
        and the switcher has ONE host now: the side menu, opened from the dashboard.
        Settings dropped it when it became a single deferred form, since a control
@@ -16,5 +16,5 @@
        (hyperview.tsx:291-299), so the host is in that listener set already and an
        href-less reload beside it would just fire a second concurrent GET of the
        same url. Add one back only for a host that does not listen, and say so. -->
-  <behavior trigger="load" action="dispatch-event" event-name="session-changed" once="true" />
+  {% if realtime_enabled %}<behavior trigger="load" action="notify-resources" resources="ui" once="true" />{% else %}<behavior trigger="load" action="dispatch-event" event-name="session-changed" once="true" />{% endif %}
 </view>

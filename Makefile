@@ -21,7 +21,7 @@ endef
 
 .PHONY: help setup test check \
 	backend-install backend-migrate backend-seed backend-run backend-run-redis \
-	backend-run-device \
+	backend-run-device backend-run-sse \
 	backend-test backend-test-editor backend-test-redis backend-lint backend-check backend-quality \
 	mobile-install mobile-start mobile-start-android mobile-test mobile-typecheck \
 	mobile-start-device mobile-start-go mobile-login mobile-whoami \
@@ -67,6 +67,16 @@ backend-run-device: ## Start Redis-backed Django for a device; requires LAN_IP.
 		CSRF_TRUSTED_ORIGINS="http://127.0.0.1:8000,http://$(LAN_IP):8000" \
 		uv run python manage.py runserver 0.0.0.0:8000
 
+backend-run-sse: ## Run ASGI/SSE with filesystem HXML; existing DB override rows stay untouched.
+	@echo "Development SSE uses filesystem templates only; database override rows are unchanged."
+	@cd "$(BACKEND_DIR)" && \
+		DJANGO_SETTINGS_MODULE=config.settings_sse \
+		DJANGO_ALLOWED_HOSTS="127.0.0.1,localhost,$(if $(LAN_IP),$(LAN_IP),127.0.0.1)" \
+		CSRF_TRUSTED_ORIGINS="http://127.0.0.1:8000,http://$(if $(LAN_IP),$(LAN_IP),127.0.0.1):8000" \
+		uv run python -m uvicorn config.asgi:application \
+		--host "$(if $(LAN_IP),$(LAN_IP),127.0.0.1)" --port 8000 \
+		--loop asyncio --http h11 --ws none --no-proxy-headers
+
 backend-test: ## Run backend tests with branch-aware coverage enforcement.
 	@cd "$(BACKEND_DIR)" && uv run pytest
 
@@ -105,7 +115,7 @@ mobile-start-device: ## Start Metro for a physical device; requires LAN_IP.
 
 mobile-start-go: ## Start local Expo Go QR workflow; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
-	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) start:go)
+	@$(call run_mobile,EXPO_PUBLIC_ALLOW_LOCAL_API=1 EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) start:go)
 
 mobile-login: ## Sign in to Expo CLI through the browser.
 	@$(call run_mobile,$(YARN) expo login --browser)

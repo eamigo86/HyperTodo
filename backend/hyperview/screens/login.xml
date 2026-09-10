@@ -46,6 +46,7 @@
     </style>
   </styles>
     <body style="login-body" scroll="true" over-scroll="false" shows-scroll-indicator="false" content-container-style="login-scroll">
+      {% if realtime_enabled %}<app:realtime xmlns:app="https://hypertodo.app/components" resources="{{ realtime_resources }}" refresh-href="{{ realtime_refresh_href }}" target="{{ realtime_target }}" mode="{{ realtime_mode }}"><app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
       <view style="login-hero">
         <view style="hero-mark"><text style="hero-mark-check">✓</text></view>
         <text style="login-brand">HyperTodo</text>
@@ -53,6 +54,7 @@
       <view style="login-sheet">
         {% include "fragments/login_panel.xml" %}
       </view>
+    {% if realtime_enabled %}</app:realtime>{% endif %}
     </body>
   </screen>
 </doc>

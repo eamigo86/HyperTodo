@@ -1,4 +1,4 @@
-{% load dj_hyperview i18n static %}<view xmlns="https://hyperview.org/hyperview" id="login-panel">
+{% load dj_hyperview i18n static %}<view xmlns="https://hyperview.org/hyperview" id="login-panel"{% if realtime_enabled %} key="auth-panel-{{ realtime_request_id }}"{% endif %}>{% if realtime_enabled and realtime_fragment == "fragments/login_panel.xml" %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
   {% if biometric == 'reset' %}<behavior trigger="load" action="store-biometric-token" token="" once="true" immediate="true" />{% endif %}<behavior trigger="load" action="probe-biometrics" once="true" available-target="biometric-optin" token-target="biometric-signin" />
   <form id="login-form">
     <view style="card">
@@ -25,14 +25,14 @@
              ProbeBiometricsBehavior reveals the ROW, biometric-optin. -->
         <switch id="{% translate "Unlock with biometrics next time" %}" name="enable_biometrics" value="{{ optin_default|default:'off' }}" style="optin-switch" />
       </view>
-      {% hv_csrf_token %}
+      {% if recovery_csrf_token %}<text-field hide="true" name="csrfmiddlewaretoken" value="{{ recovery_csrf_token }}" />{% else %}{% hv_csrf_token %}{% endif %}
       <view id="login-submit" style="button" href="/hv/login/" verb="post" action="replace" target="login-panel">
         <text style="button-text">{% translate "Sign in" %}</text>
       </view>
     </view>
   </form>
   <form id="biometric-form">
-    {% hv_csrf_token %}
+    {% if recovery_csrf_token %}<text-field hide="true" name="csrfmiddlewaretoken" value="{{ recovery_csrf_token }}" />{% else %}{% hv_csrf_token %}{% endif %}
     <text-field hide="true" id="biometric-token" name="biometric_token" value="" />
     <view id="biometric-signin" hide="true" style="biometric-button">
       <behavior trigger="press" action="biometric-unlock" target="biometric-token" event-name="biometric-authenticated" prompt="{% translate "Sign in to HyperTodo" %}" />

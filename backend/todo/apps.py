@@ -28,3 +28,7 @@ class TodoConfig(AppConfig):
                 "Adopt the approved package and consumer configuration together; "
                 "validation cannot be disabled."
             )
+
+        from .realtime_signals import connect_realtime_signals
+
+        connect_realtime_signals()

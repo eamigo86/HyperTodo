@@ -1,5 +1,5 @@
 {% load dj_hyperview i18n static %}<side-menu xmlns="https://hypertodo.app/components" id="side-menu-host" style="side-menu" close-href="/hv/menu/close/" animation-duration="220" panel-width="80">
-  <view xmlns="https://hyperview.org/hyperview" style="side-menu-panel">
+  <view xmlns="https://hyperview.org/hyperview" style="side-menu-panel">{% if realtime_enabled and realtime_fragment == "fragments/side_menu.xml" %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
     <!-- The header bleeds edge to edge under the client's close chip, which is
          hardcoded at top:20 right:20 (AnimatedSideMenu.tsx:120-130). The
          paddingRight on side-menu-header is what keeps these two lines out from

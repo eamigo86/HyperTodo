@@ -24,6 +24,7 @@
     <style id="copyright" color="{{ theme.ink_muted }}" fontSize="12" marginTop="8" textAlign="center" />
   </styles>
     <body style="screen">
+      {% if realtime_enabled %}<app:realtime xmlns:app="https://hypertodo.app/components" resources="{{ realtime_resources }}" refresh-href="{{ realtime_refresh_href }}" target="{{ realtime_target }}" mode="{{ realtime_mode }}"><app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
       {% include "partials/screen_header.xml" with header_title=_("About") back_id="about-back" %}
       <view style="content" scroll="true" shows-scroll-indicator="false" content-container-style="content-inner">
         <view style="hero">
@@ -39,6 +40,7 @@
         <text id="about-package-version" style="package-version">dj-hyperview {{ dj_hyperview_version }}</text>
         <text id="about-copyright" style="copyright">© {{ copyright_year }} HyperTodo. {% translate "All rights reserved." %}</text>
       </view>
+    {% if realtime_enabled %}</app:realtime>{% endif %}
     </body>
   </screen>
 </doc>

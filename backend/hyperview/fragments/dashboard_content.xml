@@ -1,4 +1,4 @@
-{% load dj_hyperview i18n static %}<view xmlns="https://hyperview.org/hyperview" id="dashboard-content">
+{% load dj_hyperview i18n static %}<view xmlns="https://hyperview.org/hyperview" id="dashboard-content">{% if realtime_enabled and realtime_fragment == "fragments/dashboard_content.xml" %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
   <view id="dashboard-hero" style="hero">
     <view style="hero-row">
       <!-- The disc alone is the control, and at 52pt it is its own hit area, so it

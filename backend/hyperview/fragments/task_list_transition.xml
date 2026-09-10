@@ -1,4 +1,4 @@
-<view xmlns="https://hyperview.org/hyperview" id="task-list-transition">
+<view xmlns="https://hyperview.org/hyperview" id="task-list-transition">{% if realtime_enabled and realtime_fragment == "fragments/task_list_transition.xml" %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
   <behavior trigger="load" action="show-snackbar" message="{{ notice_message }}" tone="success" once="true" />
   <!-- NOT `reload href="/hv/tasks/"`. That re-requests the list with no query string,
        and task_list defaults status to "all" with no category, so a swipe-toggle or
@@ -7,5 +7,5 @@
        task_transition.xml makes, so form-save, toggle and delete now share one shape:
        the tasks screen's listener re-requests the list WITH the filter still on it,
        and the dashboard's listener reloads its own url. -->
-  <behavior trigger="load" action="dispatch-event" event-name="tasks-changed" once="true" />
+  {% if realtime_enabled %}<behavior trigger="load" action="notify-resources" resources="tasks" once="true" />{% else %}<behavior trigger="load" action="dispatch-event" event-name="tasks-changed" once="true" />{% endif %}
 </view>

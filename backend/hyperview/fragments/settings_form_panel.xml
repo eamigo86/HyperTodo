@@ -1,4 +1,4 @@
-{% load dj_hyperview i18n %}<view xmlns="https://hyperview.org/hyperview" id="settings-form-panel">
+{% load dj_hyperview i18n %}<view xmlns="https://hyperview.org/hyperview" id="settings-form-panel">{% if realtime_enabled and realtime_fragment == "fragments/settings_form_panel.xml" %}<app:realtime-page xmlns:app="https://hypertodo.app/components" request-id="{{ realtime_request_id }}" page="1" />{% endif %}
   {% if form.errors or avatar_error %}<behavior trigger="load" action="show-snackbar" message="{% translate "Please review the highlighted profile details." %}" tone="error" once="true" />{% endif %}
   <form id="settings-form">
     <!-- No id on an error <text>. HvText builds its props with createProps

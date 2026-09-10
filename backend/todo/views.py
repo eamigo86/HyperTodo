@@ -20,7 +20,7 @@ from django.core.cache import cache
 from django.core.paginator import EmptyPage, Page, PageNotAnInteger, Paginator
 from django.db import transaction
 from django.db.models import Count, QuerySet
-from django.http import Http404, HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone, translation
 from django.utils.cache import patch_cache_control
@@ -30,6 +30,8 @@ from django.views.decorators.vary import vary_on_headers
 from .context_processors import THEME_COOKIE, THEME_COOKIE_MAX_AGE
 from .forms import AvatarForm, CategoryForm, LoginForm, ProfileForm, TaskForm
 from .models import Category, Profile, Task
+from .realtime_templates import realtime_context
+from .recovery import is_recovery, neutral_render_context
 from .selectors import (
     VALID_STATUSES,
     dashboard_summary,
@@ -51,6 +53,7 @@ from .services import (
     update_profile,
     update_task,
 )
+from .session_contract import AuthOutcome, attach_auth_outcome
 
 APP_VERSION_HEADER = "X-App-Version"
 # The header is attacker-controlled text rendered into the settings document, so it
@@ -90,7 +93,8 @@ def _template_response(
     context: dict[str, object] | None = None,
     *,
     status: int = 200,
-) -> HyperviewTemplateResponse:
+    auth_outcome: AuthOutcome | None = None,
+) -> HttpResponse:
     """Render a document or validated fragment from the declared endpoint shape.
 
     Args:
@@ -98,22 +102,41 @@ def _template_response(
         template_name: Consumer-owned HXML template name.
         context: Optional rendering context.
         status: HTTP status for the response.
+        auth_outcome: Optional literal supplied only by an actual auth branch.
 
     Returns:
         A document response for navigation or a validated fragment response for
-        an in-place update.
+        an in-place update, or bounded JSON if neutral rendering fails.
     """
     response_class = (
         HyperviewFragmentTemplateResponse
         if request.hv_fragment
         else HyperviewTemplateResponse
     )
-    response = response_class(request, template_name, context, status=status)
+    context = dict(context or {})
+    context.update(realtime_context(request, template_name, context))
+    if is_recovery(request):
+        try:
+            render_request, context = neutral_render_context(request, context)
+            response = response_class(
+                render_request, template_name, context, status=status
+            )
+            # Complete while the neutral language scope still owns the render.
+            response.render()
+        except Exception:
+            # Even DEBUG must not turn a rejected DB template into a report of
+            # the original request's cookies, user or headers. Validation still
+            # failed: publish no document and no successful authentication tag.
+            response = JsonResponse({"error": "recovery-render-failed"}, status=500)
+    else:
+        response = response_class(request, template_name, context, status=status)
     # Policy, not a fix: every HXML response here is session-specific or mutable,
     # so no platform cache may replay one. This header was added while chasing the
     # stale-row bug and changed nothing; that bug was a <style id> shadowing the
     # <list id> it targeted, now guarded by test_fragment_contract.py.
     patch_cache_control(response, private=True, no_store=True)
+    if auth_outcome is not None and response.status_code == status:
+        attach_auth_outcome(request, response, auth_outcome)
     return response
 
 
@@ -339,6 +362,7 @@ def login_view(request: HttpRequest) -> HttpResponse:
                     request,
                     "fragments/login_transition.xml",
                     {"biometric_token": token},
+                    auth_outcome="password-ok",
                 )
             form.add_error(None, _("The username or password is incorrect."))
         return _template_response(
@@ -356,6 +380,7 @@ def login_view(request: HttpRequest) -> HttpResponse:
                 ),
             },
             status=422,
+            auth_outcome="password-invalid",
         )
     return _template_response(
         request, "screens/login.xml", {"form": LoginForm(), "optin_default": "off"}
@@ -397,7 +422,12 @@ def _count_biometric_failure(request: HttpRequest) -> None:
 
 
 def _biometric_panel(
-    request: HttpRequest, message: str, status: int, *, wipe_device: bool
+    request: HttpRequest,
+    message: str,
+    status: int,
+    *,
+    wipe_device: bool,
+    auth_outcome: AuthOutcome,
 ) -> HttpResponse:
     """Render the login panel after a refused biometric attempt.
 
@@ -405,6 +435,7 @@ def _biometric_panel(
         request: Incoming biometric login request.
         message: Copy explaining the refusal.
         status: HTTP status for the response.
+        auth_outcome: Literal selected by the biometric refusal branch.
         wipe_device: Whether the panel should clear the device's stored token.
             Only a rejected token justifies that; a throttled request says nothing
             about whether the token is still valid.
@@ -427,6 +458,7 @@ def _biometric_panel(
             "optin_default": "on" if wipe_device else "off",
         },
         status=status,
+        auth_outcome=auth_outcome,
     )
 
 
@@ -448,6 +480,7 @@ def biometric_login(request: HttpRequest) -> HttpResponse:
             _("Too many attempts. Sign in with your password."),
             429,
             wipe_device=False,
+            auth_outcome="biometric-throttled",
         )
     user = authenticate_biometric_token(
         raw_token=request.POST.get("biometric_token", "")
@@ -459,6 +492,7 @@ def biometric_login(request: HttpRequest) -> HttpResponse:
             _("This device is no longer recognised. Sign in to enable it again."),
             401,
             wipe_device=True,
+            auth_outcome="biometric-invalid",
         )
     cache.delete(_biometric_attempt_key(request))
     # authenticate_biometric_token resolves the user itself, so name the backend that
@@ -468,6 +502,7 @@ def biometric_login(request: HttpRequest) -> HttpResponse:
         request,
         "fragments/login_transition.xml",
         {"biometric_token": issue_biometric_token(user=user)},
+        auth_outcome="biometric-ok",
     )
 
 
@@ -712,7 +747,9 @@ def logout_view(request: HttpRequest) -> HttpResponse:
     # partials/security_card.xml saved through settings_view, or with a password
     # login whose opt-in switch is off.
     logout(request)
-    response = _template_response(request, "fragments/logout_transition.xml")
+    response = _template_response(
+        request, "fragments/logout_transition.xml", auth_outcome="logout-ok"
+    )
     # The preference mirrors are per-DEVICE, and an explicit sign-out hands the device
     # to somebody else. A blank profile does not override either channel, so the next
     # account to sign in would inherit the previous one's language from
