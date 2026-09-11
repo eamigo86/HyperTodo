@@ -1,4 +1,4 @@
-import type { NavigationProp, ParamListBase } from "@react-navigation/native";
+import {CommonActions,type NavigationProp,type ParamListBase} from "@react-navigation/native";
 import { createStylesheets, type HvComponentProps } from "hyperview";
 
 const HV = "https://hyperview.org/hyperview";
@@ -7,6 +7,42 @@ const APP = "https://hypertodo.app/components";
 /** The returned document cannot safely replace an owned ordinary screen. */
 export class UnsupportedDocument extends Error {}
 export type NavigationHandle = NavigationProp<ParamListBase>;
+
+type PublicRoute={key?:string;state?:{index?:number;routes:readonly PublicRoute[]}};
+function focusedBranch(route:PublicRoute|undefined):string[]{
+ const keys:string[]=[],seen=new Set<PublicRoute>();
+ while(route&&!seen.has(route)){
+  seen.add(route);if(route.key)keys.push(route.key);
+  route=route.state?.routes[route.state.index??0];
+ }
+ return keys;
+}
+
+/** Capture a real preceding stack entry, never guess by screen name or resource. */
+export function previousRoute(navigation:NavigationHandle,currentKey:string){
+ let owner:NavigationHandle|undefined=navigation;
+ const seen=new Set<NavigationHandle>();
+ while(owner&&!seen.has(owner)){
+  seen.add(owner);const state=owner.getState(),source=state.routes[state.index];
+  if(!focusedBranch(source).includes(currentKey))return null;
+  if(state.type==='stack'&&state.index>0){
+   const key=focusedBranch(state.routes[state.index-1]).at(-1);
+   if(!key||!source?.key||!state.key)return null;
+   const capturedOwner=owner,target=state.key,sourceKey=source.key;let consumed=false;
+   const isCurrent=()=>{
+    const now=capturedOwner.getState();
+    return !consumed&&now.key===target&&now.type==='stack'&&now.index>0&&now.routes[now.index]?.key===sourceKey
+     &&focusedBranch(now.routes[now.index]).includes(currentKey)&&focusedBranch(now.routes[now.index-1]).at(-1)===key;
+   };
+   return {key,isCurrent,goBack:()=>{
+    if(!isCurrent())return false;consumed=true;
+    capturedOwner.dispatch({...CommonActions.goBack(),source:sourceKey,target});return true;
+   }};
+  }
+  owner=owner.getParent();
+ }
+ return null;
+}
 
 type Destination = {
   navigation: NavigationHandle;

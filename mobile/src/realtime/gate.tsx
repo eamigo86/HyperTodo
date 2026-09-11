@@ -1,21 +1,22 @@
 import { useIsFocused, useRoute, useNavigation } from "@react-navigation/native";
 import Hyperview, { Parser, renderChildren, shallowCloneToRoot, type HvComponentOnUpdate, type HvComponentProps, type HvBehavior } from "hyperview";
 import React, { createContext, useContext, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
-import {ActivityIndicator,View} from 'react-native';
+import {ActivityIndicator,StyleSheet,View} from 'react-native';
 import RealtimeNotice from '../components/RealtimeNotice';
+import RealtimeConflictDialog from '../components/RealtimeConflictDialog';
 
 import type { FetchImplementation } from "../network";
 import { decorateOperationHref, hasReservedBody, readOperationUrl, nextCounter, OPERATION_PARAMETER } from "./operation";
 
 import {findTarget, fragmentReplacement} from "./fragment";
-import {navigationTarget, prepareReload, reloadUrl, screenCallbacks, UnsupportedDocument, type NavigationHandle} from "./navigation";
+import {navigationTarget, previousRoute, prepareReload, reloadUrl, screenCallbacks, UnsupportedDocument, type NavigationHandle} from "./navigation";
 
 import {parseOwnedAuthPanel,type GatePorts,type GateObservation,type Outcome,type TerminalReason} from "./auth";
 import {classifyAuth} from "./session-protocol";
 import type {AuthResult} from "./session";
 import {CHANGE_HEADERS,type ResourceChange} from './stream-protocol';
 import {captureDraft,trackDraft,type DraftState} from './drafts';
-import {affectsForm} from './form-entities';
+import {affectsForm,formObjectKind} from './form-entities';
 import {createRetention} from "./retention";
 import {dependencies,neededVersion,parseResources,readNoticeLabels,resourceReloadUrl,type ResourceName,type ResourceVersions} from "./resources";
 
@@ -37,7 +38,7 @@ type RouteSnapshot = {
   notice: boolean;
   noticeCode?: "auth-refused";
 };
-type Runtime = {fetch:FetchImplementation;before?:React.ComponentProps<typeof Hyperview>["onParseBefore"];after?:React.ComponentProps<typeof Hyperview>["onParseAfter"];parser: Parser; onError?: React.ComponentProps<typeof Hyperview>["onError"]};
+type Runtime = {fetch:FetchImplementation;before?:React.ComponentProps<typeof Hyperview>["onParseBefore"];after?:React.ComponentProps<typeof Hyperview>["onParseAfter"];parser: Parser; onError?: React.ComponentProps<typeof Hyperview>["onError"];loadingScreen?:React.ComponentProps<typeof Hyperview>["loadingScreen"]};
 const RuntimeContext = createContext<Runtime | null>(null);
 class NoDocument extends Error {}
 class UncorrelatedResult extends Error {}
@@ -60,6 +61,7 @@ type Route = RouteSnapshot & {
   draft?:DraftState;
   documentRevision:number;
   confirming?:boolean;
+  consent?:Readonly<{revision:number;documentRevision:number;kind:'refresh'|'leave'}>;
   heldDraft?:Operation;
   formVersions:ResourceVersions;
   formChanges:ResourceVersions;
@@ -94,6 +96,7 @@ export function createRealtimeGate(ports:GatePorts={}) {
   let resourceVersions:ResourceVersions={tasks:0,categories:0,ui:0};
   let changedResourceVersions:ResourceVersions={tasks:0,categories:0,ui:0};
   let noticeRevision=0;
+  let interactionLease=Object.freeze({});
   const noticeListeners=new Set<()=>void>();
   const subscribeNotice=(listener:()=>void)=>{noticeListeners.add(listener);return()=>{noticeListeners.delete(listener);};};
   const noticeSnapshot=()=>noticeRevision;
@@ -115,8 +118,43 @@ export function createRealtimeGate(ports:GatePorts={}) {
     if(tracksDraft(route.mode)){
       const previous=route.draft,next=trackDraft(previous,captureDraft(route.element,route.options.componentRegistry));
       route.draft=functionalEdit&&previous?.current===null&&next.current===null?Object.freeze({...next,revision:next.revision+1}):next;
+      if(route.consent&&route.consent.revision!==route.draft.revision)route.consent=undefined;
     }
     return route.draft;
+  }
+  const consentCurrent=(route:Route)=>route.consent&&route.consent.documentRevision===route.documentRevision&&route.consent.revision===route.draft?.revision;
+  const remoteConflict=(route:Route)=>route.mode==='form'&&neededVersion(route.resources,changesFor(route),route.observedResources)>0;
+  const conflictBusy=(route:Route)=>[...operations.values()].some(operation=>operation!==route.heldDraft)||route.confirming===true;
+
+  /** Consent belongs to this document/revision, not a reusable native callback. */
+  function conflictChoices(route:Route){
+    const capturedEpoch=epoch,lease=interactionLease,element=route.element,documentRevision=route.documentRevision,revision=route.draft?.revision;
+    const previous=previousRoute(route.navigation,route.key),destination=previous&&routes.get(previous.key);
+    const destinationElement=destination?.element,destinationRevision=destination?.documentRevision;
+    const canReturn=()=>{
+      const current=destination&&routes.get(destination.key);
+      const draft=current&&updateDraft(current);
+      return !!previous&&previous.isCurrent()&&!!current&&current.element===destinationElement
+        &&current.documentRevision===destinationRevision&&current.ready===true&&!!draft&&!draft.dirty;
+    };
+    const choose=(back:boolean)=>{
+      const current=routes.get(route.key);
+      if(capturedEpoch!==epoch||lease!==interactionLease||suspended||retention.isPaused()||!current?.focused||current.element!==element||current.documentRevision!==documentRevision
+        ||updateDraft(current)?.revision!==revision||consentCurrent(current)||!remoteConflict(current)||conflictBusy(current)||current.noticeCode||current.failedVersion===version)return;
+      if(back&&!canReturn())return;
+      current.consent=Object.freeze({revision:revision!,documentRevision,kind:back?'leave':'refresh'});current.concealed=true;
+      // This response already committed on the server, but has not delivered any
+      // local effects. Retire it terminally: no swap, onEnd, navigation or ACK.
+      if(current.heldDraft)finish(current.heldDraft,'cancelled','sync-replaced',false);
+      if(back){
+        const target=routes.get(previous!.key)!;
+        target.consent=Object.freeze({revision:target.draft!.revision,documentRevision:target.documentRevision,kind:'refresh'});target.concealed=true;
+        if(!previous!.goBack()){target.consent=undefined;current.consent=undefined;notifyNotice();return;}
+        drain();
+      }else refreshResources(current,true);
+      notifyNotice();
+    };
+    return {canGoBack:canReturn(),onUpdate:()=>choose(false),onGoBack:()=>choose(true)};
   }
   function functionalField(route:Route,field:Element){
     if(field.namespaceURI!=='https://hyperview.org/hyperview'||!['text-field','picker-field','date-field','switch'].includes(field.localName)||field.getAttribute('name')==='csrfmiddlewaretoken')return false;
@@ -155,7 +193,7 @@ export function createRealtimeGate(ports:GatePorts={}) {
       const ownedInit: RootRequestInit = {...init, [ROOT_PROVENANCE]:provenance};
       return props.fetch(input, ownedInit);
     }, [renderEpoch, props.fetch, provenance]);
-    const runtime = useMemo<Runtime>(()=>({fetch,before:props.onParseBefore,after:props.onParseAfter,parser:new Parser(fetch, props.onParseBefore, props.onParseAfter), onError:props.onError}), [fetch,props.onParseBefore,props.onParseAfter,props.onError]);
+    const runtime = useMemo<Runtime>(()=>({fetch,before:props.onParseBefore,after:props.onParseAfter,parser:new Parser(fetch, props.onParseBefore, props.onParseAfter), onError:props.onError,loadingScreen:props.loadingScreen}), [fetch,props.onParseBefore,props.onParseAfter,props.onError,props.loadingScreen]);
     // Suspend instead of immediately fetching under cookies that may still
     // belong to the old session. Authentication must confirm before resuming.
     return suspended ? null : <RuntimeContext.Provider value={runtime}><Hyperview key={renderEpoch} {...props} fetch={fetch} /></RuntimeContext.Provider>;
@@ -498,6 +536,9 @@ export function createRealtimeGate(ports:GatePorts={}) {
       const dirty=neededVersion(route.resources,versionsFor(route),route.observedResources);
       route.notice=legacyNotice||dirty>0;
       const editing=updateDraft(route)?.dirty;
+      if(consentCurrent(route)&&route.consent?.kind==='refresh'&&route.ready&&route.focused&&route.resourceFailure!==dirty){
+        refreshResources(route,true);break;
+      }
       if(dirty&&!editing&&route.ready&&route.focused&&automatic(route)&&route.resourceFailure!==dirty){
         refreshResources(route);break;
       }
@@ -517,6 +558,8 @@ export function createRealtimeGate(ports:GatePorts={}) {
 
   async function requestResourceRefresh(route:Route){
     if(route.confirming||(active&&active!==route.heldDraft)||retention.isPaused()||suspended||!route.focused||routes.get(route.key)!==route)return;
+    updateDraft(route);
+    if(consentCurrent(route)&&route.consent?.kind==='refresh'){refreshResources(route,true);return;}
     if(!updateDraft(route)?.dirty&&!route.heldDraft){refreshResources(route);return;}
     if(!ports.confirmDiscard)return;
     const capturedEpoch=epoch,revision=route.draft!.revision,documentRevision=route.documentRevision,held=route.heldDraft;
@@ -635,6 +678,7 @@ export function createRealtimeGate(ports:GatePorts={}) {
     const boundaryEpoch=epoch;
     useLayoutEffect(() => {
       const previous = routes.get(key);
+      if(previous?.focused&&!focused)interactionLease=Object.freeze({});
       let hasReady=previous?.ready??false;
       let observedResources=previous?.observedResources??{tasks:0,categories:0,ui:0};
       let documentCommitted=false;
@@ -670,10 +714,11 @@ export function createRealtimeGate(ports:GatePorts={}) {
       const mode=element.getAttribute('mode')??'notice';
       const draftSnapshot=tracksDraft(mode)?captureDraft(element,options.componentRegistry):null;
       const savedDraft=acknowledged.some(operation=>operation.draftCommit&&previous?.draft?.revision===operation.draftCommit.revision&&draftSnapshot===operation.draftCommit.after);
+      const consent=documentCommitted?undefined:previous?.consent;
       routes.set(key, {
         key, focused, element, onUpdate, observed, baseUrl, runtime, options, navigation, failedVersion:previous?.failedVersion,ready:hasReady,noticeCode:previous?.noticeCode,
         resources:dependencies(element),observedResources,resourceFailure:previous?.resourceFailure,contextual,
-        concealed:neededVersion(dependencies(element),resourceVersions,observedResources)>0&&(previous?.concealed??false),
+        concealed:!!consent||(neededVersion(dependencies(element),resourceVersions,observedResources)>0&&(previous?.concealed??false)),consent,
         feedbackVersions:previous?.feedbackVersions??{tasks:0,categories:0,ui:0},
         dismissedNotice:previous?.dismissedNotice,
         draft:tracksDraft(mode)?trackDraft(previous?.draft,draftSnapshot,documentCommitted||savedDraft):undefined,
@@ -700,14 +745,29 @@ export function createRealtimeGate(ports:GatePorts={}) {
     }, [key]);
     const dispatch: HvComponentOnUpdate = (...args) => enqueue(key, args, "ordinary", boundaryEpoch);
     const route=routes.get(key),labels=readNoticeLabels(ports.noticeLabels);
-    const concealed=route&&automatic(route)&&!route.draft?.dirty&&(route.concealed||(!route.focused&&neededVersion(route.resources,versionsFor(route),route.observedResources)>0));
+    const concealed=route&&(!!consentCurrent(route)||(automatic(route)&&!route.draft?.dirty&&(route.concealed||(!route.focused&&neededVersion(route.resources,versionsFor(route),route.observedResources)>0))));
     const remoteChange=route&&neededVersion(route.resources,changesFor(route),route.observedResources)>0;
     const warningKey=route?[neededVersion(route.resources,changesFor(route),route.observedResources),route.heldDraft?.token,route.noticeCode,route.failedVersion,route.observed<version?version:''].join(':'):'';
     const autoPending=route&&automatic(route)&&!route.draft?.dirty&&route.resourceFailure!==neededVersion(route.resources,versionsFor(route),route.observedResources);
     const visible=route&&(route.notice||route.heldDraft)&&focused&&labels&&(route.heldDraft||route.noticeCode||route.failedVersion===version||route.observed<version||(remoteChange&&!autoPending));
     const resyncOnly=route&&neededVersion(route.resources,versionsFor(route),route.observedResources)>0&&neededVersion(route.resources,changesFor(route),route.observedResources)===0;
     const message=route?.noticeCode==="auth-refused"?labels?.csrf:route?.heldDraft?(labels?.newerEdits??labels?.changed):route?.failedVersion===version?labels?.error:resyncOnly?labels?.resync:labels?.changed;
-    return <>{visible&&message&&route.dismissedNotice!==warningKey?<RealtimeNotice message={message} actionLabel={labels.update} pending={retention.isPaused()||suspended||(!!active&&active!==route.heldDraft)||route.confirming===true} onAction={route.noticeCode==="auth-refused"?undefined:()=>{if(epoch===boundaryEpoch&&routes.get(key)===route)void requestResourceRefresh(route);}} dismissLabel={labels.dismiss} onDismiss={()=>{const current=routes.get(key);if(current&&epoch===boundaryEpoch){current.dismissedNotice=warningKey;notifyNotice();}}}/>:null}{concealed&&focused&&route.failedVersion===undefined?<ActivityIndicator/>:null}<View style={{flex:1,opacity:concealed?0:1}} pointerEvents={concealed?'none':'auto'} accessibilityElementsHidden={!!concealed} importantForAccessibility={concealed?'no-hide-descendants':'auto'}>{renderChildren(element, stylesheets, dispatch, options)}</View></>;
+    const conflict=route&&labels?.conflict&&focused&&!retention.isPaused()&&!suspended&&!consentCurrent(route)&&!route.noticeCode&&route.failedVersion!==version&&remoteConflict(route);
+    const resolvingNotice=route&&consentCurrent(route)&&!route.heldDraft&&!route.noticeCode&&route.failedVersion!==version;
+    const choices=conflict?conflictChoices(route):null;
+    const LoadingScreen=runtime?.loadingScreen;
+    const loading=concealed&&focused&&(route.failedVersion===undefined||(active?.key===key&&active.epoch===boundaryEpoch&&active.args[1]==='reload'));
+    return <>
+      {choices&&labels?.conflict?<RealtimeConflictDialog message={labels.conflict.messages[formObjectKind(route!.element)]} goBack={labels.conflict.goBack} backUnavailable={labels.conflict.backUnavailable} update={labels.update} pending={conflictBusy(route!)} {...choices}/>:null}
+      {!conflict&&!resolvingNotice&&visible&&message&&route.dismissedNotice!==warningKey?<RealtimeNotice message={message} actionLabel={labels.update} pending={retention.isPaused()||suspended||(!!active&&active!==route.heldDraft)||route.confirming===true} onAction={route.noticeCode==="auth-refused"?undefined:()=>{if(epoch===boundaryEpoch&&routes.get(key)===route)void requestResourceRefresh(route);}} dismissLabel={labels.dismiss} onDismiss={()=>{const current=routes.get(key);if(current&&epoch===boundaryEpoch){current.dismissedNotice=warningKey;notifyNotice();}}}/>:null}
+      <View style={{flex:1}} testID="realtime-content">
+        <View style={{flex:1,opacity:concealed?0:1}} pointerEvents={concealed||conflict?'none':'auto'} accessibilityElementsHidden={!!(concealed||conflict)} importantForAccessibility={concealed||conflict?'no-hide-descendants':'auto'}>{renderChildren(element, stylesheets, dispatch, options)}</View>
+        {/* Fill the retained content area without giving the hidden tree a new identity. */}
+        {loading?<View style={StyleSheet.absoluteFill} testID="realtime-loading-overlay">
+          {LoadingScreen?<LoadingScreen element={element}/>:<View style={{flex:1,alignItems:'center',justifyContent:'center'}}><ActivityIndicator/></View>}
+        </View>:null}
+      </View>
+    </>;
   }
 
   const components = [
@@ -816,6 +876,8 @@ export function createRealtimeGate(ports:GatePorts={}) {
     setRetainedPaused:(ownedEpoch:number,paused:boolean)=>{
       if(ownedEpoch!==epoch||suspended)return false;
       retention.set(paused);
+      if(paused)interactionLease=Object.freeze({});
+      notifyNotice();
       if(!paused){for(const route of routes.values()){route.options.onUpdateCallbacks?.setState({});ready(route);}drain();}
       return true;
     },

@@ -1,5 +1,5 @@
 import {DOMParser} from '@instawork/xmldom';
-import {affectsForm} from '../src/realtime/form-entities';
+import {affectsForm,formObjectKind} from '../src/realtime/form-entities';
 import type {ResourceChange} from '../src/realtime/stream-protocol';
 
 const E='a'.repeat(16),X='1'.repeat(64),Y='2'.repeat(64),P='3'.repeat(64);
@@ -34,4 +34,16 @@ it('does not treat a new task form as every existing task and fails safe for unk
  expect(affectsForm(root,['categories'],change('categories',Y))).toBe(true);
  root.getElementsByTagName('picker-field')[0].setAttribute('value','');
  expect(affectsForm(root,['categories'],change('categories',Y))).toBe(false);
+});
+
+it.each([['task-form-screen','task'],['category-form-screen','category'],['settings-screen','settings']])('reads display kind from the matching declared screen %s, never its URL', (screen,kind)=>{
+ const doc=new DOMParser().parseFromString(`<doc xmlns="https://hyperview.org/hyperview" xmlns:app="https://hypertodo.app/components"><screen id="${screen}"><body><app:realtime target="${screen}" mode="form" refresh-href="/unrelated/private-id"/></body></screen></doc>`,'application/xml');
+ expect(formObjectKind(doc.getElementsByTagNameNS('https://hypertodo.app/components','realtime')[0])).toBe(kind);
+});
+it.each(['missing','mismatched','foreign','unknown'])('uses generic form copy for an unproven display kind: %s',shape=>{
+ const target=shape==='unknown'?'unknown-screen':'task-form-screen';
+ const screen=shape==='mismatched'?'category-form-screen':target;
+ const body=`<app:realtime xmlns:app="https://hypertodo.app/components" target="${target}" mode="form" refresh-href="/hv/tasks/1/edit/" resources="tasks"/>`;
+ const doc=new DOMParser().parseFromString(`<doc xmlns="https://hyperview.org/hyperview">${shape==='missing'?body:`<screen${shape==='foreign'?' xmlns="https://example.test/foreign"':''} id="${screen}">${body}</screen>`}</doc>`,'application/xml');
+ expect(formObjectKind(doc.getElementsByTagNameNS('https://hypertodo.app/components','realtime')[0])).toBe('form');
 });

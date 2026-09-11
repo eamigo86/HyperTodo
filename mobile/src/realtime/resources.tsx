@@ -1,6 +1,8 @@
+import type {FormObjectKind} from './form-entities';
+
 export type ResourceName="tasks"|"categories"|"ui";
 export type ResourceVersions=Readonly<Record<ResourceName,number>>;
-export type NoticeLabels={changed:string;resync:string;update:string;dismiss:string;csrf:string;error:string;newerEdits?:string};
+export type NoticeLabels={changed:string;resync:string;update:string;dismiss:string;csrf:string;error:string;newerEdits?:string;conflict?:Readonly<{messages:Readonly<Record<FormObjectKind,string>>;goBack:string;backUnavailable:string}>};
 const combinations=new Set(["tasks","categories","ui","tasks categories","tasks ui","categories ui","tasks categories ui"]);
 /** Copy the closed ordered resource protocol; malformed events have no effects. */
 export function parseResources(value:unknown):readonly ResourceName[]|null {
@@ -26,5 +28,10 @@ export function resourceReloadUrl(href:string,base:string,mode:string,pages:read
 }
 /** Labels are app-owned translated plain text, never markup or implicit English. */
 export function readNoticeLabels(provider:(()=>NoticeLabels)|undefined):NoticeLabels|null {
- try{const labels=provider?.();if(!labels||!["changed","resync","update","dismiss","csrf","error"].every(key=>{const value=labels[key as keyof NoticeLabels];return typeof value==="string"&&!!value.trim()&&value.length<=512;}))return null;return {...labels};}catch{return null;}
+ try{const labels=provider?.();const valid=(value:unknown)=>typeof value==='string'&&!!value.trim()&&value.length<=512;
+  if(!labels||!["changed","resync","update","dismiss","csrf","error"].every(key=>valid(labels[key as keyof NoticeLabels])))return null;
+  const conflict=labels.conflict;
+  if(conflict&&(!valid(conflict.goBack)||!valid(conflict.backUnavailable)||!conflict.messages||!(['task','category','settings','form'] as const).every(kind=>valid(conflict.messages[kind]))))return null;
+  return {...labels,...(conflict?{conflict:{...conflict,messages:{...conflict.messages}}}:{})};
+ }catch{return null;}
 }

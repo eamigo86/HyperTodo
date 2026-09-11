@@ -124,10 +124,13 @@ for this pair.
    document has actually rendered. Another account must not receive that task.
 4. Edit a task or profile from the **same device**: its own operation should not
    produce a change-warning/refresh message. Existing explicit Save feedback stays.
-5. Keep an unsaved draft open, then edit the same record from **another device**
-   signed into the same account (or from Admin). The draft should remain, with an
-   actionable notice. Updating asks before discarding it; closing the notice does
-   not make stale data fresh. An unrelated task must not trigger that form conflict.
+5. Keep a form open, untouched or with an unsaved draft, then edit the same record
+   from **another device** signed into the same account (or from Admin). Expect the
+   same centered dialog: one short localized sentence naming the object and exactly
+   **Update** and **Go back**. Both explicitly
+   discard this draft: Update fetches the current form; Go back refreshes the exact
+   previous page before showing it. Go back is disabled if that page is unavailable
+   or has unsaved edits. An unrelated task must not trigger that form conflict.
 
 These are manual acceptance steps, **not a claim of new native verification**.
 The [contextual-update guide](mobile/docs/realtime-contextual-updates.md) covers
@@ -284,7 +287,8 @@ These helpers are mounted by the host, **not addressable as XML tags**:
 | [`AnimatedSplash`](mobile/src/components/AnimatedSplash.tsx) | Provides the startup animation, reduced-motion handling and a bounded fallback if animation completion never arrives. |
 | [`LoadingScreen` / `ErrorScreen`](mobile/App.tsx), [`ElementErrorBanner`](mobile/src/components/ElementErrorBanner.tsx) | Supply branded loading, safe full-screen errors and dismissible fragment errors rather than exposing raw exception text. |
 | [`OfflineRefreshControl`](mobile/src/components/OfflineRefreshControl.tsx) | Stops the pinned client's stuck pull-to-refresh indicator after a failed request and applies the current theme. It does not retry or declare the request successful. |
-| [`SnackbarHost`](mobile/src/components/SnackbarHost.tsx), [`RealtimeNotice`](mobile/src/components/RealtimeNotice.md) | Separate transient feedback from a persistent, actionable draft warning. The gate owns discard confirmation and staleness; closing a card does not acknowledge fresh data. |
+| [`SnackbarHost`](mobile/src/components/SnackbarHost.tsx), [`RealtimeNotice`](mobile/src/components/RealtimeNotice.md) | Separate transient feedback from persistent non-conflict warnings and errors. Closing a card does not acknowledge fresh data. |
+| [`RealtimeConflictDialog`](mobile/src/components/RealtimeConflictDialog.tsx) | Shows one localized sentence and exactly Update / Go back for an open form's relevant remote change, untouched or edited. Both discard any current draft and fetch the chosen route; Go back requires the exact clean predecessor. The gate owns consent, pending operations and staleness; see the [update policy](mobile/docs/realtime-contextual-updates.md#choose-how-to-resolve-a-form-conflict). |
 | [`AppSessionSurface`](mobile/src/realtime/app-session.tsx), [`gate.Root`](mobile/src/realtime/gate.tsx), [`SessionNavigation`](mobile/App.tsx) | Own the authentication shield, request generations and navigation lifetime, preventing retired account content/callbacks from becoming current. |
 
 There are also **attributes on core elements**, not replacement components:

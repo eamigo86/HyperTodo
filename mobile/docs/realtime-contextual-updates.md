@@ -11,17 +11,58 @@ reload manually when checking automatic SSE delivery.
 | A visible Dashboard or clean list receives a remote change | Reload its canonical document automatically; show a small success snackbar only after matching layout. |
 | This device's admitted operation produces an echo | Invalidate normally, but do not show an SSE warning or refresh snackbar. Existing Save feedback is unchanged. |
 | Login, initial resync, or confirmed foreground reconciliation | Reconcile silently; session confirmation is still required. |
-| Return to a stale retained readonly route | Keep its tree mounted but hidden until fresh HTTP and actual layout complete. No refresh toast for this focus return. |
-| An edited Task X receives a precise change for Task Y | No irrelevant form warning. Unknown metadata remains conservative. |
-| Another device edits the same task or a current form dependency | Keep the draft and show an actionable card. Update requires discard confirmation when edited. |
-| Close the warning | Hide this warning revision only. The route remains stale; a later conflict can show a new card. |
+| Return to a stale retained readonly route | Keep its tree mounted but hidden until fresh HTTP and actual layout complete. Show the existing centered HyperTodo mark, name and spinner in the available content area; no refresh toast for this focus return. |
+| An open Task X form receives a precise change for Task Y | No irrelevant form warning. Unknown metadata remains conservative. |
+| Another device edits the same task or a current form dependency | Show the same centered dialog whether the form is untouched or edited: one short localized sentence and exactly **Update** and **Go back**. Any local draft stays until either choice discards it. |
+| Close a non-conflict warning card | Hide this warning revision only. The route remains stale. The form-conflict dialog has no close, backdrop or hardware-back dismissal action. |
 | Type a filter/search value without applying it | Defer automatic list replacement; preserve the exact input until the user resolves it. |
 
-The card uses existing theme tokens, accessible actions and translated English /
-Spanish labels. These are app-owned copy and policy, not a global user setting.
+The card and dialog use existing theme tokens, accessible actions and translated
+English / Spanish labels. These are app-owned copy and policy, not a global user setting.
 The SDK's list remains the same mounted instance across canonical reloads.
 Successful refresh feedback is “Updated with recent changes” / “Actualizado con
 los cambios recientes”. It does not claim that a network response alone was applied.
+
+Stale-route loading reuses the App's `LoadingScreen` inside the existing safe-area
+host, with the current light/dark theme. The overlay fills the retained content
+area without remounting its Root or list. It disappears only when the existing
+gate reveals the committed document. On failure, the error notice remains usable
+while stale content stays hidden; an explicit Update GET shows the same loader
+again. This does not change request, pagination, session or POST-replay policy.
+Real App/SDK renderer tests cover the loader, theme, retained identities and retry;
+native layout and visual inspection remain manual checks.
+
+## Choose how to resolve a form conflict
+
+- **Update / Actualizar** discards this form's draft and fetches the current saved
+  form with a new GET. It does not merely display a retained POST response.
+- **Go back / Volver** discards this form's draft, returns to the exact preceding
+  route and fetches that route before revealing it. It does not refresh unrelated
+  screens. If that route is unavailable or its clean state cannot be proved,
+  Go back is visibly disabled with an accessibility hint; Update remains available. Another
+  page's unsaved edits are never covered by this choice.
+
+The dialog shows only a short sentence such as “This task was updated remotely.” /
+“Los datos de esta tarea se modificaron de forma remota.” and the two buttons,
+without a separate title or explanatory paragraph. It uses the same light/dark
+surfaces and blue action as the App, dismisses the keyboard and exposes modal
+accessibility semantics. There is no second confirmation for
+the same edit revision. Pausing, leaving the screen, signing out or unmounting
+revokes old button callbacks, even if the same form later regains focus.
+
+During either refresh, the existing branded loader covers the retained document
+until its own GET and layout acknowledgment complete. The accepted resolution
+does not briefly redisplay the old change-warning card while waiting; actual
+failure, CSRF and recovery notices remain distinct and usable. A failed Update preserves
+the draft behind the error/retry notice; retry uses the same explicit consent.
+A later functional edit requires new consent. Changes arriving after a GET was
+admitted remain pending rather than being falsely acknowledged by that response.
+
+Object wording comes only from the boundary's declared target matching its actual
+containing screen: `task-form-screen`, `category-form-screen` or `settings-screen`
+(including profile/security settings). Unknown or inconsistent declarations use
+generic form wording. URLs, resource lists and entity IDs do not determine this
+display label or grant any action authority.
 
 ## Lists and pagination
 
@@ -53,12 +94,21 @@ matching layout, with the same draft revision and applied form snapshot. A 422,
 an unrelated form, or merely sending the request cannot mark edits saved.
 
 If a POST response would replace a form edited after submission, hold that exact
-response and its effects until explicit discard consent. Recheck the generation,
-live owner, document and edit revision after the dialog and any background pause.
-Do not resend the POST. A logout or replacement owner abandons the old response;
-it cannot clear device credentials or execute a retired transition. Settings clear
-still requires its existing response-owned status-200 capability. CSRF refusal
-remains distinct and does not offer a destructive Update action.
+response and its effects. The remote-conflict dialog disables both choices while
+an operation is still in flight. Once its response is retained, either choice
+terminally abandons that response and its local effects before issuing the fresh
+GET or going back. Neither choice rolls back a save already committed on the
+server, replays the POST, clears device credentials or delivers delayed navigation.
+
+Held-response notices without a remote form conflict keep their existing explicit
+discard confirmation. Every delivery still checks generation, live owner and
+edit revision; Settings clear requires its response-owned status-200 capability.
+CSRF refusal and generic error/recovery notices remain distinct. CSRF refusal
+does not offer a destructive Update action.
+
+The normal `createSessionApp` supplies the dialog's English/Spanish copy. An
+isolated gate integration with only the older notice-label port retains its
+legacy card contract; that compatibility is not an App preference or setting.
 
 ## Negotiated operation and entity metadata
 
@@ -96,19 +146,23 @@ can therefore still produce conservative warnings. See the
 
 ## Check the behavior with fictional data
 
-1. Open the same task on devices A and B. Edit its title on A without saving.
+1. Open the same task on devices A and B. First leave A's form untouched, then
+   repeat after editing its title without saving. Both must show the same dialog.
    Save a different task on B: A's draft should remain without an irrelevant card.
-   Save the same task on B: A should keep its draft and offer Update.
-2. On A, close the card: the input stays and the stale state is not acknowledged.
-   Cause another relevant change, choose Update, then cancel the discard dialog.
-   Choose Update again and confirm: only then should saved values replace edits.
+   Save the same task on B: A should keep its draft behind the two-choice dialog.
+2. On A, choose Update: expect the branded loader, then current saved values.
+   Repeat the conflict and choose Go back: expect the preceding page to refresh
+   before it is shown. With no clean preceding route, Go back must be disabled.
+   Pause with a dialog visible and resume: old callbacks must not discard edits.
 3. On a visible clean list, load two pages and change a task remotely. Verify the
    automatic refresh includes both pages, current counts and filters, then one
    success snackbar. Repeat while typing an unapplied filter: the input must stay.
 4. Change a hidden readonly route, then navigate back. Expect minimal loading,
    fresh content and no focus toast. Login/resync must not show a change banner.
-5. Save a form with a delayed response, then type again. The response must wait for
-   consent; signing out instead must abandon its old effects, without another POST.
+5. Save a form with a delayed response, then type again and cause a remote conflict.
+   Both dialog choices must wait until the response is retained. Update must fetch
+   the form, not deliver the old response; Go back must refresh the prior page.
+   Signing out instead must abandon old effects, without another POST.
 
 These steps are a future native checklist, not a claim they were executed here.
 Permanent Jest controls use real Hyperview Parser, DOM, public callbacks and React

@@ -2,6 +2,23 @@ import {dependencies,type ResourceName} from './resources';
 import {parseEntitySet,type ResourceChange} from './stream-protocol';
 import {utf8Bytes} from './session-protocol';
 
+export type FormObjectKind='task'|'category'|'settings'|'form';
+/** Display copy only: require the declared target to match the actual screen. */
+export function formObjectKind(boundary:Element):FormObjectKind {
+  const kinds:Readonly<Record<string,FormObjectKind>>={'task-form-screen':'task','category-form-screen':'category','settings-screen':'settings'};
+  const target=boundary.getAttribute('target')??'';
+  if(boundary.getAttribute('mode')!=='form'||!Object.prototype.hasOwnProperty.call(kinds,target))return 'form';
+  let parent:Node|null=boundary.parentNode;
+  while(parent){
+    if(parent.nodeType===1&&(parent as Element).localName==='screen'){
+      const screen=parent as Element;
+      return screen.namespaceURI==='https://hyperview.org/hyperview'&&screen.getAttribute('id')===target?kinds[target]:'form';
+    }
+    parent=parent.parentNode;
+  }
+  return 'form';
+}
+
 /** Narrow draft conflicts, never authentication, using current declared dependencies. */
 export function affectsForm(boundary:Element,resources:readonly ResourceName[],change:ResourceChange|undefined):boolean {
   if(!change?.entities)return true;

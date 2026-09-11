@@ -1,9 +1,9 @@
 import "react-native-gesture-handler/jestSetup";
 declare const __dirname: string; // Supplied by this Jest module, not the native App.
 import React from "react";
-import {act, fireEvent, render, waitFor} from "@testing-library/react-native";
-import {Alert,AppState} from "react-native";
-import {createSessionApp} from "../App";
+import {act, fireEvent, render, waitFor, within} from "@testing-library/react-native";
+import {ActivityIndicator,Alert,AppState,FlatList} from "react-native";
+import {createSessionApp,LoadingScreen} from "../App";
 import {AppSessionSurface, type AppSessionOptions} from "../src/realtime/app-session";
 import {createThemeStore} from "../src/theme";
 import {SESSION_HEADERS as H} from "../src/realtime/session-protocol";
@@ -52,8 +52,8 @@ function stream(binding=A,status=200,negotiated=false) {
   return {response:result,cancel,push:(value:string)=>control.enqueue(new TextEncoder().encode(value)),
     holdRead:()=>{held=deferred<void>();return {waiting:()=>waiting,release:()=>{held?.resolve();held=undefined;}};}};
 }
-function fixture({authenticated=true,mode="list",page=1,streamStatus=200,negotiated=false}={}) {
-  let binding=A,loads=0,hold=false,release:(()=>void)|undefined,seedSequence=0;
+function fixture({authenticated=true,mode="list",page=1,streamStatus=200,negotiated=false,retainedDashboard=false}={}) {
+  let binding=A,loads=0,hold=false,release:(()=>void)|undefined,reject:((error:Error)=>void)|undefined,seedSequence=0;
   const events:any[]=[],streams:ReturnType<typeof stream>[]=[],save=jest.fn(async()=>{}),clear=jest.fn(async()=>{}),notice=jest.fn();
   const storage={enqueue:async(job:any)=>job({save,clear})};
   const streamFetch=jest.fn(async(_url:string,_init:RequestInit)=>{const next=stream(binding,streamStatus,negotiated);streams.push(next);return next.response;});
@@ -68,9 +68,12 @@ function fixture({authenticated=true,mode="list",page=1,streamStatus=200,negotia
       }
       return response(`<view xmlns="${HV}" xmlns:app="${NS}" id="saved"><app:realtime-page request-id="${id}" page="1"/><text>Saved once</text></view>`,url,binding);
     }
-    if(url===ENTRY)return response(`<doc xmlns="${HV}"><navigator id="root" type="stack"><nav-route id="home" href="/hv/tasks/?status=active&amp;category=7"/></navigator></doc>`,url,binding);
-    loads++;const result=response(document(id).replace(`page="${page}"`, `page="${new URL(url).searchParams.get("page")==="1"?1:page}"`),url,binding);
-    if(hold){const text=result.text.bind(result);result.text=async()=>{await new Promise<void>(yes=>{release=yes;});return text();};}
+    if(url===ENTRY)return response(`<doc xmlns="${HV}"><navigator id="root" type="stack"><nav-route id="home" href="${retainedDashboard?'/hv/dashboard/':'/hv/tasks/?status=active&amp;category=7'}"/></navigator></doc>`,url,binding);
+    if(retainedDashboard&&url.endsWith('/edit/'))return response(`<doc xmlns="${HV}" xmlns:app="${NS}"><screen><body><app:realtime mode="form" resources="ui" refresh-href="/hv/task/edit/" target="editor"><view id="editor"><app:realtime-page request-id="${id}" page="1"/><text>Editor</text><view action="back"><text>Return to Dashboard</text></view></view></app:realtime></body></screen></doc>`,url,binding);
+    loads++;let xml=document(id).replace(`page="${page}"`, `page="${new URL(url).searchParams.get("page")==="1"?1:page}"`);
+    if(retainedDashboard)xml=xml.replace('refresh-href="/hv/tasks/?status=active&amp;category=7"','refresh-href="/hv/dashboard/"').replace('</app:realtime>','<view action="navigate" href="/hv/task/edit/"><text>Open editor</text></view></app:realtime>');
+    const result=response(xml,url,binding);
+    if(hold){const text=result.text.bind(result);result.text=async()=>{await new Promise<void>((yes,no)=>{release=yes;reject=no;});return text();};}
     return result;
   });
   const options:AppSessionOptions={
@@ -87,9 +90,65 @@ function fixture({authenticated=true,mode="list",page=1,streamStatus=200,negotia
   const App=createSessionApp(options,theme),ui=render(<App/>);fireEvent(ui.getByTestId("animated-splash"),"layout");
   const session=ui.UNSAFE_getByType(AppSessionSurface).props.session as ReturnType<typeof import("../src/realtime/app-session").createAppSession>;
   return {ui,session,theme,events,http,streamFetch,streams,save,clear,notice,
-    hold:()=>{hold=true;},waiting:()=>!!release,release:()=>{hold=false;release?.();release=undefined;},
+    hold:()=>{hold=true;},waiting:()=>!!release,release:()=>{hold=false;release?.();release=undefined;reject=undefined;},
+    fail:()=>{hold=false;reject?.(new Error('Controlled unavailable response'));release=undefined;reject=undefined;},
     close:()=>{ui.unmount();},loads:()=>loads};
 }
+
+it.each(['light','dark'] as const)('uses the existing full-area branded loader on stale Dashboard return in %s without remounting or early ACK',async theme=>{
+ const f=fixture({mode:'readonly',retainedDashboard:true});
+ try{
+  await f.ui.findByText('Count 1');await waitFor(()=>expect(f.streamFetch).toHaveBeenCalledTimes(1));
+  act(()=>f.theme.publish(theme));
+  const root=f.ui.UNSAFE_getByType(f.session.gate.Root),list=f.ui.UNSAFE_getByType(FlatList),generation=f.session.snapshot().session.generation,epoch=f.session.gate.snapshot().epoch;
+  fireEvent.press(f.ui.getByText('Open editor'));await f.ui.findByText('Editor');
+  act(()=>f.streams[0].push(frame('invalidate',['tasks'])));await act(async()=>{});
+  expect(f.loads()).toBe(1);f.hold();fireEvent.press(f.ui.getByText('Return to Dashboard'));
+  await waitFor(()=>expect(f.waiting()).toBe(true));
+  expect(f.ui.queryByText('Count 1')).toBeNull();expect(f.ui.getByText('Count 1',{includeHiddenElements:true})).toBeTruthy();
+  const loading=f.ui.getByLabelText('Loading HyperTodo');
+  expect(f.ui.UNSAFE_getByType(LoadingScreen)).toBeTruthy();
+  expect(within(loading).getByText('✓')).toBeTruthy();expect(within(loading).getByText('HyperTodo')).toBeTruthy();
+  expect(loading).toHaveStyle({flex:1,alignItems:'center',justifyContent:'center',backgroundColor:theme==='dark'?'#0F1118':'#F7F8FC'});
+  expect(f.ui.getByTestId('realtime-content')).toHaveStyle({flex:1});
+  expect(f.ui.getByTestId('realtime-loading-overlay')).toHaveStyle({position:'absolute',top:0,right:0,bottom:0,left:0});
+  expect(f.ui.UNSAFE_getAllByType(ActivityIndicator)).toHaveLength(1);
+  expect(f.events.filter(event=>event.reason==='reload-layout')).toHaveLength(0);expect(f.notice).not.toHaveBeenCalled();
+  expect(f.ui.UNSAFE_getByType(f.session.gate.Root)).toBe(root);expect(f.ui.UNSAFE_getByType(FlatList)).toBe(list);
+  await act(async()=>f.release());await f.ui.findByText('Count 2');
+  expect(f.events.at(-1)).toMatchObject({outcome:'ack',reason:'reload-layout'});
+  expect(f.ui.queryByLabelText('Loading HyperTodo')).toBeNull();expect(f.ui.queryByTestId('realtime-loading-overlay')).toBeNull();
+  expect(f.ui.UNSAFE_getByType(f.session.gate.Root)).toBe(root);expect(f.ui.UNSAFE_getByType(FlatList)).toBe(list);
+  expect(f.session.snapshot().session.generation).toBe(generation);expect(f.session.gate.snapshot().epoch).toBe(epoch);
+  expect(f.http.mock.calls.filter(([url])=>String(url)===ENTRY)).toHaveLength(1);
+  expect(f.http.mock.calls.filter(([,init])=>init?.method?.toUpperCase()==='POST')).toHaveLength(0);
+  expect(f.streamFetch).toHaveBeenCalledTimes(1);expect(f.notice).not.toHaveBeenCalled();
+ }finally{f.close();}
+});
+
+it('keeps stale Dashboard concealed on reload error and reuses branded loading for explicit GET retry',async()=>{
+ const f=fixture({mode:'readonly',retainedDashboard:true});
+ try{
+  await f.ui.findByText('Count 1');await waitFor(()=>expect(f.streamFetch).toHaveBeenCalledTimes(1));
+  const list=f.ui.UNSAFE_getByType(FlatList),root=f.ui.UNSAFE_getByType(f.session.gate.Root);
+  fireEvent.press(f.ui.getByText('Open editor'));await f.ui.findByText('Editor');
+  act(()=>f.streams[0].push(frame('invalidate',['tasks'])));await act(async()=>{});
+  f.hold();fireEvent.press(f.ui.getByText('Return to Dashboard'));await waitFor(()=>expect(f.waiting()).toBe(true));
+  await act(async()=>f.fail());
+  await f.ui.findByRole('button',{name:'Update'});
+  expect(f.ui.queryByLabelText('Loading HyperTodo')).toBeNull();expect(f.ui.queryByTestId('realtime-loading-overlay')).toBeNull();
+  expect(f.ui.queryByText('Count 1')).toBeNull();expect(f.ui.getByText('Count 1',{includeHiddenElements:true})).toBeTruthy();
+  expect(f.events.at(-1)).toMatchObject({outcome:'error',reason:'request-error'});expect(f.loads()).toBe(2);
+  f.hold();fireEvent.press(f.ui.getByRole('button',{name:'Update'}));await waitFor(()=>expect(f.waiting()).toBe(true));
+  expect(f.ui.getByLabelText('Loading HyperTodo')).toBeTruthy();expect(f.ui.queryByText('Count 1')).toBeNull();
+  expect(f.ui.getByRole('button',{name:'Update'})).toBeDisabled();
+  await act(async()=>f.release());await f.ui.findByText('Count 3');
+  expect(f.ui.queryByTestId('realtime-loading-overlay')).toBeNull();expect(f.ui.queryByRole('button',{name:'Update'})).toBeNull();
+  expect(f.events.at(-1)).toMatchObject({outcome:'ack',reason:'reload-layout'});expect(f.notice).not.toHaveBeenCalled();
+  expect(f.ui.UNSAFE_getByType(FlatList)).toBe(list);expect(f.ui.UNSAFE_getByType(f.session.gate.Root)).toBe(root);
+  expect(f.streamFetch).toHaveBeenCalledTimes(1);expect(f.http.mock.calls.filter(([,init])=>init?.method?.toUpperCase()==='POST')).toHaveLength(0);
+ }finally{f.close();}
+});
 
 it("opens only after authenticated real layout and keeps one connection across resync HTTP/layout, hint and theme",async()=>{
   const f=fixture();f.hold();
