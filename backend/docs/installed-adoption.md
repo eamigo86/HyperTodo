@@ -10,19 +10,124 @@ without mixing old a21 Redis readers and v2 producers in the same namespace.
 
 ## Development startup
 
-Start with the README's two-terminal SSE/Expo Go walkthrough; the complete
-HYPERVIEW mapping follows it. `make backend-run-sse` selects
-`config.settings_sse`: filesystem templates, central realtime Redis15/namespace
-`hypertodo-development`, normal auth/DB/cache/schema. It never modifies stored
-DB-template rows. Plain settings remain DB-first with realtime disabled.
-Redis must already be available; the Python extra installs only its client.
-Uvicorn serves the actual ASGI app, including stream ownership. DEBUG alone enables
-Django's development Admin/static handler. Do not use that handler for production.
+Use the repository [Makefile commands](../../README.md#makefile-commands) with
+Python 3.14/uv, Node 22.19.0 via nvm/Corepack and Expo Go for SDK 57. From the
+repository root, `make setup` installs both dependency sets without migration or
+seeding. Keep the reviewed package/app pair together.
 
-For Expo Go, `LAN_IP=<private-IP> make mobile-start-go` explicitly enables local HTTP
-and uses `--go`; the app's release HTTPS guard is unchanged. No native build is needed
-for this workflow. Migration/fresh setup are separate: never seed an existing database
-just to update dependencies or refresh templates.
+### New disposable database
+
+**Only for a new disposable local database:**
+
+```console
+make backend-migrate
+make backend-seed
+```
+
+The development seed creates `admin` / `admin123` and `demo` / `demo123`, with
+separate owned tasks/categories. It can reset demo fields, so these credentials
+and commands belong only to trusted local development without real data. Use
+`HYPERTODO_ADMIN_PASSWORD` / `HYPERTODO_DEMO_PASSWORD` for chosen local passwords.
+
+### Existing database
+
+Run `make setup` for the reviewed dependency changes. Take a verified backup and
+review the migration plan before deliberately applying migrations.
+**Do not run `make backend-seed`** as an upgrade or repair: it changes demo data
+and does not replace existing template edits. Review effective
+[DB overrides](#adopt-database-overrides-explicitly) separately.
+
+### Backend terminal
+
+Redis must already be running; the Python extra installs only its client.
+`make lan-ip` prints a candidate address: verify it is reachable from the phone,
+then replace the example in both terminals with the same private computer IP.
+
+```console
+LAN_IP=192.168.1.20 make backend-run-sse
+```
+
+This selects Uvicorn/ASGI and `config.settings_sse`, not WSGI `runserver`. It
+never starts Redis, migrates, seeds or changes stored template rows. Endpoints:
+`/hv/`, authenticated `/realtime/events/`, and `/admin/`. Normal login establishes
+the stream session; opening its URL in a browser is not an authentication test.
+
+### Expo Go terminal
+
+```console
+LAN_IP=192.168.1.20 make mobile-start-go
+```
+
+Scan the QR and sign in. This uses `--go` plus explicit local HTTP opt-in;
+the release HTTPS guard is unchanged. No native build is needed. Keep the phone
+and computer on a trusted reachable network, permit development ports only as
+needed, and stop both terminals with Ctrl+C. Without `LAN_IP`, the backend binds
+loopback only. `mobile-start`/`mobile-start-device` use a development client,
+not Expo Go; the older backend targets use WSGI, not SSE.
+
+## Configuration boundaries
+
+[Normal settings](../config/settings.py) are DB-template-first with realtime
+`None`. [settings_sse.py](../config/settings_sse.py) preserves the full mapping
+except filesystem-only SOURCES and the explicit transport block:
+
+```python
+HYPERVIEW["REALTIME"] = {
+    "REDIS_URL": "redis://127.0.0.1:6379/15",
+    "NAMESPACE": "hypertodo-development",
+}
+```
+
+This is an edit to the existing profile, not standalone settings. Change that
+block for another reviewed endpoint; the Make `REDIS_URL` variable used by cache
+targets does not override it. PubSub is not isolated by database number: use a
+separate app/environment namespace. It does not configure CACHE.
+
+The profile leaves stored DB-template rows untouched and does not use them as
+HXML. For reviewed DB overrides, retain normal SOURCES, set REALTIME explicitly
+and serve `config.asgi:application` through ASGI. Do not mix old/new package
+workers on one SSE namespace. Omitted/None disables transport, never validation;
+remove retired `HYPERTODO_REALTIME` even if None. No CACHE alias adapter exists.
+Auth, database sessions, CSRF, cache and schema extensions remain in effect.
+Only DEBUG enables the development Admin/static handler; production assets
+belong to the web server/CDN.
+
+## Check a real Admin update
+
+1. Sign in as `demo` in Expo Go and keep a task visible in Tasks.
+2. Open `http://192.168.1.20:8000/admin/` as `admin`; change that task's title,
+   preserving its owner. Expect refresh **without** navigation or manual refresh,
+   followed by feedback only after layout. Other accounts must not receive it.
+3. Save from the **same device**: own-change warnings stay quiet, while normal
+   Save feedback remains. From **another device** on the same account or Admin,
+   change the record of an open form: expect the localized Update / Go back dialog.
+   Both choices explicitly discard the draft; Go back requires the exact clean
+   previous page. An unrelated task must not create this conflict.
+
+These are manual steps, **not new native verification**. See the
+[mobile policy](../../mobile/docs/realtime-contextual-updates.md) for full draft,
+pagination and session behavior.
+
+## Adopt database overrides explicitly
+
+1. Obtain authorization for the exact alias and take a verified backup. Run
+   `check_hyperview_templates --database ALIAS` read-only: it checks identity
+   integrity, **not XSD compatibility**. Stop on anomalies; do not choose winners,
+   delete duplicates or repair automatically.
+2. Review active DB rows before filesystem fallbacks, especially About and
+   Categories. Preserve deliberate Admin edits; `seed_demo` only creates absent
+   template rows and also changes accounts/data, so it is not an upgrade tool.
+3. Validate reviewed contents in an isolated copy with approved synthetic
+   contexts. Filesystem-only success does not establish effective DB compatibility.
+4. After approval, publish with `publish_template`, explicit alias and reviewed
+   `expected_revision`. Concurrent edits require another review, not overwriting.
+5. Adopt the reviewed package, consumer configuration and lock together after
+   effective-source review. Repeat installed-package acceptance before restart;
+   if validation fails, keep the existing reviewed pair. There is no later toggle.
+6. Roll back package/configuration together, never by disabling validation. DB
+   restoration requires a separate approved backup procedure without overwriting
+   concurrent edits. Rotate only Hyperview's namespace if necessary; never flush
+   a shared cache.
 
 ## Disposable fixture provenance
 
