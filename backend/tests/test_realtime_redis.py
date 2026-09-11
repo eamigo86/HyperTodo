@@ -220,3 +220,122 @@ def test_real_asgi_stream_receives_admin_change_and_releases(
         assert admissions.total == 0
 
     async_to_sync(run)()
+
+
+def test_template_admin_commit_reaches_live_ui_stream_and_fresh_http(
+    user, admin_client, client, settings, realtime_redis
+):
+    """Real Redis/ASGI acceptance; no broker, signal or commit callback mocks."""
+    from dj_hyperview.contrib.database.models import HyperviewTemplate
+    from dj_hyperview.realtime import realtime_asgi
+
+    from todo.realtime_notifications import ui_topic
+    from todo.realtime_stream import admissions
+
+    # Never let suite cache.clear() reach Redis; only the broker uses db14.
+    assert settings.CACHES["default"]["BACKEND"].endswith("LocMemCache")
+    settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": None}
+    source = (
+        (settings.BASE_DIR / "hyperview/screens/about.xml").read_text().rstrip("\n")
+    )
+    before = source.replace("</body>", "<text>Before template edit</text></body>")
+    after = source.replace("</body>", "<text>Committed template edit</text></body>")
+    template = HyperviewTemplate.objects.create(
+        name="screens/about.xml", content=before
+    )
+    client.force_login(user)
+    binding, _ = _confirm(client, True)
+    url, namespace = realtime_redis
+    settings.HYPERVIEW = {
+        **settings.HYPERVIEW,
+        "REALTIME": {"REDIS_URL": url, "NAMESPACE": namespace},
+        "CACHE": {
+            "ALIAS": "default",
+            "NAMESPACE": namespace,
+            "TTL": 30,
+            "NEGATIVE_TTL": 2,
+            "FAILURE_MODE": "raise",
+        },
+    }
+    assert b"Before template edit" in client.get("/hv/about/").content
+    admin_url = reverse(
+        "admin:dj_hyperview_database_hyperviewtemplate_change", args=[template.pk]
+    )
+
+    def edit(rollback):
+        with transaction.atomic():
+            response = admin_client.post(
+                admin_url,
+                {
+                    "name": template.name,
+                    "content": after,
+                    "active": "on",
+                    "expected_revision": "1",
+                    "_save": "Save",
+                },
+            )
+            assert response.status_code == 302
+            if rollback:
+                transaction.set_rollback(True)
+        template.refresh_from_db()
+        assert template.content == (before if rollback else after)
+        assert template.revision == (1 if rollback else 2)
+
+    async def run():
+        queue = asyncio.Queue()
+        queue.put_nowait({"type": "http.request", "body": b"", "more_body": False})
+        sent, frames = [], []
+        broker = RedisBroker(url, namespace)
+
+        async def send(event):
+            sent.append(event)
+            if body := event.get("body", b""):
+                frames.append(body)
+                if len(frames) == 1:
+                    assert body == b'event: resync\ndata: {"version":1}\n\n'
+                    await sync_to_async(edit, thread_sensitive=True)(True)
+                    # FIFO barrier: any premature rollback hint would precede it.
+                    await sync_to_async(
+                        broker.publish_after_commit, thread_sensitive=True
+                    )(RESYNC, [ui_topic("default")], using="default")
+                elif len(frames) == 2:
+                    assert body == b'event: resync\ndata: {"version":1}\n\n'
+                    await sync_to_async(edit, thread_sensitive=True)(False)
+                else:
+                    assert body == (
+                        b'event: invalidate\ndata: {"version":1,"resources":["ui"]}\n\n'
+                    )
+                    queue.put_nowait({"type": "http.disconnect"})
+
+        cookie = client.cookies[settings.SESSION_COOKIE_NAME].value
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/realtime/events/",
+            "raw_path": b"/realtime/events/",
+            "query_string": b"",
+            "root_path": "",
+            "server": ("testserver", 80),
+            "client": ("127.0.0.1", 41000),
+            "headers": [
+                (b"host", b"testserver"),
+                (b"cookie", f"{settings.SESSION_COOKIE_NAME}={cookie}".encode()),
+                (b"x-hypertodo-client-contract", b"realtime-v1"),
+                (b"x-hypertodo-expected-session", binding.encode()),
+            ],
+        }
+        await asyncio.wait_for(
+            realtime_asgi(get_asgi_application())(scope, queue.get, send), 8
+        )
+        assert sent[0]["status"] == 200 and len(frames) == 3
+        assert admissions.total == 0
+        page = await sync_to_async(client.get, thread_sensitive=True)("/hv/about/")
+        assert page.status_code == 200
+        assert b"Committed template edit" in page.content
+        assert b"Before template edit" not in page.content
+        assert b"about-screen" in page.content
+
+    async_to_sync(run)()

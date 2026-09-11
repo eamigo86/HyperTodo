@@ -4,7 +4,7 @@ from config import settings as base
 
 # Keep the actual application configuration, but never its database or cache.
 globals().update({key: value for key, value in vars(base).items() if key.isupper()})
-HYPERVIEW = dict(base.HYPERVIEW)
+HYPERVIEW = {**base.HYPERVIEW, "REALTIME": None}
 HYPERVIEW.pop("CACHE", None)
 DATABASES = {
     "default": {

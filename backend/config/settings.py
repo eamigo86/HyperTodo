@@ -130,9 +130,12 @@ HYPERVIEW = {
     "ADMIN": {"EDITOR": True},
     "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
     "SCHEMA_EXTENSIONS": schema_extensions(),
-    # Opt-in transport, independent of cache and automatic schema validation.
-    # Enable with explicit REDIS_URL and an app/environment-specific NAMESPACE.
-    "REALTIME": None,
+    # All HTTP workers and template writers share this transport configuration.
+    # Redis must already be running; cache remains independently optional.
+    "REALTIME": {
+        "REDIS_URL": REDIS_URL,
+        "NAMESPACE": "hypertodo-development",
+    },
 }
 if ENABLE_REDIS_CACHE:
     HYPERVIEW["CACHE"] = {

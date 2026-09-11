@@ -11,6 +11,14 @@ REDIS_TEST_URL ?= redis://127.0.0.1:6379/14
 DJANGO_DEBUG ?= 1
 EXPO_PUBLIC_API_URL ?= http://127.0.0.1:8000/hv/
 
+# One application/settings and ASGI launcher; targets only choose cache/bind policy.
+define run_backend
+	DJANGO_SETTINGS_MODULE=config.settings REDIS_URL="$(REDIS_URL)" \
+		uv run python -m uvicorn config.asgi:application \
+		--host "$(1)" --port 8000 \
+		--loop asyncio --http h11 --ws none --no-proxy-headers
+endef
+
 define run_mobile
 	cd "$(MOBILE_DIR)" && \
 		export NVM_DIR="$(NVM_DIR)" && \
@@ -51,31 +59,25 @@ backend-seed: ## Create idempotent admin and user demo data.
 		HYPERTODO_DEMO_PASSWORD="$(HYPERTODO_DEMO_PASSWORD)" \
 		uv run python manage.py seed_demo
 
-backend-run: ## Start Django with the default local-memory cache.
-	@cd "$(BACKEND_DIR)" && uv run python manage.py runserver 0.0.0.0:8000
+backend-run: ## Start ASGI/SSE with the default local-memory cache; Redis must exist.
+	@cd "$(BACKEND_DIR)" && $(call run_backend,0.0.0.0)
 
-backend-run-redis: ## Start Django using the existing Redis development database.
-	@cd "$(BACKEND_DIR)" && \
-		ENABLE_REDIS_CACHE=1 REDIS_URL="$(REDIS_URL)" \
-		uv run python manage.py runserver 0.0.0.0:8000
+backend-run-redis: ## Start ASGI/SSE with the existing Redis development cache.
+	@cd "$(BACKEND_DIR)" && ENABLE_REDIS_CACHE=1 $(call run_backend,0.0.0.0)
 
-backend-run-device: ## Start Redis-backed Django for a device; requires LAN_IP.
+backend-run-device: ## Start Redis-backed ASGI/SSE for a device; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
 	@cd "$(BACKEND_DIR)" && \
-		ENABLE_REDIS_CACHE=1 REDIS_URL="$(REDIS_URL)" \
+		ENABLE_REDIS_CACHE=1 \
 		DJANGO_ALLOWED_HOSTS="127.0.0.1,localhost,$(LAN_IP)" \
 		CSRF_TRUSTED_ORIGINS="http://127.0.0.1:8000,http://$(LAN_IP):8000" \
-		uv run python manage.py runserver 0.0.0.0:8000
+		$(call run_backend,0.0.0.0)
 
-backend-run-sse: ## Run ASGI/SSE with filesystem HXML; existing DB override rows stay untouched.
-	@echo "Development SSE uses filesystem templates only; database override rows are unchanged."
+backend-run-sse: ## Start the same ASGI/SSE app on loopback or optional LAN_IP.
 	@cd "$(BACKEND_DIR)" && \
-		DJANGO_SETTINGS_MODULE=config.settings_sse \
 		DJANGO_ALLOWED_HOSTS="127.0.0.1,localhost,$(if $(LAN_IP),$(LAN_IP),127.0.0.1)" \
 		CSRF_TRUSTED_ORIGINS="http://127.0.0.1:8000,http://$(if $(LAN_IP),$(LAN_IP),127.0.0.1):8000" \
-		uv run python -m uvicorn config.asgi:application \
-		--host "$(if $(LAN_IP),$(LAN_IP),127.0.0.1)" --port 8000 \
-		--loop asyncio --http h11 --ws none --no-proxy-headers
+		$(call run_backend,$(if $(LAN_IP),$(LAN_IP),127.0.0.1))
 
 backend-test: ## Run backend tests with branch-aware coverage enforcement.
 	@cd "$(BACKEND_DIR)" && uv run pytest

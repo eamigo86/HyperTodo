@@ -7,16 +7,16 @@ own integration evidence.
 
 ## Enable and serve
 
-Keep `HYPERVIEW["REALTIME"] = None` or omit the section for rollback: the endpoint
-returns 404 and normal HTTP/HXML remains available. To enable, preserve the rest
-of `HYPERVIEW` and set its central section:
+All four backend launchers serve the same ASGI application and `config.settings`, with DB-first templates and realtime already enabled. Redis must already be running; the environment-backed `REDIS_URL` defaults to `redis://127.0.0.1:6379/15`. The existing central section is:
 
 ```python
 HYPERVIEW["REALTIME"] = {
-    "REDIS_URL": "redis://127.0.0.1:6379/14",
-    "NAMESPACE": "hypertodo-dev",
+    "REDIS_URL": REDIS_URL,
+    "NAMESPACE": "hypertodo-development",
 }
 ```
+
+All writers and stream workers must use the same endpoint and namespace. Preserve the rest of `HYPERVIEW` when reviewing a deployment-specific transport change. `None` or omission remains supported by the package (and test-only settings): the endpoint then returns 404 while normal HTTP/HXML stays available, but this is not a separate application launch profile. See [safe startup and existing DB-template adoption](installed-adoption.md).
 
 Delete the old top-level `HYPERTODO_REALTIME` setting, even if it was `None`;
 HyperTodo rejects its presence rather than keeping two sources of truth. The

@@ -107,32 +107,10 @@ def test_production_asgi_does_not_serve_development_static():
         importlib.reload(module)
 
 
-def test_sse_development_profile_is_explicit_and_preserves_normal_configuration():
-    from config import settings as normal
-
-    before = dict(normal.HYPERVIEW)
-    development = importlib.import_module("config.settings_sse")
-    assert development.HYPERVIEW["SOURCES"] == [
-        {"BACKEND": "dj_hyperview.sources.FileSystemSource"}
-    ]
-    assert development.HYPERVIEW["REALTIME"] == {
-        "REDIS_URL": "redis://127.0.0.1:6379/15",
-        "NAMESPACE": "hypertodo-development",
-    }
-    for key in ("SCHEMA_EXTENSIONS", "EXTRA_SCHEMAS", "TEMPLATE_DIRS", "ADMIN"):
-        assert development.HYPERVIEW[key] == normal.HYPERVIEW[key]
-    assert development.DATABASES == normal.DATABASES
-    assert development.CACHES == normal.CACHES
-    assert development.MIDDLEWARE == normal.MIDDLEWARE
-    assert normal.HYPERVIEW == before
-    assert "DatabaseSource" in normal.HYPERVIEW["SOURCES"][0]["BACKEND"]
-
-
 def test_development_commands_do_not_migrate_seed_or_weaken_go_guard():
     text = (BACKEND.parent / "Makefile").read_text()
     target = text.split("\nbackend-run-sse:", 1)[1].split("\n\n", 1)[0]
-    assert "config.settings_sse" in target
-    assert "uvicorn config.asgi:application" in target
+    assert "$(call run_backend," in target
     assert "127.0.0.1" in target and "0.0.0.0" not in target
     assert all(
         command not in target for command in ("runserver", "migrate", "seed_demo")

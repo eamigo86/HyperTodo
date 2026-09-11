@@ -36,10 +36,13 @@ def intents(published):
     return [intent for _, intent in published]
 
 
-def test_default_is_explicitly_disabled():
+def test_normal_application_enables_central_realtime():
     from config import settings
 
-    assert settings.HYPERVIEW["REALTIME"] is None
+    assert settings.HYPERVIEW["REALTIME"] == {
+        "REDIS_URL": settings.REDIS_URL,
+        "NAMESPACE": "hypertodo-development",
+    }
 
 
 def test_services_publish_only_after_commit(

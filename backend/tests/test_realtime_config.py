@@ -22,11 +22,14 @@ def remove_legacy_setting(settings):
         del settings.HYPERTODO_REALTIME
 
 
-def test_default_uses_only_central_disabled_configuration():
+def test_normal_application_enables_central_realtime():
     from config import settings
 
     assert not hasattr(settings, "HYPERTODO_REALTIME")
-    assert settings.HYPERVIEW.get("REALTIME") is None
+    assert settings.HYPERVIEW["REALTIME"] == {
+        "REDIS_URL": settings.REDIS_URL,
+        "NAMESPACE": "hypertodo-development",
+    }
 
 
 def test_nested_config_preserves_schema_sources_and_immutable_snapshot(settings):

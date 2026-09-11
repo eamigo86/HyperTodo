@@ -49,9 +49,10 @@ for credentials, existing DB overrides and deployment details.
 | `make help` | List every available target. |
 | `make setup` | Install backend/mobile dependencies; does not migrate or seed. |
 | `make backend-migrate`, `make backend-seed` | Initialize a new disposable demo DB, not an upgrade shortcut. |
-| `LAN_IP=192.168.1.20 make backend-run-sse` | Start ASGI/Uvicorn with filesystem HXML and SSE; no DB-template rewrites. |
+| `LAN_IP=192.168.1.20 make backend-run-sse` | Start the same DB-first ASGI/SSE app, bound to the supplied LAN address. |
 | `LAN_IP=192.168.1.20 make mobile-start-go` | Start the matching Expo Go QR workflow with explicit local-HTTP permission. |
-| `make backend-run`, `make backend-run-redis` | Traditional WSGI development server, without streaming SSE. |
+| `make backend-run`, `make backend-run-redis` | Start ASGI/SSE with local-memory or Redis cache, respectively. |
+| `LAN_IP=192.168.1.20 make backend-run-device` | Start the same ASGI/SSE app with Redis cache and device host/CSRF settings. |
 | `make mobile-start`, `make mobile-start-device` | Development-client workflows, **not Expo Go**; device target requires `LAN_IP`. |
 | `make lan-ip` | Print a candidate computer address; verify reachability from the phone. |
 
@@ -147,15 +148,9 @@ ownership and CSRF. See the [contextual-update policy](mobile/docs/realtime-cont
 
 ## Database-backed templates
 
-Normal `config.settings` resolves DB overrides before filesystem templates. A
-fresh demo seed creates About and Categories overrides; the SSE development
-profile deliberately uses **filesystem only**, leaving those stored rows intact.
+Every backend command uses `config.settings`: active database templates take precedence, with filesystem fallback when no active override exists. Startup never rewrites stored templates. A fresh demo seed creates About and Categories overrides.
 
-With the normal DB-first profile, sign into `/admin/` as an authorized superuser,
-open **Hyperview database templates → Hyperview templates**, edit a template and
-save. Refresh its mobile screen to see the change without rebuilding the app.
-For existing data, follow [override adoption](backend/docs/installed-adoption.md#adopt-database-overrides-explicitly)
-instead of seeding or overwriting deliberate Admin edits.
+Sign into `/admin/` as an authorized superuser, open **Hyperview database templates → Hyperview templates**, edit a template and save. With Redis available, committed changes send a `ui` hint to connected clients; the next authenticated HTTP refresh resolves the updated DB template without rebuilding the app. The stored screen must retain its realtime boundary for automatic refresh; older overrides need review. For existing data, follow [override adoption](backend/docs/installed-adoption.md#adopt-database-overrides-explicitly) instead of seeding or overwriting deliberate Admin edits.
 
 ![Django Admin HXML editor with Format and Validate](.github/assets/screenshots/django-admin-hxml-editor.png)
 
@@ -178,12 +173,7 @@ Review effective DB overrides before upgrading the package/app pair. See the
 
 ## Realtime SSE
 
-The explicit `config.settings_sse` profile enables
-`HYPERVIEW["REALTIME"]` with `REDIS_URL` and `NAMESPACE`; normal settings keep it
-disabled. It preserves auth, sessions, CSRF and schema configuration. Redis PubSub
-channels are not isolated by database number. See
-[startup/configuration](backend/docs/installed-adoption.md) and the
-[backend contract](backend/docs/realtime-changes.md).
+The single `config.settings` enables `HYPERVIEW["REALTIME"]` independently of cache. All backend launchers use Uvicorn/ASGI and the same DB-first source order, Redis endpoint and namespace. Redis must already be running for notifications; `REDIS_URL` defaults to `redis://127.0.0.1:6379/15`. Use the same configuration for Admin, other writers and stream workers. Authentication, sessions, CSRF and validation remain unchanged. Redis PubSub channels are not isolated by database number. See [startup/configuration](backend/docs/installed-adoption.md) and the [backend contract](backend/docs/realtime-changes.md).
 
 Committed hints cause authenticated HTTP refreshes; they carry no full document and do not guarantee replay. The current app wires these areas:
 

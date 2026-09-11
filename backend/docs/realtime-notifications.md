@@ -7,8 +7,9 @@ are unchanged. No Redis import or connection occurs during application startup.
 
 ## Configuration and delivery boundary
 
-Default `HYPERVIEW["REALTIME"] = None` (or omission) disables these observers without
-additional owner queries. The central package mapping requires **both** `REDIS_URL`
+HyperTodo enables `HYPERVIEW["REALTIME"]` in its single `config.settings` with the environment-backed `REDIS_URL` (default `redis://127.0.0.1:6379/15`) and namespace `hypertodo-development`. Every backend launcher keeps DB-first template sources and the same transport configuration; Redis must already be running. See the [startup and adoption guide](installed-adoption.md).
+
+An explicit `None` (or omission) is still supported by the package and used for test isolation: it disables these observers without additional owner queries. The central package mapping requires **both** `REDIS_URL`
 (`redis://`, `rediss://` or a supported local `unix://` URL) and `NAMESPACE`
 (1–64 lowercase ASCII letters/digits/underscore/hyphen,
 starting with a letter/digit). Use an app/environment-specific namespace; Redis

@@ -67,7 +67,7 @@ def test_documented_sse_and_go_commands_expand_without_starting_services():
         timeout=10,
         check=True,
     )
-    assert "DJANGO_SETTINGS_MODULE=config.settings_sse" in result.stdout
+    assert "DJANGO_SETTINGS_MODULE=config.settings" in result.stdout
     assert "uvicorn config.asgi:application" in result.stdout
     assert '--host "192.168.1.20" --port 8000' in result.stdout
     assert "EXPO_PUBLIC_ALLOW_LOCAL_API=1" in result.stdout
