@@ -1,6 +1,6 @@
 # Run the published package, without source-path shortcuts
 
-**Use the locked `dj-hyperview[editor,realtime]==0.1.0a22` and Uvicorn in the selected environment.**
+**Use the locked beta `dj-hyperview[editor,realtime]==0.1.0b1` and Uvicorn in the selected environment.**
 No local package checkout, source METADATA fixture or appended Python environment is needed for normal HyperTodo.
 
 This published package provides both invalidation wire versions `(1, 2)`. The

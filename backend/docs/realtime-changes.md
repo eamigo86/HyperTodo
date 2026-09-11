@@ -5,7 +5,7 @@ The backend still sends hints, not documents. The mobile host decides whether to
 refresh silently, confirm a visible remote refresh, or protect a dirty form.
 Neither a matching token nor an HTTP success acknowledges a native layout.
 
-HyperTodo pins published `dj-hyperview[editor,realtime]==0.1.0a22`, whose public
+HyperTodo pins published beta `dj-hyperview[editor,realtime]==0.1.0b1`, whose public
 `INVALIDATION_VERSIONS` capability is `(1, 2)`. The backend checks that capability,
 not a guessed version. An older a21 installation advertises no v2 feature/seed,
 publishes v1 and retains legacy presentation metadata. That compatibility fallback
