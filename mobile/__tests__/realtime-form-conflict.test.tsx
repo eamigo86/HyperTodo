@@ -120,8 +120,8 @@ it.each([false,true])('shows only the branded loader while resolving the accepte
  }finally{restore?.();f.close();}
 });
 
-it.each([false,true])('keeps resync, a different entity and this operation quiet on an open form (dirty=%s)',async dirty=>{
- const f=fixture({dirty,safePost:true});
+it.each([{dirty:false,object:'task'},{dirty:true,object:'task'},{dirty:false,object:'settings'},{dirty:true,object:'settings'}])('keeps resync, a different entity and this operation quiet before a relevant peer conflict: %j',async({dirty,object})=>{
+ const f=fixture({dirty,object,safePost:true});
  try{await f.edit();await act(async()=>{f.resync();f.precise('2'.repeat(64));});expect(f.ui.queryByTestId('realtime-conflict-card')).toBeNull();expect(f.ui.queryByTestId('realtime-notice')).toBeNull();expect(f.notice).not.toHaveBeenCalled();
   fireEvent.press(f.ui.getByText('Save form'));await waitFor(()=>expect(f.events.some(event=>event.reason==='remote-layout')).toBe(true));
   const post=f.http.mock.calls.find(([,init])=>init?.method?.toUpperCase()==='POST')!;const mutationId=new Headers(post[1]?.headers).get('X-HyperTodo-Mutation-ID');expect(mutationId).toMatch(/^[a-f0-9]{40}$/);

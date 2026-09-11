@@ -1,7 +1,10 @@
 """Profile presentation changes are owner-private; auth-only writes stay silent."""
 
+import json
+
 import pytest
 from django.db import transaction
+from django.urls import reverse
 from django.utils import timezone
 
 from tests.test_realtime_changes import module, request
@@ -76,6 +79,44 @@ def test_admin_style_user_save_observed_without_request_origin(
         user.first_name = "Admin edit"
         user.save()
     assert len(published) == 1 and intents(published)[0].payload["mutation_id"] is None
+
+
+def test_real_user_admin_save_matches_the_current_settings_dependency(
+    user, client, admin_client, published, django_capture_on_commit_callbacks
+):
+    from tests.test_realtime_change_templates import NS, get
+    from todo.realtime_notifications import private_topic
+
+    client.force_login(user)
+    _, screen = get(client, "/hv/settings/")
+    boundary = screen.find(".//app:realtime", NS)
+    assert boundary.attrib["mode"] == "form"
+    assert boundary.attrib["resources"] == "ui"
+    published.clear()
+    with django_capture_on_commit_callbacks(execute=True):
+        response = admin_client.post(
+            reverse("admin:auth_user_change", args=[user.pk]),
+            {
+                "username": user.username,
+                "first_name": "Admin first",
+                "last_name": "Admin last",
+                "email": user.email,
+                "is_active": "on",
+                "date_joined_0": user.date_joined.strftime("%Y-%m-%d"),
+                "date_joined_1": user.date_joined.strftime("%H:%M:%S"),
+                "_save": "Save",
+            },
+        )
+        assert response.status_code == 302
+        assert published == []
+    user.refresh_from_db()
+    assert (user.first_name, user.last_name) == ("Admin first", "Admin last")
+    assert len(published) == 1
+    event = intents(published)[0]
+    assert event.topics == (private_topic("default", user.pk),)
+    assert event.payload["mutation_id"] is None
+    assert event.resources == ("ui",)
+    assert event.payload["entities"] == json.loads(boundary.attrib["entities"])
 
 
 def test_blank_profile_noop_is_silent_but_deletion_of_preferences_notifies(

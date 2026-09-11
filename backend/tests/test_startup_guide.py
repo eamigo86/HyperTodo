@@ -134,3 +134,25 @@ def test_readme_keeps_the_mobile_gallery_and_existing_admin_asset_path():
     assert f"]({admin})" in readme
     for target in (*gallery, admin):
         assert (ROOT / target).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_readme_distinguishes_realtime_listeners_and_mutation_producers():
+    realtime = section((ROOT / "README.md").read_text(), "## Realtime SSE")
+    rows = re.findall(r"^\| ([^|]+) \| ([^|]+) \| ([^|]+) \|$", realtime, re.MULTILINE)
+    areas = {area.strip(): (changes, behavior) for area, changes, behavior in rows}
+    assert {
+        "Tasks / Categories",
+        "Dashboard",
+        "Task / category forms",
+        "Settings",
+        "About",
+    } <= areas.keys()
+    changes, behavior = areas["Settings"]
+    assert all(
+        field in changes
+        for field in ("first_name", "last_name", "email", "theme", "language", "avatar")
+    )
+    assert "dialog" in behavior
+    assert "same Redis namespace" in realtime
+    assert "QuerySet.update()" in realtime and "bulk_update()" in realtime
+    assert "not an independent SSE boundary" in realtime

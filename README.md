@@ -185,13 +185,19 @@ channels are not isolated by database number. See
 [startup/configuration](backend/docs/installed-adoption.md) and the
 [backend contract](backend/docs/realtime-changes.md).
 
-Committed hints cause authenticated HTTP refreshes; they carry no full document
-and do not guarantee replay. Visible lists/Dashboard refresh automatically,
-own-operation feedback stays quiet, and relevant remote changes to an open form
-require an explicit discard choice. Login/resync is silent. The
-[mobile policy](mobile/docs/realtime-contextual-updates.md) explains pagination,
-drafts, stale-route return and actual layout acknowledgement. These descriptions
-are not a new native acceptance result.
+Committed hints cause authenticated HTTP refreshes; they carry no full document and do not guarantee replay. The current app wires these areas:
+
+| Area | Relevant changes | Visible behavior |
+| --- | --- | --- |
+| Tasks / Categories | Task/category saves and deletes; `ui` presentation/template changes. | Automatic refresh, retaining filters and the bounded loaded prefix. |
+| Dashboard | `tasks`, `categories` and `ui`. | Automatic refresh; a stale return loads fresh content before showing it. |
+| Task / category forms | Current record, selected category for a task, and the owner's `ui` changes. | Update / Go back dialog, whether untouched or edited; precise metadata excludes unrelated records. |
+| Settings | Owner's User `first_name`, `last_name`, `email`; Profile `theme`, `language`, `avatar`. | Same remote-change dialog; this app's own operations stay quiet. |
+| About | `ui` presentation/template changes. | Automatic refresh of the readonly screen. |
+
+**Settings is already wired:** normal Django Admin saves of the signed-in user's name should notify it. The Admin writer must also have realtime enabled and use the same Redis namespace and service as the stream server. `QuerySet.update()` and `bulk_update()` bypass save signals and need explicit publication; they are not equivalent to an ordinary Admin save.
+
+The side menu is a fetched fragment, not an independent SSE boundary. Login/recovery use session reconciliation, not change dialogs. Own-operation feedback and login/resync stay quiet. See the [mobile policy](mobile/docs/realtime-contextual-updates.md) for draft safety, pagination and actual layout acknowledgement; this inventory is not a new native acceptance result.
 
 ## Quality checks
 
