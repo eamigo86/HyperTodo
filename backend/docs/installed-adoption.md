@@ -1,6 +1,6 @@
 # Run the published package, without source-path shortcuts
 
-**Use the locked beta `dj-hyperview[editor,realtime]==0.1.0b1` and Uvicorn in the selected environment.** No local package checkout, source METADATA fixture or appended Python environment is needed for normal HyperTodo.
+**Use the locked beta `dj-hyperview[editor,realtime]==0.1.0b2` and Uvicorn in the selected environment.** No local package checkout, source METADATA fixture or appended Python environment is needed for normal HyperTodo.
 
 This published package provides both invalidation wire versions `(1, 2)`. The matching backend and mobile host negotiate contextual v2 metadata; old clients still receive v1. Upgrade/roll back the package and backend workers together, without mixing old a21 Redis readers and v2 producers in the same namespace.
 
