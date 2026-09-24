@@ -23,8 +23,8 @@ export const hyperviewLogger = {
  * Handle a failed Hyperview request.
  *
  * Called for both document loads (hv-doc.tsx) and fragment loads (hyperview.tsx). Publishing
- * the failure unsticks the list refresh spinner, which hyperview 0.110 leaves spinning because
- * it skips `onEnd()` when a fragment fetch fails. The error itself only ever reaches the log.
+ * the failure retains the app-owned refresh fallback; Hyperview 0.111.0 itself
+ * now invokes `onEnd()` for failed fragments. The error itself only reaches the log.
  */
 export function reportHyperviewError(error: Error): void {
   publishNetworkFailure();

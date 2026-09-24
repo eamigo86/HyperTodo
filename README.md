@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml/badge.svg)](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml)
 [![dj-hyperview](https://img.shields.io/badge/dj--hyperview-0.1.0b1-278CFF)](https://pypi.org/project/dj-hyperview/0.1.0b1/)
-[![Hyperview](https://img.shields.io/badge/Hyperview-0.110.0-171A2F)](https://www.npmjs.com/package/hyperview/v/0.110.0)
+[![Hyperview](https://img.shields.io/badge/Hyperview-0.111.0-171A2F)](https://www.npmjs.com/package/hyperview/v/0.111.0)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 HyperTodo is a test application for the
@@ -22,14 +22,18 @@ not intended to be a reusable task-management product.
 - Light/dark themes, English/Spanish, avatars, biometrics and accessible native UI.
 
 Automated checks and manual device acceptance are separate; a passing XML or
-Jest test does not prove every native flow.
+Jest test does not prove every native flow. Hyperview 0.111.0 fixes failed
+fragment-fetch cleanup in the mobile client; mounted regressions cover HTTP 500,
+network rejection, retry and intentional sync drops. The Django backend remains
+pinned to published dj-hyperview 0.1.0b1 while the local package candidate is
+verified separately; no SSE wire change or Navigation 7 migration is involved.
 
 ## Repository layout
 
 | Path | Purpose |
 | --- | --- |
 | [`backend/`](backend/) | Python 3.14 / Django 6.1.1, pinned to `dj-hyperview[editor,realtime]==0.1.0b1`. |
-| [`mobile/`](mobile/) | Expo SDK 57, React Native 0.86 and Hyperview 0.110.0 host. |
+| [`mobile/`](mobile/) | Expo SDK 57, React Native 0.86 and Hyperview 0.111.0 host. |
 | [`Makefile`](Makefile) | Install, run and quality commands for both applications. |
 
 ## Makefile commands

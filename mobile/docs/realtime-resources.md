@@ -76,7 +76,7 @@ and success feedback that waits for actual layout.
 
 ## Verification boundaries
 
-The permanent resource tests use real Hyperview 0.110.0, Parser, React Navigation,
+The permanent resource tests use real Hyperview 0.111.0, Parser, React Navigation,
 public callbacks and DOM. Native Jest shims and synthetic HTTP fixture responses
 are explicit. They cover dependency matching, malformed/old hints, both operation
 orders, filters, real document/layout changes, manual forms/pagination, hidden

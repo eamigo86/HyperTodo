@@ -5,12 +5,9 @@ import { RefreshControl } from "react-native";
 import { subscribeToNetworkFailures } from "../feedback/failure";
 import { THEME_TOKENS, useThemeName } from "../theme";
 
-// ponytail: hyperview 0.110 never runs a list's `onEnd` callback when a fragment fetch
-// fails -- hyperview.tsx:203 returns null on error and :406-408 reads null as a dropped
-// sync request and bails early -- so hv-list's own `refreshing` state (hv-list/index.tsx:35)
-// stays true forever and the pull-to-refresh spinner freezes. The `refreshControl` prop is
-// the only app-side lever over that state. Delete this wrapper once upstream clears
-// `refreshing` on failure.
+// Hyperview 0.111.0 runs list onEnd after a failed fragment fetch. Keep this
+// app-owned failure guard for other failure paths and the themed native spinner;
+// mounted regressions verify the SDK cleanup without depending on this wrapper.
 export default function OfflineRefreshControl({
   onRefresh,
   refreshing,
