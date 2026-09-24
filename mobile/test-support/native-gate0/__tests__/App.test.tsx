@@ -7,6 +7,7 @@ jest.mock("expo-constants", () => ({__esModule:true,default:{executionEnvironmen
 jest.mock("../probe", () => ({runNativeProbe:jest.fn(async () => ({status:"PASS",checks:{bootstrapOk:true,firstFrameRead:true,secondFrameRead:true,abortRequested:true,serverCloseObserved:true},failedStage:null,errorCode:null,reported:true,cookieCleanup:"done"}))}));
 
 import { fetch as expoFetch } from "expo/fetch";
+import { version as installedExpoVersion } from "expo/package.json";
 import { runNativeProbe } from "../probe";
 import App from "../App";
 
@@ -20,7 +21,7 @@ it("requires a deliberate Run and uses global bootstrap plus explicit expo/fetch
   const options = (runNativeProbe as jest.Mock).mock.calls[0][0];
   expect(options.bootstrapFetch).toBe(globalThis.fetch);
   expect(options.streamFetch).toBe(expoFetch);
-  expect(options.metadata).toMatchObject({clientVersion:"1017880",expoVersion:"57.0.21",executionEnvironment:"storeClient",reactNativeVersion:"0.86.2"});
+  expect(options.metadata).toMatchObject({clientVersion:"1017880",expoVersion:installedExpoVersion,executionEnvironment:"storeClient",reactNativeVersion:"0.86.2"});
   expect(screen.getByText("Expo client build/version: 1017880")).toBeTruthy();
   expect(await screen.findByText("PASS — native I/O only")).toBeTruthy();
   expect(screen.getByText("This does not approve the full realtime Gate 0.")).toBeTruthy();
