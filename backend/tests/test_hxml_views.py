@@ -1215,7 +1215,7 @@ def test_about_is_an_authenticated_document_linked_only_from_the_side_menu(user)
     anonymous = Client().get(reverse("todo:about"))
     assert_hxml(anonymous, status=401)
 
-    client = Client(headers={"x-app-version": "1.2.0"})
+    client = Client(headers={"x-app-version": "1.2.1"})
     client.force_login(user)
     root = assert_hxml(client.get(reverse("todo:about")))
     screen = root.find("./hv:screen", NS)
@@ -1223,7 +1223,7 @@ def test_about_is_an_authenticated_document_linked_only_from_the_side_menu(user)
     assert screen is not None
     assert screen.attrib["id"] == "about-screen"
     assert root.find(".//hv:text[@id='about-app-version']", NS).text == (
-        "HyperTodo 1.2.0"
+        "HyperTodo 1.2.1"
     )
     assert root.find(".//hv:text[@id='about-package-version']", NS).text == (
         "dj-hyperview 0.1.0b2"

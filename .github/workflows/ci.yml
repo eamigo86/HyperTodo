@@ -21,14 +21,45 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.14"
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
-          version: "0.12.6"
+          version: "0.12.21"
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run pytest
       - run: uv run python manage.py check
       - run: uv run python manage.py makemigrations --check --dry-run
+
+  redis-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      HYPERTODO_REDIS_INTEGRATION: "1"
+      HYPERTODO_REDIS_TEST_OWNED: "1"
+      HYPERTODO_REDIS_TEST_URL: redis://127.0.0.1:6379/14
+    services:
+      redis:
+        image: redis:8.2.9-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version: "0.12.21"
+      - run: uv sync --locked
+      - run: uv run pytest
 
   mobile:
     runs-on: ubuntu-latest
@@ -38,7 +69,7 @@ jobs:
         working-directory: mobile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "22.19.0"
           cache: yarn

@@ -3,13 +3,16 @@
 import asyncio
 import json
 import os
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import pytest
 from asgiref.sync import async_to_sync, sync_to_async
 from dj_hyperview.realtime import RedisBroker
 from django.core.asgi import get_asgi_application
+from django.core.cache import cache
 from django.db import transaction
+from django.test import Client, override_settings
 from django.urls import reverse
 
 from tests.test_session_contract import _confirm
@@ -26,16 +29,93 @@ INVALIDATE = {"event": "invalidate", "data": {"version": 1, "resources": ["tasks
 def realtime_redis(settings):
     if os.environ.get("HYPERTODO_REDIS_INTEGRATION") != "1":
         pytest.skip("Real Redis acceptance is explicitly opt-in")
-    url = os.environ.get("HYPERTODO_REDIS_TEST_URL")
-    assert url == "redis://127.0.0.1:6379/14", (
-        "Only the authorized loopback test Redis is permitted"
+    assert os.environ.get("HYPERTODO_REDIS_TEST_OWNED") == "1", (
+        "Redis acceptance requires an explicitly owned disposable service"
     )
+    url = os.environ.get("HYPERTODO_REDIS_TEST_URL")
+    parsed = urlsplit(url or "")
+    assert (
+        parsed.scheme == "redis"
+        and parsed.hostname == "127.0.0.1"
+        and parsed.port is not None
+        and parsed.path == "/14"
+        and not parsed.username
+        and not parsed.password
+        and not parsed.query
+        and not parsed.fragment
+    ), "Only an explicit loopback port and isolated Redis database 14 are permitted"
     namespace = "hypertodo-test-" + uuid4().hex
     settings.HYPERVIEW = {
         **settings.HYPERVIEW,
         "REALTIME": {"REDIS_URL": url, "NAMESPACE": namespace},
     }
     return url, namespace
+
+
+def test_default_redis_cache_preserves_session_and_template_contract(
+    user, other_user, client, settings, realtime_redis
+):
+    """Exercise the production cache backend without clearing shared Redis keys."""
+    url, namespace = realtime_redis
+    configured_cache = {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": url,
+        "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+        "KEY_PREFIX": namespace,
+    }
+    configured_hyperview = {
+        **settings.HYPERVIEW,
+        "CACHE": {
+            "ALIAS": "default",
+            "NAMESPACE": namespace,
+            "TTL": 30,
+            "NEGATIVE_TTL": 2,
+            "FAILURE_MODE": "raise",
+        },
+    }
+    with override_settings(
+        CACHES={"default": configured_cache}, HYPERVIEW=configured_hyperview
+    ):
+        key = "cache-check-" + uuid4().hex
+        payload = {"owner": user.pk, "version": 8}
+        cache.set(key, payload, timeout=30)
+        assert cache.get(key) == payload
+
+        client.force_login(user)
+        first_binding, _ = _confirm(client, True)
+        first_page = client.get("/hv/about/")
+        assert first_page.status_code == 200
+        assert b"about-screen" in first_page.content
+
+        other_client = Client()
+        other_client.force_login(other_user)
+        second_binding, _ = _confirm(other_client, True)
+        second_page = other_client.get("/hv/about/")
+        assert second_page.status_code == 200
+        assert first_binding != second_binding
+        assert cache.get(key) == payload
+
+
+def test_pubsub_delivers_after_idle_beyond_redis8_default_timeout(realtime_redis):
+    """Use a post-idle publish barrier, not a timing-based absence assertion."""
+    url, namespace = realtime_redis
+
+    async def run():
+        broker = RedisBroker(url, namespace)
+        subscription = await broker.subscribe(["test-idle"])
+        try:
+            assert await asyncio.wait_for(anext(subscription), 2) == RESYNC
+            # Redis 8 defaults to a 5-second socket timeout. The broker's owned
+            # async subscription must still receive a later explicit marker.
+            await asyncio.sleep(5.5)
+            await sync_to_async(broker.publish_after_commit, thread_sensitive=True)(
+                INVALIDATE, ["test-idle"], using="default"
+            )
+            assert await asyncio.wait_for(anext(subscription), 3) == INVALIDATE
+        finally:
+            await subscription.aclose()
+
+    async_to_sync(run)()
 
 
 def admin_rename(client, task, title):

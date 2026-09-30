@@ -102,9 +102,9 @@ this same file. So localhost and cleartext are an explicit developer opt-in inst
    while every gate in this repo stays green. Avatar filenames are unguessable (`uuid4().hex`), which
    is what makes an unauthenticated URL acceptable — do not add an index that enumerates them.
 
-9. **This release needs a NEW NATIVE BUILD.** `expo-image-picker` and `expo-image-manipulator` are
+9. **The 1.2.0 avatar release needed a NEW NATIVE BUILD.** `expo-image-picker` and `expo-image-manipulator` are
    native modules, and there is no `expo-updates` dependency and no OTA channel anywhere in the tree,
-   so an over-the-air push cannot deliver them. `app.config.ts` `version` is `1.2.0`, and the server
+   so an over-the-air push could not deliver them. `app.config.ts` now declares `1.2.1`; the server
    reads that off `X-App-Version` (`MIN_AVATAR_UPLOAD_VERSION` in `backend/todo/views.py`) to decide
    whether to render the "Change photo" row at all — `pick-avatar` is a custom action, and Hyperview
    ignores an unregistered action silently, so a 1.1.0 binary would otherwise show a dead control.

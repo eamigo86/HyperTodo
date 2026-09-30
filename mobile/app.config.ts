@@ -81,7 +81,7 @@ export default (): ExpoConfig => {
   return {
     name: "HyperTodo",
     slug: "hypertodo",
-    version: "1.2.0",
+    version: "1.2.1",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
