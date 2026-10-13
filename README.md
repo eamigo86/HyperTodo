@@ -67,7 +67,7 @@ with `LAN_IP`); `backend-run` and `backend-run-redis` listen on loopback only.
 | `make backend-run`, `make backend-run-redis` | Start ASGI/SSE on loopback only, without or with the Redis template cache, respectively. |
 | `LAN_IP=192.168.1.20 make backend-run-device` | Start the same ASGI/SSE app on all interfaces with Redis cache and device host/CSRF settings. |
 | `make mobile-start`, `make mobile-start-device` | Development-client workflows, **not Expo Go**; device target requires `LAN_IP`. Every development target enables the local-HTTP opt-in itself, so no `mobile/.env` is needed. |
-| `make lan-ip` | Print the default-route interface address as a candidate; verify reachability from the phone. |
+| `make lan-ip` | Print the default-route interface address (the first `en*` address when a VPN holds the route) as a candidate; verify reachability from the phone. |
 
 For SSE, run `make setup`, prepare the database as appropriate, then keep the
 **ASGI and Expo Go commands in separate terminals**. Replace the example IP in

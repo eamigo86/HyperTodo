@@ -26,6 +26,16 @@ utun3: flags=8051<UP,POINTOPOINT>
 en7: flags=8863<UP>
     inet 192.168.50.7 netmask 0xffffff00
 EOF"""
+# `ifconfig -l` lists the interface names only, in the same order.
+IFCONFIG_NAMES = "lo0 gif0 utun3 en0 en7 ppp0"
+
+
+# Only the VPN tunnel and en7 hold an address; en0 is a Wi-Fi radio that is off.
+IPCONFIG = """case "$*" in
+"getifaddr en7") echo 192.168.50.7;;
+"getifaddr utun3") echo 100.64.0.9;;
+*) exit 1;;
+esac"""
 
 
 def _stub(directory, name, body):
@@ -49,9 +59,13 @@ def make(tmp_path):
         'echo "pinned node $*"; echo "HXML_EDITOR_JS=$HXML_EDITOR_JS"',
     )
     # A host whose default route is en7 and whose VPN interface is listed first.
-    _stub(bin_dir, "ifconfig", VPN_FIRST_IFCONFIG)
+    _stub(
+        bin_dir,
+        "ifconfig",
+        f'[[ "$*" == -l ]] && echo "{IFCONFIG_NAMES}" && exit\n{VPN_FIRST_IFCONFIG}',
+    )
     _stub(bin_dir, "route", "echo '  interface: en7'")
-    _stub(bin_dir, "ipconfig", '[[ "$*" == "getifaddr en7" ]] && echo 192.168.50.7')
+    _stub(bin_dir, "ipconfig", IPCONFIG)
 
     def run(*targets, nvm_status=0, **env):
         # Like nvm, put the pinned Node first on PATH; a missing version returns 3.
@@ -155,6 +169,35 @@ def test_lan_ip_follows_the_default_route_not_the_first_interface(make):
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == "192.168.50.7\n"
+
+
+@pytest.mark.parametrize("tunnel", ["utun3", "ppp0"])
+def test_lan_ip_skips_a_vpn_default_route_for_the_first_en_interface(
+    make, tmp_path, tunnel
+):
+    # A full-tunnel VPN takes the default route, and its address is not reachable
+    # from a phone on the LAN.
+    _stub(tmp_path / "bin", "route", f"echo '  interface: {tunnel}'")
+
+    result = make("lan-ip")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "192.168.50.7\n"
+
+
+def test_lan_ip_fails_clearly_when_a_vpn_route_leaves_no_en_address(make, tmp_path):
+    _stub(tmp_path / "bin", "route", "echo '  interface: utun3'")
+    _stub(
+        tmp_path / "bin",
+        "ipconfig",
+        '[[ "$*" == "getifaddr utun3" ]] && echo 100.64.0.9',
+    )
+
+    result = make("lan-ip")
+
+    assert result.stdout == ""
+    assert "No LAN address found" in result.stderr
+    assert "Error 1" in result.stderr
 
 
 @pytest.mark.parametrize("broken_tool", ["route", "ipconfig"])

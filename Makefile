@@ -168,8 +168,14 @@ mobile-android-device: ## Build and install HyperTodo on Android; requires LAN_I
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
 	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) expo run:android --device)
 
-lan-ip: ## Print the macOS default-route address, a candidate LAN IP for physical devices.
-	@iface="$$(route -n get default 2>/dev/null | awk '/interface:/ { print $$2; exit }')" && \
+lan-ip: ## Print the macOS default-route address (the first en* one behind a VPN), a candidate LAN IP.
+	@iface="$$(route -n get default 2>/dev/null | awk '/interface:/ { print $$2; exit }')"; \
+		case "$$iface" in utun*|ppp*) \
+			iface=; \
+			for n in $$(ifconfig -l); do \
+				[[ "$$n" == en* ]] && ipconfig getifaddr "$$n" >/dev/null 2>&1 && { iface="$$n"; break; }; \
+			done;; \
+		esac; \
 		ip="$$(ipconfig getifaddr "$$iface" 2>/dev/null)" && [[ -n "$$ip" ]] && echo "$$ip" \
 		|| { echo "No LAN address found; inspect network settings." >&2; exit 1; }
 
