@@ -135,3 +135,55 @@ it("reports current missing-token cleanup failure and suppresses it after revoca
  const f=await fixture();f.native.readToken.mockResolvedValue(null);f.clear.mockRejectedValueOnce(new Error("private native failure"));await f.run("biometric-unlock");expect(f.notice).toHaveBeenCalledWith({message:"Biometric unlock isn't available right now. Sign in with your password.",tone:"error"});
  f.notice.mockClear();const pending=deferred<void>();f.clear.mockImplementationOnce(()=>pending.promise);const task=f.run("biometric-unlock");await tick();f.supervisor.invalidate();pending.reject(new Error("old failure"));await task;expect(f.notice).not.toHaveBeenCalled();expect(f.submit).not.toHaveBeenCalled();
 });
+
+// The behaviors below carry contracts that used to be asserted on the retired singleton versions: the copy a failed
+// prompt shows, the glyph a device reports, and the photo-picker failure paths.
+const UNLOCK_FAILED={message:"Biometric unlock isn't available right now. Sign in with your password.",tone:"error"};
+type Fixture=Awaited<ReturnType<typeof fixture>>;
+const glyphs=(f:Fixture)=>Object.fromEntries(Array.from(f.doc().getElementsByTagName("image")).filter(e=>e.getAttribute("variant")).map(e=>[e.getAttribute("variant"),e.getAttribute("hide")]));
+
+it.each(["lockout","not_enrolled","authentication_failed","missing_usage_description"])("explains an unexpected %s refusal once, without leaking its code",async(error)=>{
+ const f=await fixture();f.native.unlock.mockResolvedValueOnce({success:false,error} as {success:boolean});await f.run("biometric-unlock");
+ expect(f.notice).toHaveBeenCalledTimes(1);expect(f.notice).toHaveBeenCalledWith(UNLOCK_FAILED);expect(f.native.readToken).not.toHaveBeenCalled();expect(f.submit).not.toHaveBeenCalled();
+});
+
+it("passes the prompt copy authored in the HXML",async()=>{
+ const f=await fixture();f.element.setAttribute("prompt","Unlock HyperTodo");await f.run("biometric-unlock");expect(f.native.unlock).toHaveBeenCalledWith("Unlock HyperTodo");
+});
+
+// Android reports hardware presence rather than enrolment and may list several modalities, so only a lone face
+// modality earns the face glyph; an empty report (iOS Optic ID, an OEM with no feature string) falls back to the platform.
+it.each([
+ [[2],"ios","face"],[[1],"ios","fingerprint"],[[1,2],"android","fingerprint"],[[3],"android","fingerprint"],
+ [[],"ios","face"],[[],"android","fingerprint"],
+] as const)("shows only the glyph the device reports (%j on %s)",async(types,platform,shown)=>{
+ const f=await fixture();(f.native as {platform:string}).platform=platform;f.native.supportedTypes.mockResolvedValueOnce([...types]);await f.run("probe-biometrics");
+ expect(glyphs(f)).toEqual({face:shown==="face"?"false":"true",fingerprint:shown==="fingerprint"?"false":"true"});
+});
+
+it("offers only the opt-in row, and touches no glyph, when the device holds no token",async()=>{
+ const f=await fixture();f.native.readToken.mockResolvedValueOnce(null);await f.run("probe-biometrics");
+ expect(f.native.supportedTypes).not.toHaveBeenCalled();expect(f.doc().getElementById("available")!.getAttribute("hide")).toBe("false");expect(f.doc().getElementById("token")!.getAttribute("hide")).toBe("true");
+ expect(glyphs(f)).toEqual({face:"true",fingerprint:"true"});expect(f.doc().getElementsByTagName("switch")[0].getAttribute("value")).toBe("off");
+});
+
+it("says so, without leaking the raw error, when the photo picker fails",async()=>{
+ const f=await fixture();f.native.pick.mockRejectedValueOnce(new Error("no photos"));await f.run("pick-avatar");
+ expect(f.updateRoot).not.toHaveBeenCalled();expect(f.notice).toHaveBeenCalledTimes(1);expect(f.notice).toHaveBeenCalledWith({message:"Couldn't open your photos. Try again in a moment.",tone:"error"});
+});
+
+it("posts nothing when the encoder returns no data or the target field is not on the screen",async()=>{
+ const f=await fixture();f.native.save.mockResolvedValueOnce({} as {base64:string});await f.run("pick-avatar");expect(f.updateRoot).not.toHaveBeenCalled();
+ f.element.setAttribute("target","missing");await f.run("pick-avatar");expect(f.updateRoot).not.toHaveBeenCalled();expect(f.notice).not.toHaveBeenCalled();
+});
+
+it("still arms the avatar field when the panel ships no preview targets",async()=>{
+ const f=await fixture();f.element.removeAttribute("preview-target");f.element.removeAttribute("current-target");await f.run("pick-avatar");
+ expect(f.updateRoot).toHaveBeenCalledTimes(1);expect(f.doc().getElementById("field")!.getAttribute("value")).toBe("YWJj");
+});
+
+it("publishes a trimmed snackbar, success only when the HXML says so, and nothing for a blank message",async()=>{
+ const f=await fixture();f.element.setAttribute("message","  Task created.  ");f.element.setAttribute("tone","success");await f.run("show-snackbar");expect(f.notice).toHaveBeenLastCalledWith({message:"Task created.",tone:"success"});
+ f.element.removeAttribute("tone");await f.run("show-snackbar");expect(f.notice).toHaveBeenLastCalledWith({message:"Task created.",tone:"error"});
+ f.notice.mockClear();f.element.setAttribute("message","   ");await f.run("show-snackbar");expect(f.notice).not.toHaveBeenCalled();
+});

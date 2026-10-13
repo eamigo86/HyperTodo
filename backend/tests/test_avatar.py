@@ -1281,7 +1281,7 @@ def test_the_photo_row_puts_a_real_button_beside_the_disc(user):
     # No id: HyperRef puts createTestProps on its own TouchableOpacity
     # (hyper-ref.tsx:299 and 343) and that is accessibilityLabel=id off iOS
     # (services/index.ts:81-84), so TalkBack would focus the wrapper and read
-    # "avatar-pick". PickAvatarBehavior reads `target`, never this element's id.
+    # "avatar-pick". The pick-avatar behavior reads `target`, never this element's id.
     assert "id" not in pick.attrib
     label = pick.find("./hv:text[@style='avatar-action-text']", NS)
     # "Choose photo", not "Change photo" and not "Upload": it opens the library

@@ -21,7 +21,7 @@
   <view id="avatar-current"{% if pending_avatar %} hide="true"{% endif %}>{% if request.user.profile.avatar %}<image style="avatar-disc avatar-disc-row" source="{{ request.user.profile.avatar.url }}" alt="{% translate "Your profile photo" %}" />{% else %}<view style="avatar-disc avatar-disc-row"><text style="avatar-initials"{% if not avatar_upload_supported %} accessibilityLabel="{% translate "Your initials. Update HyperTodo to change your photo." %}"{% endif %}>{{ initials }}</text></view>{% endif %}</view>
   <!-- The instant preview keeps the XSD-required source even while hidden.
        A transparent 1x1 data URI is nonempty and cannot request an external URL.
-       PickAvatarBehavior replaces it with the selected JPEG BEFORE unhiding.
+       The pick-avatar behavior replaces it with the selected JPEG BEFORE unhiding.
        Do not use source="": createProps forwards an empty string verbatim.
        An id and NO alt, deliberately. React Native only makes an Image an
        accessibility node when alt is present (Image.android.js:272-276), so the
@@ -34,7 +34,7 @@
        accessibilityRole it reads as static text. An id here would put
        accessibilityLabel="avatar-pick" on that TouchableOpacity on Android
        (services/index.ts:81-84 through hyper-ref.tsx:299) and TalkBack would
-       focus the wrapper and read the slug. PickAvatarBehavior never reads this
+       focus the wrapper and read the slug. The pick-avatar behavior never reads this
        element's own id, only its three targets. -->
   <view style="avatar-action">
     <!-- Three writes, one updateRoot. `target` takes the base64, `preview-target`

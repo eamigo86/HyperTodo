@@ -2,9 +2,8 @@ import React from "react";
 import { AccessibilityInfo, Platform } from "react-native";
 import { act, fireEvent, render } from "@testing-library/react-native";
 
-import ShowSnackbarBehavior from "../src/behaviors/ShowSnackbarBehavior";
 import SnackbarHost from "../src/components/SnackbarHost";
-import { publishSnackbar, subscribeToSnackbars } from "../src/feedback/snackbar";
+import { publishSnackbar } from "../src/feedback/snackbar";
 
 describe("server-driven snackbar feedback", () => {
   beforeEach(() => {
@@ -13,22 +12,6 @@ describe("server-driven snackbar feedback", () => {
 
   afterEach(() => {
     jest.useRealTimers();
-  });
-
-  it("publishes the HXML behavior payload", () => {
-    const listener = jest.fn();
-    const unsubscribe = subscribeToSnackbars(listener);
-    const element = {
-      getAttribute: (name: string) => ({
-        message: "Task created.",
-        tone: "success",
-      })[name] ?? null,
-    } as Element;
-
-    ShowSnackbarBehavior.callback(element, jest.fn(), jest.fn(), jest.fn());
-
-    expect(listener).toHaveBeenCalledWith({ message: "Task created.", tone: "success" });
-    unsubscribe();
   });
 
   it("renders blue success and red error feedback above navigation", () => {

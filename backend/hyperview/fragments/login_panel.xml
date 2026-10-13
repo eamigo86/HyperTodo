@@ -26,7 +26,7 @@
              id is the only channel: createTestPropsFromId hands Android
              accessibilityLabel=@id (services/index.ts:76-84). The label beside it is
              a sibling and is never associated. Nothing looks this element up by id:
-             ProbeBiometricsBehavior reveals the ROW, biometric-optin. -->
+             The probe-biometrics behavior reveals the ROW, biometric-optin. -->
         <switch id="{% translate "Unlock with biometrics next time" %}" name="enable_biometrics" value="{{ optin_default|default:'off' }}" style="optin-switch" />
       </view>
       {% if recovery_csrf_token %}<text-field hide="true" name="csrfmiddlewaretoken" value="{{ recovery_csrf_token }}" />{% else %}{% hv_csrf_token %}{% endif %}

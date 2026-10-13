@@ -94,7 +94,7 @@ credential/theme keys. A fixture supplies its own origin, HTTP implementation,
 credential port, native port and theme store to the **same App and SDK**.
 
 - Create the credential port with a unique fixture key and pass its `read` method
-  into the native adapter too. Never let probe/unlock fall through to a singleton.
+  into the native adapter too. Never let probe/unlock fall through to the normal App credential (`sessionCredentials`).
 - Theme stores are lazy: importing App/theme does not access SecureStore. The
   injected provider covers existing shell hooks and retains exact palettes.
 - Historical HTTP-only fixtures provide a stream-stop port but no transport.
@@ -109,8 +109,9 @@ Permanent suites cover actual App navigator/login, form serialization,422 retry,
 401/429,403, Settings clear, logout retention, held background response, late native
 completion, lifecycle notifications, language and source-owned resource hints.
 Separate supervisor tests cover neutral capability bounds, stale body/identity,
-settlement barriers and failure outcomes. Legacy shell/biometric behavior contracts
-remain tested; no SDK source is patched.
+settlement barriers and failure outcomes. The behavior contracts (biometric, avatar,
+snackbar) are tested through `createOwnedBehaviors` and `createOwnedNativePorts`;
+no SDK source is patched.
 
 The evidence directory preserves the chronological RED phases, commands and hashes,
 including the earlier inconclusive foreground-confirmation trace. Later finite
