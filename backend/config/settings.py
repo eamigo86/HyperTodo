@@ -139,6 +139,11 @@ else:
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
             "LOCATION": "hypertodo",
+            # LocMemCache keeps 300 entries unless told otherwise and then culls the
+            # least recently used, so junk traffic could push a tripped sign-in
+            # bucket out of the cache. The per-address budget bounds how many
+            # entries one client creates; this keeps room for everyone else's.
+            "OPTIONS": {"MAX_ENTRIES": 100_000},
         }
     }
 

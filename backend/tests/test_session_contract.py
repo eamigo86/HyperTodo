@@ -18,7 +18,7 @@ from tests.test_hxml_views import assert_hxml, token_from
 from todo.context_processors import THEME_COOKIE
 from todo.models import BiometricCredential, Task
 from todo.services import issue_biometric_token
-from todo.views import BIOMETRIC_ATTEMPT_LIMIT
+from todo.throttle import BIOMETRIC_ATTEMPT_LIMIT
 
 pytestmark = pytest.mark.django_db
 CONTRACT = "X-HyperTodo-Client-Contract"

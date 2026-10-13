@@ -23,7 +23,7 @@ from tests.test_session_contract import (
 )
 from todo.models import BiometricCredential, Profile, Task
 from todo.services import issue_biometric_token
-from todo.views import BIOMETRIC_ATTEMPT_LIMIT
+from todo.throttle import BIOMETRIC_ATTEMPT_LIMIT
 
 pytestmark = pytest.mark.django_db
 RECOVERY = "X-HyperTodo-Recovery"

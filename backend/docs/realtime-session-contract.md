@@ -77,9 +77,13 @@ carry their effective resulting binding; negotiation failures never disclose it.
 | `/hv/logout/` | `logout-ok` 200 |
 
 `password-throttled` answers the login panel when the client address and username
-have used their 10 attempts in 15 minutes; `authenticate` does not run, and the
-panel's copy is the same for every username. Like `biometric-throttled` it changes
-no session and stores no credential, so a client must accept it as a login panel.
+have used their 10 attempts in 15 minutes, or the client address has used 100
+across all usernames; `authenticate` does not run, and the panel's copy is the same
+for every username. The address is `REMOTE_ADDR`, which behind a reverse proxy is
+the proxy unless uvicorn trusts its forwarded headers (see the
+[environment variables](installed-adoption.md#environment-variables)). Like
+`biometric-throttled` it changes no session and stores no credential, so a client
+must accept it as a login panel.
 
 Only these owning branches set `X-HyperTodo-Auth-Outcome`, and only after modern
 negotiation. GET, generic errors, CSRF403 and settings/preferences events do not

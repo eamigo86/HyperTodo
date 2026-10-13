@@ -1,8 +1,49 @@
 """Django admin registrations for HyperTodo."""
 
 from django.contrib import admin
+from django.contrib.admin.forms import AdminAuthenticationForm
+from django.core.exceptions import ValidationError
+from django.utils.translation import gettext_lazy as _
+from django.views.decorators.debug import sensitive_variables
 
 from .models import BiometricCredential, Category, Profile, Task
+from .throttle import claim_password_attempt, release_password_attempts
+
+
+class ThrottledAdminAuthenticationForm(AdminAuthenticationForm):
+    """Admin login form that spends the sign-in budget before checking a password.
+
+    The Admin is a second door to the same accounts. It draws on the same address and
+    account budgets as the app's own login, otherwise it is an unthrottled password
+    oracle standing next to a throttled one.
+    """
+
+    @sensitive_variables()
+    def clean(self) -> dict[str, object]:
+        """Refuse an over-budget attempt before authenticate runs.
+
+        Returns:
+            The cleaned data, with the authenticated user cached on the form.
+
+        Raises:
+            ValidationError: If the attempt is over budget or the credentials fail.
+        """
+        username = self.cleaned_data.get("username")
+        if (
+            username is not None
+            and self.cleaned_data.get("password")
+            and not claim_password_attempt(self.request, username)
+        ):
+            raise ValidationError(
+                _("Too many sign-in attempts. Try again later."), code="throttled"
+            )
+        cleaned = super().clean()
+        if self.user_cache is not None:
+            release_password_attempts(self.request, username)
+        return cleaned
+
+
+admin.site.login_form = ThrottledAdminAuthenticationForm
 
 
 @admin.register(Category)

@@ -303,7 +303,7 @@ def test_all_40_sources_render_through_real_routes_under_both_contracts(
 def test_auth_panel_root_key_tracks_only_negotiated_request(modern, case, request_id):
     client = Client()
     if case == "biometric-throttled":
-        from todo.views import BIOMETRIC_ATTEMPT_LIMIT
+        from todo.throttle import BIOMETRIC_ATTEMPT_LIMIT
 
         for _ in range(BIOMETRIC_ATTEMPT_LIMIT):
             request(

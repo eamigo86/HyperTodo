@@ -19,7 +19,7 @@ from todo.services import (
     issue_biometric_token,
     revoke_biometric_token,
 )
-from todo.views import BIOMETRIC_ATTEMPT_LIMIT, _biometric_attempt_key
+from todo.throttle import BIOMETRIC_ATTEMPT_LIMIT, biometric_attempt_key
 
 pytestmark = pytest.mark.django_db
 NS = {"hv": "https://hyperview.org/hyperview"}
@@ -247,7 +247,7 @@ def _throttle(token):
     request = RequestFactory().post(
         reverse("todo:biometric-login"), {"biometric_token": token}
     )
-    cache.set(_biometric_attempt_key(request), BIOMETRIC_ATTEMPT_LIMIT, timeout=300)
+    cache.set(biometric_attempt_key(request), BIOMETRIC_ATTEMPT_LIMIT, timeout=300)
 
 
 def _panel_root(response, *, status):

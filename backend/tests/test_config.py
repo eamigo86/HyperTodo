@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dj_hyperview.schema import get_hyperview_catalog
 from django.conf import settings
+from django.core.cache import cache
 
 from config.environment import csv_setting
 
@@ -179,6 +180,26 @@ def test_the_source_probe_is_only_routed_when_it_is_enabled():
 
 def test_the_test_settings_enable_the_source_probe_their_consumers_need():
     assert settings.HYPERTODO_SOURCE_PROBE is True
+
+
+CACHES_PROBE = "import json, config.settings as s; print(json.dumps(s.CACHES))"
+
+
+def test_the_default_cache_holds_a_counter_through_a_flood_of_distinct_keys(settings):
+    # LocMemCache keeps 300 entries unless told otherwise and then culls the least
+    # recently used ones, so a few hundred junk keys used to evict a running sign-in
+    # counter and hand its owner a fresh budget.
+    result = load_settings(CACHES_PROBE, ENABLE_REDIS_CACHE="0")
+    assert result.returncode == 0, result.stderr
+    app_cache = json.loads(result.stdout)["default"]
+    settings.CACHES = {"default": {**app_cache, "LOCATION": "eviction-probe"}}
+
+    cache.set("counter", 1, timeout=60)
+    for index in range(5_000):
+        cache.set(f"junk-{index}", 1, timeout=60)
+
+    assert cache.get("counter") == 1
+    cache.clear()
 
 
 def test_the_realtime_namespace_defaults_and_follows_the_environment():

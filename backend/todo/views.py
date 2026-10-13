@@ -3,7 +3,6 @@
 import re
 from collections.abc import Callable
 from functools import wraps
-from hashlib import sha256
 from importlib.metadata import version
 from uuid import UUID
 
@@ -16,7 +15,6 @@ from dj_hyperview import (
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import AbstractUser
-from django.core.cache import cache
 from django.core.paginator import EmptyPage, Page, PageNotAnInteger, Paginator
 from django.db import transaction
 from django.db.models import Count, QuerySet
@@ -56,6 +54,12 @@ from .services import (
     update_task,
 )
 from .session_contract import AuthOutcome, attach_auth_outcome
+from .throttle import (
+    claim_biometric_attempt,
+    claim_password_attempt,
+    release_biometric_attempts,
+    release_password_attempts,
+)
 
 # Where config/urls.py mounts the Hyperview API. The rest of what the project serves,
 # the Django admin first among it, is read by people in a browser, not by the client.
@@ -68,10 +72,6 @@ APP_VERSION_PATTERN = re.compile(r"[0-9A-Za-z.+-]{1,32}")
 MIN_SWIPE_ACTIONS_VERSION = (1, 1, 0)
 # The first client release that registers the `pick-avatar` behavior.
 MIN_AVATAR_UPLOAD_VERSION = (1, 2, 0)
-BIOMETRIC_ATTEMPT_LIMIT = 10
-BIOMETRIC_ATTEMPT_WINDOW = 300
-LOGIN_ATTEMPT_LIMIT = 10
-LOGIN_ATTEMPT_WINDOW = 15 * 60
 
 View = Callable[..., HttpResponse]
 PAGE_SIZE = 20
@@ -377,20 +377,18 @@ def login_view(request: HttpRequest) -> HttpResponse:
         # XMLRestrictedElementFound for any invalid form, e.g. an empty submit.
         form = LoginForm(request.POST)
         if form.is_valid():
-            attempts = _login_attempt_key(request, form.cleaned_data["username"])
-            if _register_attempt(attempts, LOGIN_ATTEMPT_WINDOW) > LOGIN_ATTEMPT_LIMIT:
+            username = form.cleaned_data["username"]
+            if not claim_password_attempt(request, username):
                 # Refused before authenticate() runs, so a guesser cannot buy PBKDF2
                 # time. The copy is the same for every username: it confirms nothing
                 # about the account.
                 form.add_error(None, _("Too many sign-in attempts. Try again later."))
                 return _login_panel(request, form, 429, "password-throttled")
             user = authenticate(
-                request,
-                username=form.cleaned_data["username"],
-                password=form.cleaned_data["password"],
+                request, username=username, password=form.cleaned_data["password"]
             )
             if user is not None:
-                cache.delete(attempts)
+                release_password_attempts(request, username)
                 login(request, user)
                 if request.POST.get("enable_biometrics") == "on":
                     # The password was just proven, which is what entitles this
@@ -449,75 +447,6 @@ def _login_panel(
     )
 
 
-def _register_attempt(key: str, window: int) -> int:
-    """Claim one attempt in a fixed window and report how many it now holds.
-
-    cache.add opens the window and never resets a running one, and cache.incr counts
-    inside it atomically, so concurrent requests cannot read the same stale total the
-    way a get-then-set counter does. The claim is made BEFORE the work it guards,
-    which is what bounds the work a burst of parallel requests can trigger.
-
-    Args:
-        key: Cache key of the bucket.
-        window: Seconds the bucket lives, counted from its first attempt.
-
-    Returns:
-        Attempts registered in the current window, this one included.
-    """
-    cache.add(key, 0, timeout=window)
-    try:
-        return cache.incr(key)
-    except ValueError:
-        # The window ended between the two calls, so this attempt opens the next one.
-        # ponytail: two requests landing exactly here both write 1, undercounting by
-        # one once per window at most; use add(key, 1) plus a retry if that matters.
-        cache.set(key, 1, timeout=window)
-        return 1
-
-
-def _login_attempt_key(request: HttpRequest, username: str) -> str:
-    """Bucket password attempts by client address and account name.
-
-    The pair is deliberate. The address alone would let one guesser lock out everyone
-    behind the same NAT; the name alone would let anybody lock a victim out from
-    anywhere. Names are lower-cased and hashed so the key stays bounded and holds no
-    account name.
-
-    Args:
-        request: Incoming login request.
-        username: Account name the form carried.
-
-    Returns:
-        Cache key scoped to this client and this account name.
-    """
-    # ponytail: a guesser rotating through many names is not slowed down, and behind a
-    # proxy REMOTE_ADDR is the proxy (nothing here parses X-Forwarded-For). Add a
-    # per-address bucket if either ever matters.
-    digest = sha256(username.lower().encode()).hexdigest()
-    return f"login-attempts:{request.META.get('REMOTE_ADDR', '')}:{digest}"
-
-
-def _biometric_attempt_key(request: HttpRequest) -> str:
-    """Bucket unlock attempts by the credential presented, not by the caller alone.
-
-    REMOTE_ADDR on its own collapses every client behind a proxy or NAT into a single
-    counter (nothing here parses X-Forwarded-For), so ten rejected tokens would throttle
-    a whole deployment and any success would clear the bucket for everyone. The token is
-    256 bits of secrets.token_urlsafe, so a per-token limit is the only one that carries
-    information anyway.
-
-    Args:
-        request: Incoming biometric login request.
-
-    Returns:
-        Cache key scoped to this client and this presented token.
-    """
-    digest = sha256(
-        request.POST.get("biometric_token", "").strip().encode()
-    ).hexdigest()
-    return f"biometric-attempts:{request.META.get('REMOTE_ADDR', '')}:{digest}"
-
-
 def _biometric_panel(
     request: HttpRequest,
     message: str,
@@ -571,8 +500,7 @@ def biometric_login(request: HttpRequest) -> HttpResponse:
     """
     if invalid := _method(request, "POST"):
         return invalid
-    attempts = _biometric_attempt_key(request)
-    if _register_attempt(attempts, BIOMETRIC_ATTEMPT_WINDOW) > BIOMETRIC_ATTEMPT_LIMIT:
+    if not claim_biometric_attempt(request):
         return _biometric_panel(
             request,
             _("Too many attempts. Sign in with your password."),
@@ -591,7 +519,7 @@ def biometric_login(request: HttpRequest) -> HttpResponse:
             wipe_device=True,
             auth_outcome="biometric-invalid",
         )
-    cache.delete(attempts)
+    release_biometric_attempts(request)
     # authenticate_biometric_token resolves the user itself, so name the backend that
     # would have produced it; without it a second configured backend raises here.
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
