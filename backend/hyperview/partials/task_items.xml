@@ -13,7 +13,7 @@
       <view style="task">
         <text style="task-title" ellipsizeMode="tail" numberOfLines="1">{% if task.is_completed %}✓ {% endif %}{{ task.title }}</text>
         {% if task.category %}<text style="meta">{{ task.category.name }}</text>{% endif %}
-        {% if task.due_at %}<text style="meta">{% blocktranslate with due=task.due_at|date:'M j · H:i' %}Due {{ due }}{% endblocktranslate %}</text>{% endif %}
+        {% if task.due_at %}<text style="meta">{% if task.due_all_day %}{% blocktranslate with due=task.due_at|date:'M j' %}Due {{ due }}{% endblocktranslate %}{% else %}{% blocktranslate with due=task.due_at|date:'M j · H:i' %}Due {{ due }}{% endblocktranslate %}{% endif %}</text>{% endif %}
       </view>
       <app:swipe-action href="/hv/tasks/{{ task.id }}/edit/" action="navigate" verb="get" label="{% translate "Edit" %}" a11y-label="{% translate "Edit task" %}" tone="primary" />
       <app:swipe-action href="/hv/tasks/{{ task.id }}/toggle/" action="replace" verb="post" label="{% if task.is_completed %}{% translate "Reopen" %}{% else %}{% translate "Complete" %}{% endif %}" a11y-label="{% if task.is_completed %}{% translate "Reopen task" %}{% else %}{% translate "Complete task" %}{% endif %}" tone="positive" />

@@ -1048,6 +1048,7 @@ def task_new(request: HttpRequest) -> HttpResponse:
             notes=form.cleaned_data["notes"],
             category=form.cleaned_data["category"],
             due_at=form.cleaned_data["due_at"],
+            due_all_day=form.cleaned_data["due_all_day"],
         )
         return _template_response(
             request,
@@ -1085,6 +1086,7 @@ def task_edit(request: HttpRequest, task_id: UUID) -> HttpResponse:
             notes=form.cleaned_data["notes"],
             category=form.cleaned_data["category"],
             due_at=form.cleaned_data["due_at"],
+            due_all_day=form.cleaned_data["due_all_day"],
         )
         return _template_response(
             request,

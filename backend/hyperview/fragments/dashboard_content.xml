@@ -82,7 +82,7 @@
       </form>
       <view style="row-body">
         <text style="row-title" ellipsizeMode="tail" numberOfLines="1">{{ task.title }}</text>
-        <text style="row-meta{% if task.category %} {{ task.category.color }}-text{% endif %}">{% if task.due_at %}{{ task.due_at|time:'H:i' }}{% if task.category %} · {% endif %}{% endif %}{{ task.category.name }}</text>
+        <text style="row-meta{% if task.category %} {{ task.category.color }}-text{% endif %}">{% if task.due_at and not task.due_all_day %}{{ task.due_at|time:'H:i' }}{% if task.category %} · {% endif %}{% endif %}{{ task.category.name }}</text>
       </view>
       <image style="row-chevron" source="{% static 'todo/icons/chevron-right.png' %}" />
     </view>

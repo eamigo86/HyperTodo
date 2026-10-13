@@ -66,6 +66,12 @@ class Task(models.Model):
     # caps at 1 MB, so an unbounded column could outgrow its own screen.
     notes = models.TextField(blank=True, max_length=10_000, validators=[xml_safe_text])
     due_at = models.DateTimeField(null=True, blank=True)
+    # The deadline is a calendar day and not a moment: the owner gave a date and no
+    # time. due_at then holds the LAST instant of that local day, so every comparison
+    # against "now" (overdue, today, scheduled) and the ordering by due_at stay
+    # correct without knowing about this column; it only tells the screens not to
+    # invent a time and the edit form to leave the time field empty.
+    due_all_day = models.BooleanField(default=False)
     completed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

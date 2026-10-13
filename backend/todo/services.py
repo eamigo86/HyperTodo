@@ -138,6 +138,7 @@ def create_task(
     notes: str,
     category: Category | None,
     due_at: datetime | None,
+    due_all_day: bool = False,
 ) -> Task:
     """Create a validated task for one user.
 
@@ -147,6 +148,7 @@ def create_task(
         notes: Optional details.
         category: Optional category owned by the user.
         due_at: Optional timezone-aware deadline.
+        due_all_day: Whether due_at is the last instant of a day chosen without a time.
 
     Returns:
         Persisted task.
@@ -154,7 +156,14 @@ def create_task(
     Raises:
         ValidationError: If task data is invalid.
     """
-    task = Task(user=user, title=title, notes=notes, category=category, due_at=due_at)
+    task = Task(
+        user=user,
+        title=title,
+        notes=notes,
+        category=category,
+        due_at=due_at,
+        due_all_day=due_all_day,
+    )
     task.full_clean()
     task.save()
     return task
@@ -169,6 +178,7 @@ def update_task(
     notes: str,
     category: Category | None,
     due_at: datetime | None,
+    due_all_day: bool = False,
 ) -> Task:
     """Update an owned task.
 
@@ -179,6 +189,7 @@ def update_task(
         notes: Replacement details.
         category: Replacement optional category.
         due_at: Replacement optional deadline.
+        due_all_day: Whether the replacement deadline is a day chosen without a time.
 
     Returns:
         Updated task.
@@ -192,8 +203,18 @@ def update_task(
     task.notes = notes
     task.category = category
     task.due_at = due_at
+    task.due_all_day = due_all_day
     task.full_clean()
-    task.save(update_fields=("title", "notes", "category", "due_at", "updated_at"))
+    task.save(
+        update_fields=(
+            "title",
+            "notes",
+            "category",
+            "due_at",
+            "due_all_day",
+            "updated_at",
+        )
+    )
     return task
 
 

@@ -1,7 +1,7 @@
 """HTTP contract tests for server-driven Hyperview screens."""
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -1047,6 +1047,140 @@ def test_the_task_edit_form_shows_the_stored_schedule(user):
     root = assert_hxml(client.get(reverse("todo:task-edit", args=(task.pk,))))
 
     assert schedule_of(root) == ("2026-09-01", "08:15")
+
+
+def end_of_day(day):
+    """Return the last instant of a local calendar day, as the task form stores it."""
+    return timezone.make_aware(datetime.combine(day, time.max))
+
+
+def test_a_date_only_task_is_due_today_and_not_overdue_until_the_day_ends(
+    user, monkeypatch
+):
+    # The form used to store such a deadline at 00:00, so by noon the task was both
+    # "Today" and "Overdue" and the dashboard raised an alert for work that was
+    # still on time.
+    now = freeze_local(monkeypatch)
+    today = timezone.localdate(now).isoformat()
+    client = csrf_client()
+    client.force_login(user)
+    token = token_from(client.get(reverse("todo:task-new")))
+
+    created = client.post(
+        reverse("todo:task-new"),
+        {
+            "title": "Pay rent",
+            "due_date": today,
+            "due_time": "",
+            "csrfmiddlewaretoken": token,
+        },
+    )
+
+    assert_hxml(created, status=201)
+    task = Task.objects.get(user=user)
+    assert task.due_all_day is True
+    root = dashboard_root(user)
+    assert "all clear" in text_of(root, "dashboard-overdue")
+    assert root.find(".//hv:view[@id='dashboard-overdue-card']", NS) is None
+    assert "1" in text_of(root, "dashboard-today")
+
+
+def test_an_all_day_task_round_trips_through_the_edit_form(user):
+    due_at = end_of_day(timezone.localdate())
+    task = Task.objects.create(
+        user=user, title="Pay rent", due_at=due_at, due_all_day=True
+    )
+    client = csrf_client()
+    client.force_login(user)
+    edit_response = client.get(reverse("todo:task-edit", args=(task.pk,)))
+
+    # The stored end of the day is an implementation detail: the person never typed
+    # a time, so the form must not show one (or offer 23:59 back as if they had).
+    assert schedule_of(assert_hxml(edit_response)) == (due_at.date().isoformat(), "")
+    saved = client.post(
+        reverse("todo:task-edit", args=(task.pk,)),
+        {
+            "title": "Pay the rent",
+            "due_date": timezone.localdate().isoformat(),
+            "due_time": "",
+            "csrfmiddlewaretoken": token_from(edit_response),
+        },
+    )
+
+    assert_hxml(saved)
+    task.refresh_from_db()
+    assert (task.title, task.due_at, task.due_all_day) == ("Pay the rent", due_at, True)
+
+
+def test_giving_an_all_day_task_a_time_makes_it_a_timed_one(user):
+    task = Task.objects.create(
+        user=user,
+        title="Pay rent",
+        due_at=end_of_day(timezone.localdate()),
+        due_all_day=True,
+    )
+    client = csrf_client()
+    client.force_login(user)
+    token = token_from(client.get(reverse("todo:task-edit", args=(task.pk,))))
+
+    client.post(
+        reverse("todo:task-edit", args=(task.pk,)),
+        {
+            "title": "Pay rent",
+            "due_date": timezone.localdate().isoformat(),
+            "due_time": "09:30",
+            "csrfmiddlewaretoken": token,
+        },
+    )
+
+    task.refresh_from_db()
+    assert task.due_all_day is False
+    assert timezone.localtime(task.due_at).time() == time(9, 30)
+
+
+def test_a_task_row_shows_the_time_only_when_the_deadline_has_one(user):
+    Task.objects.create(
+        user=user,
+        title="Call",
+        due_at=timezone.make_aware(datetime(2026, 10, 20, 9, 30)),
+    )
+    Task.objects.create(
+        user=user,
+        title="Pay rent",
+        due_at=end_of_day(datetime(2026, 10, 21).date()),
+        due_all_day=True,
+    )
+    client = Client()
+    client.force_login(user)
+
+    root = assert_hxml(client.get(reverse("todo:tasks")))
+
+    lines = [node.text for node in root.iterfind(".//hv:text[@style='meta']", NS)]
+    assert "Due Oct 20 · 09:30" in lines
+    assert "Due Oct 21" in lines
+
+
+def test_a_dashboard_row_shows_no_time_for_an_all_day_task(user, monkeypatch):
+    now = freeze_local(monkeypatch)
+    work = Category.objects.create(
+        user=user, name="Work", color=Category.Color.LAVENDER
+    )
+    task = Task.objects.create(
+        user=user,
+        category=work,
+        title="Pay rent",
+        due_at=end_of_day(timezone.localdate(now)),
+        due_all_day=True,
+    )
+
+    root = dashboard_root(user)
+    row = root.find(f".//hv:view[@id='dashboard-task-{task.pk}']", NS)
+
+    assert row is not None
+    shown = "".join(row.itertext())
+    assert "Work" in shown
+    assert "23:59" not in shown
+    assert "·" not in shown
 
 
 def test_category_crud_and_cross_user_resources_are_hidden(user, other_user):

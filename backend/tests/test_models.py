@@ -1,8 +1,14 @@
 """Tests for TODO persistence rules."""
 
+import importlib
+from datetime import date, datetime, time
+from types import SimpleNamespace
+
 import pytest
+from django.apps import apps
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from todo.models import Category, Task
@@ -86,3 +92,142 @@ def test_a_profile_names_the_user_it_belongs_to(user):
     from todo.models import Profile
 
     assert str(Profile.objects.create(user=user)) == f"Preferences for {user}"
+
+
+def test_a_new_task_has_a_timed_deadline_unless_told_otherwise(user):
+    assert Task.objects.create(user=user, title="Call").due_all_day is False
+
+
+# --- all-day data migration ---------------------------------------------------
+
+
+def local(day, at):
+    """Return an aware datetime on a local calendar day."""
+    return timezone.make_aware(datetime.combine(day, at))
+
+
+def wall_clock(value):
+    """Return the local wall-clock reading of a stored deadline."""
+    return timezone.localtime(value).replace(tzinfo=None)
+
+
+def migration():
+    return importlib.import_module("todo.migrations.0007_mark_all_day_deadlines")
+
+
+def run_forwards():
+    migration().mark_midnight_deadlines_all_day(
+        apps, SimpleNamespace(connection=connection)
+    )
+
+
+def run_backwards():
+    migration().restore_midnight_deadlines(apps, SimpleNamespace(connection=connection))
+
+
+def test_the_migration_turns_deadlines_at_local_midnight_into_all_day_ones(
+    user, other_user
+):
+    midnight = Task.objects.create(
+        user=user, title="Rent", due_at=local(date(2026, 9, 6), time.min)
+    )
+    foreign = Task.objects.create(
+        user=other_user, title="Rent", due_at=local(date(2026, 9, 7), time.min)
+    )
+    timed = Task.objects.create(
+        user=user, title="Call", due_at=local(date(2026, 9, 6), time(9, 30))
+    )
+    one_minute = Task.objects.create(
+        user=user, title="Almost", due_at=local(date(2026, 9, 6), time(0, 1))
+    )
+    undated = Task.objects.create(user=user, title="Someday")
+
+    run_forwards()
+
+    for task in (midnight, foreign, timed, one_minute, undated):
+        task.refresh_from_db()
+    assert (midnight.due_all_day, foreign.due_all_day) == (True, True)
+    assert wall_clock(midnight.due_at) == datetime.combine(date(2026, 9, 6), time.max)
+    assert wall_clock(foreign.due_at) == datetime.combine(date(2026, 9, 7), time.max)
+    assert [timed.due_all_day, one_minute.due_all_day, undated.due_all_day] == [
+        False
+    ] * 3
+    assert wall_clock(timed.due_at) == datetime(2026, 9, 6, 9, 30)
+    assert wall_clock(one_minute.due_at) == datetime(2026, 9, 6, 0, 1)
+    assert undated.due_at is None
+
+
+def test_the_migration_keeps_the_day_when_the_clocks_change(user):
+    # New York springs forward on 2026-03-08, so that local day is 23 hours long. A
+    # deadline moved by a fixed 24 hours would land an hour into the NEXT day.
+    spring = Task.objects.create(
+        user=user, title="Spring", due_at=local(date(2026, 3, 8), time.min)
+    )
+    autumn = Task.objects.create(
+        user=user, title="Autumn", due_at=local(date(2026, 11, 1), time.min)
+    )
+
+    run_forwards()
+
+    spring.refresh_from_db()
+    autumn.refresh_from_db()
+    assert wall_clock(spring.due_at) == datetime.combine(date(2026, 3, 8), time.max)
+    assert wall_clock(autumn.due_at) == datetime.combine(date(2026, 11, 1), time.max)
+
+
+def test_the_migration_can_run_twice(user):
+    task = Task.objects.create(
+        user=user, title="Rent", due_at=local(date(2026, 9, 6), time.min)
+    )
+
+    run_forwards()
+    first = Task.objects.get(pk=task.pk).due_at
+    run_forwards()
+
+    assert Task.objects.get(pk=task.pk).due_at == first
+
+
+def test_the_migration_reads_tasks_in_primary_key_chunks(user, monkeypatch):
+    monkeypatch.setattr(migration(), "CHUNK", 2)
+    tasks = [
+        Task.objects.create(
+            user=user, title=f"Task {n}", due_at=local(date(2026, 9, 1 + n), time.min)
+        )
+        for n in range(5)
+    ]
+
+    with CaptureQueriesContext(connection) as captured:
+        run_forwards()
+
+    # Rows on both sides of every chunk boundary are converted...
+    assert all(Task.objects.get(pk=task.pk).due_all_day for task in tasks)
+    # ...and no read ever asks for more than one chunk of them.
+    reads = [
+        query["sql"]
+        for query in captured
+        if query["sql"].startswith("SELECT") and 'FROM "todo_task"' in query["sql"]
+    ]
+    assert len(reads) > 1
+    assert all("LIMIT 2" in sql for sql in reads)
+
+
+def test_reversing_the_migration_restores_the_start_of_the_day(user):
+    task = Task.objects.create(
+        user=user,
+        title="Rent",
+        due_at=local(date(2026, 9, 6), time.max),
+        due_all_day=True,
+    )
+    timed = Task.objects.create(
+        user=user, title="Call", due_at=local(date(2026, 9, 6), time(9, 30))
+    )
+    no_deadline = Task.objects.create(user=user, title="Someday", due_all_day=True)
+
+    run_backwards()
+
+    task.refresh_from_db()
+    timed.refresh_from_db()
+    no_deadline.refresh_from_db()
+    assert wall_clock(task.due_at) == datetime.combine(date(2026, 9, 6), time.min)
+    assert wall_clock(timed.due_at) == datetime(2026, 9, 6, 9, 30)
+    assert no_deadline.due_at is None

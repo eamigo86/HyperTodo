@@ -1,6 +1,6 @@
 """Tests for task selection and dashboard counts."""
 
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 import pytest
 from django.utils import timezone
@@ -313,3 +313,58 @@ def test_selector_rejects_invalid_status_and_foreign_category(user, other_user):
         tasks_for_user(user, status="missing")
     with pytest.raises(ValueError, match="belong"):
         tasks_for_user(user, category=foreign)
+
+
+def end_of_day(day):
+    """Return the last instant of a local calendar day, as the task form stores it."""
+    return timezone.make_aware(datetime.combine(day, time.max))
+
+
+def test_an_all_day_deadline_stays_open_until_its_day_ends(user, monkeypatch):
+    now = freeze_local_noon(monkeypatch)
+    due_at = end_of_day(timezone.localdate(now))
+    Task.objects.create(user=user, title="Pay rent", due_at=due_at, due_all_day=True)
+
+    assert dashboard_counts(user) == {
+        "today": 1,
+        "scheduled": 0,
+        "all": 1,
+        "overdue": 0,
+    }
+    assert list(tasks_for_user(user, status="overdue")) == []
+    # The last instant of the day still belongs to it...
+    monkeypatch.setattr("django.utils.timezone.now", lambda: due_at)
+    assert dashboard_counts(user)["overdue"] == 0
+    # ...and the first instant of the next one does not.
+    monkeypatch.setattr(
+        "django.utils.timezone.now", lambda: due_at + timedelta(microseconds=1)
+    )
+    assert dashboard_counts(user) == {
+        "today": 0,
+        "scheduled": 0,
+        "all": 1,
+        "overdue": 1,
+    }
+
+
+def test_a_timed_deadline_is_overdue_the_moment_it_passes(user, monkeypatch):
+    now = freeze_local_noon(monkeypatch)
+    Task.objects.create(user=user, title="Morning call", due_at=now.replace(hour=9))
+    Task.objects.create(user=user, title="Evening call", due_at=now.replace(hour=18))
+
+    assert [t.title for t in tasks_for_user(user, status="overdue")] == ["Morning call"]
+    assert dashboard_counts(user)["overdue"] == 1
+
+
+def test_an_all_day_task_sorts_after_the_timed_tasks_of_its_day(user, monkeypatch):
+    now = freeze_local_noon(monkeypatch)
+    today = timezone.localdate(now)
+    Task.objects.create(
+        user=user, title="All day", due_at=end_of_day(today), due_all_day=True
+    )
+    Task.objects.create(user=user, title="Afternoon", due_at=now.replace(hour=15))
+    Task.objects.create(user=user, title="Morning", due_at=now.replace(hour=9))
+
+    ordered = [t.title for t in tasks_for_user(user, status="today")]
+
+    assert ordered == ["Morning", "Afternoon", "All day"]

@@ -2,7 +2,7 @@
 
 import binascii
 from base64 import b64decode
-from datetime import datetime
+from datetime import datetime, time
 from io import BytesIO
 
 from django import forms
@@ -200,24 +200,33 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
         if not self.is_bound and self.instance.pk and self.instance.due_at:
             local_due = timezone.localtime(self.instance.due_at)
             self.initial.setdefault("due_date", local_due.date())
-            self.initial.setdefault(
-                "due_time", local_due.time().replace(second=0, microsecond=0)
-            )
+            # An all-day deadline is stored as the last instant of its day. Showing
+            # that as 23:59 would put a time in a field the person never filled in.
+            if not self.instance.due_all_day:
+                self.initial.setdefault(
+                    "due_time", local_due.time().replace(second=0, microsecond=0)
+                )
 
     def clean(self) -> dict[str, object]:
         """Combine validated deadline components.
 
+        A date with no time is a deadline for the whole day, stored as the last
+        instant of that local day so the task is not overdue while the day is still
+        going. A time of 00:00 typed on purpose is a time like any other.
+
         Returns:
-            Cleaned form data with a timezone-aware due_at value.
+            Cleaned form data with a timezone-aware due_at value and the due_all_day
+            flag that says whether a time was left out.
         """
         cleaned = super().clean()
         due_date = cleaned.get("due_date")
         due_time = cleaned.get("due_time")
         if due_time and not due_date:
             self.add_error("due_time", _("A due date is required when a time is set."))
+        cleaned["due_all_day"] = bool(due_date) and due_time is None
         cleaned["due_at"] = (
             timezone.make_aware(
-                datetime.combine(due_date, due_time or datetime.min.time())
+                datetime.combine(due_date, time.max if due_time is None else due_time)
             )
             if due_date
             else None

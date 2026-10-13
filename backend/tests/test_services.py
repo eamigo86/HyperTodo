@@ -1,6 +1,6 @@
 """Tests for TODO mutation services."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from django.http import Http404
@@ -59,3 +59,41 @@ def test_task_lifecycle_and_toggle_are_owned(user, other_user):
         delete_task(user=other_user, task_id=task.pk)
     delete_task(user=user, task_id=task.pk)
     assert not Task.objects.filter(pk=task.pk).exists()
+
+
+def test_the_all_day_flag_is_stored_and_replaced_with_the_deadline(user):
+    due_at = timezone.make_aware(datetime(2026, 9, 6, 23, 59, 59, 999999))
+    task = create_task(
+        user=user,
+        title="Pay rent",
+        notes="",
+        category=None,
+        due_at=due_at,
+        due_all_day=True,
+    )
+    task.refresh_from_db()
+    assert task.due_all_day is True
+
+    task = update_task(
+        user=user,
+        task_id=task.pk,
+        title="Pay rent",
+        notes="",
+        category=None,
+        due_at=timezone.make_aware(datetime(2026, 9, 7, 9, 0)),
+    )
+    task.refresh_from_db()
+    # A replacement deadline that does not say it is all-day is a timed one.
+    assert task.due_all_day is False
+
+
+def test_a_task_is_timed_unless_the_caller_says_otherwise(user):
+    task = create_task(
+        user=user,
+        title="Call",
+        notes="",
+        category=None,
+        due_at=timezone.make_aware(datetime(2026, 9, 6, 9, 0)),
+    )
+
+    assert task.due_all_day is False
