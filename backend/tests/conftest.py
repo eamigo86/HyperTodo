@@ -16,11 +16,11 @@ def private_fixture_workspace(monkeypatch, tmp_path_factory):
 
 @pytest.fixture(autouse=True)
 def clear_throttle_cache():
-    """Keep the biometric throttle counters out of every other test.
+    """Keep the biometric and password throttle counters out of every other test.
 
-    LocMemCache is process-global and the counter lives for 300s of wall time, so a
+    LocMemCache is process-global and a counter lives for minutes of wall time, so a
     single rejected token in one module used to leak into every module that ran after
-    it. Suite-wide because any test may now POST /hv/biometric/login/.
+    it. Suite-wide because any test may POST /hv/biometric/login/ or /hv/login/.
     """
     cache.clear()
     yield

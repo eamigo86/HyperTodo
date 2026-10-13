@@ -69,7 +69,7 @@ Auth, database sessions, CSRF, cache and schema extensions remain in effect. Tes
 | `DJANGO_SECURE_PROXY_SSL_HEADER` | unset | META name of the header a TLS-terminating proxy sets, for example `HTTP_X_FORWARDED_PROTO`; a value of `https` then counts as a secure request. Set it only behind a proxy that overwrites that header. |
 | `HYPERTODO_REALTIME_NAMESPACE` | `hypertodo-development` | Redis PubSub namespace shared by every writer and stream worker of one deployment. |
 
-Django's four standard password validators are active for Admin and `changepassword`. `seed_demo` sets its development passwords with `set_password`, which skips them.
+Django's four standard password validators are active for Admin and `changepassword`. `seed_demo` sets its development passwords with `set_password`, which skips them. Password sign-in allows 10 attempts per 15 minutes for each client address and username, and a success resets them; further attempts answer 429 without checking the password. The counter lives in Django's default cache: shared by all workers with `backend-run-redis` and `backend-run-device`, per process otherwise.
 
 ## Check a real Admin update
 

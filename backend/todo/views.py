@@ -66,6 +66,8 @@ MIN_SWIPE_ACTIONS_VERSION = (1, 1, 0)
 MIN_AVATAR_UPLOAD_VERSION = (1, 2, 0)
 BIOMETRIC_ATTEMPT_LIMIT = 10
 BIOMETRIC_ATTEMPT_WINDOW = 300
+LOGIN_ATTEMPT_LIMIT = 10
+LOGIN_ATTEMPT_WINDOW = 15 * 60
 
 View = Callable[..., HttpResponse]
 PAGE_SIZE = 20
@@ -371,12 +373,20 @@ def login_view(request: HttpRequest) -> HttpResponse:
         # XMLRestrictedElementFound for any invalid form, e.g. an empty submit.
         form = LoginForm(request.POST)
         if form.is_valid():
+            attempts = _login_attempt_key(request, form.cleaned_data["username"])
+            if _register_attempt(attempts, LOGIN_ATTEMPT_WINDOW) > LOGIN_ATTEMPT_LIMIT:
+                # Refused before authenticate() runs, so a guesser cannot buy PBKDF2
+                # time. The copy is the same for every username: it confirms nothing
+                # about the account.
+                form.add_error(None, _("Too many sign-in attempts. Try again later."))
+                return _login_panel(request, form, 429, "password-throttled")
             user = authenticate(
                 request,
                 username=form.cleaned_data["username"],
                 password=form.cleaned_data["password"],
             )
             if user is not None:
+                cache.delete(attempts)
                 login(request, user)
                 if request.POST.get("enable_biometrics") == "on":
                     token = issue_biometric_token(user=user)
@@ -394,26 +404,91 @@ def login_view(request: HttpRequest) -> HttpResponse:
                     auth_outcome="password-ok",
                 )
             form.add_error(None, _("The username or password is incorrect."))
-        return _template_response(
-            request,
-            "fragments/login_panel.xml",
-            # Echoed, not reset: the person retrying the password is the person who
-            # just flipped this switch, and dropping it silently un-enrolled them on
-            # the successful retry. Safe for the same reason _biometric_panel
-            # pre-selects it on a rejected token -- and it still enrols nothing on
-            # its own, because only a SUCCESSFUL password login reads this key.
-            {
-                "form": form,
-                "optin_default": (
-                    "on" if request.POST.get("enable_biometrics") == "on" else "off"
-                ),
-            },
-            status=422,
-            auth_outcome="password-invalid",
-        )
+        return _login_panel(request, form, 422, "password-invalid")
     return _template_response(
         request, "screens/login.xml", {"form": LoginForm(), "optin_default": "off"}
     )
+
+
+def _login_panel(
+    request: HttpRequest, form: LoginForm, status: int, auth_outcome: AuthOutcome
+) -> HttpResponse:
+    """Render the login panel after a refused password attempt.
+
+    Args:
+        request: Incoming login request.
+        form: Bound form carrying the error copy.
+        status: HTTP status for the response.
+        auth_outcome: Literal selected by the refusing branch.
+
+    Returns:
+        Login panel fragment echoing the submission.
+    """
+    return _template_response(
+        request,
+        "fragments/login_panel.xml",
+        # Echoed, not reset: the person retrying the password is the person who
+        # just flipped this switch, and dropping it silently un-enrolled them on
+        # the successful retry. Safe for the same reason _biometric_panel
+        # pre-selects it on a rejected token -- and it still enrols nothing on
+        # its own, because only a SUCCESSFUL password login reads this key.
+        {
+            "form": form,
+            "optin_default": (
+                "on" if request.POST.get("enable_biometrics") == "on" else "off"
+            ),
+        },
+        status=status,
+        auth_outcome=auth_outcome,
+    )
+
+
+def _register_attempt(key: str, window: int) -> int:
+    """Claim one attempt in a fixed window and report how many it now holds.
+
+    cache.add opens the window and never resets a running one, and cache.incr counts
+    inside it atomically, so concurrent requests cannot read the same stale total the
+    way a get-then-set counter does. The claim is made BEFORE the work it guards,
+    which is what bounds the work a burst of parallel requests can trigger.
+
+    Args:
+        key: Cache key of the bucket.
+        window: Seconds the bucket lives, counted from its first attempt.
+
+    Returns:
+        Attempts registered in the current window, this one included.
+    """
+    cache.add(key, 0, timeout=window)
+    try:
+        return cache.incr(key)
+    except ValueError:
+        # The window ended between the two calls, so this attempt opens the next one.
+        # ponytail: two requests landing exactly here both write 1, undercounting by
+        # one once per window at most; use add(key, 1) plus a retry if that matters.
+        cache.set(key, 1, timeout=window)
+        return 1
+
+
+def _login_attempt_key(request: HttpRequest, username: str) -> str:
+    """Bucket password attempts by client address and account name.
+
+    The pair is deliberate. The address alone would let one guesser lock out everyone
+    behind the same NAT; the name alone would let anybody lock a victim out from
+    anywhere. Names are lower-cased and hashed so the key stays bounded and holds no
+    account name.
+
+    Args:
+        request: Incoming login request.
+        username: Account name the form carried.
+
+    Returns:
+        Cache key scoped to this client and this account name.
+    """
+    # ponytail: a guesser rotating through many names is not slowed down, and behind a
+    # proxy REMOTE_ADDR is the proxy (nothing here parses X-Forwarded-For). Add a
+    # per-address bucket if either ever matters.
+    digest = sha256(username.lower().encode()).hexdigest()
+    return f"login-attempts:{request.META.get('REMOTE_ADDR', '')}:{digest}"
 
 
 def _biometric_attempt_key(request: HttpRequest) -> str:
@@ -435,19 +510,6 @@ def _biometric_attempt_key(request: HttpRequest) -> str:
         request.POST.get("biometric_token", "").strip().encode()
     ).hexdigest()
     return f"biometric-attempts:{request.META.get('REMOTE_ADDR', '')}:{digest}"
-
-
-def _biometric_throttled(request: HttpRequest) -> bool:
-    """Report whether this token has already been rejected too many times."""
-    return cache.get(_biometric_attempt_key(request), 0) >= BIOMETRIC_ATTEMPT_LIMIT
-
-
-def _count_biometric_failure(request: HttpRequest) -> None:
-    """Count one rejected token; successes reset the counter instead."""
-    key = _biometric_attempt_key(request)
-    # ponytail: read-modify-write races undercount under concurrency; swap for
-    # cache.incr with a seeded key if a real backend makes that worth the round trip.
-    cache.set(key, cache.get(key, 0) + 1, timeout=BIOMETRIC_ATTEMPT_WINDOW)
 
 
 def _biometric_panel(
@@ -503,7 +565,8 @@ def biometric_login(request: HttpRequest) -> HttpResponse:
     """
     if invalid := _method(request, "POST"):
         return invalid
-    if _biometric_throttled(request):
+    attempts = _biometric_attempt_key(request)
+    if _register_attempt(attempts, BIOMETRIC_ATTEMPT_WINDOW) > BIOMETRIC_ATTEMPT_LIMIT:
         return _biometric_panel(
             request,
             _("Too many attempts. Sign in with your password."),
@@ -515,7 +578,6 @@ def biometric_login(request: HttpRequest) -> HttpResponse:
         raw_token=request.POST.get("biometric_token", "")
     )
     if user is None:
-        _count_biometric_failure(request)
         return _biometric_panel(
             request,
             _("This device is no longer recognised. Sign in to enable it again."),
@@ -523,7 +585,7 @@ def biometric_login(request: HttpRequest) -> HttpResponse:
             wipe_device=True,
             auth_outcome="biometric-invalid",
         )
-    cache.delete(_biometric_attempt_key(request))
+    cache.delete(attempts)
     # authenticate_biometric_token resolves the user itself, so name the backend that
     # would have produced it; without it a second configured backend raises here.
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")

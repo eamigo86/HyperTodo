@@ -589,6 +589,10 @@ msgstr "Buenas noches"
 msgid "The username or password is incorrect."
 msgstr "El usuario o la contraseña son incorrectos."
 
+#: todo/views.py:381
+msgid "Too many sign-in attempts. Try again later."
+msgstr "Demasiados intentos de inicio de sesión. Inténtalo de nuevo más tarde."
+
 #: todo/views.py:398
 msgid "Too many attempts. Sign in with your password."
 msgstr "Demasiados intentos. Inicia sesión con tu contraseña."

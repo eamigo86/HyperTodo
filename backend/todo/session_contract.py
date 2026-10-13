@@ -18,6 +18,7 @@ _BINDING_PATTERN = re.compile(r"hvs1\.[A-Za-z0-9_-]{43}")
 AuthOutcome = Literal[
     "password-ok",
     "password-invalid",
+    "password-throttled",
     "biometric-ok",
     "biometric-invalid",
     "biometric-throttled",

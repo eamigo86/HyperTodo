@@ -72,9 +72,14 @@ carry their effective resulting binding; negotiation failures never disclose it.
 
 | Exact POST route | Outcome and unchanged status |
 | --- | --- |
-| `/hv/login/` | `password-ok` 200; `password-invalid` 422 |
+| `/hv/login/` | `password-ok` 200; `password-invalid` 422; `password-throttled` 429 |
 | `/hv/biometric/login/` | `biometric-ok` 200; `biometric-invalid` 401; `biometric-throttled` 429 |
 | `/hv/logout/` | `logout-ok` 200 |
+
+`password-throttled` answers the login panel when the client address and username
+have used their 10 attempts in 15 minutes; `authenticate` does not run, and the
+panel's copy is the same for every username. Like `biometric-throttled` it changes
+no session and stores no credential, so a client must accept it as a login panel.
 
 Only these owning branches set `X-HyperTodo-Auth-Outcome`, and only after modern
 negotiation. GET, generic errors, CSRF403 and settings/preferences events do not
