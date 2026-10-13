@@ -55,7 +55,7 @@ export const THEME_TOKENS = {
 export type ThemeName = keyof typeof THEME_TOKENS;
 export type ThemeTokens = (typeof THEME_TOKENS)[ThemeName];
 
-/** Internal synchronous palette persistence, injectable for the native fixture. */
+/** Internal synchronous palette persistence, injectable for tests. */
 export type ThemePersistence = {
   read(): unknown;
   write(name: ThemeName): void;

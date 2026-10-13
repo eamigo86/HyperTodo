@@ -5,7 +5,6 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { fetch as expoFetch } from "expo/fetch";
 
-import type Hyperview from "hyperview";
 import type { ErrorScreenProps } from "hyperview/src/types";
 import type { Props as LoadingProps } from "hyperview/src/components/loading/types";
 import moment from "moment";
@@ -18,7 +17,7 @@ import AnimatedSideMenu from "./src/components/AnimatedSideMenu";
 import EdgeMenuOpener from "./src/components/EdgeMenuOpener";
 import ElementErrorBanner from "./src/components/ElementErrorBanner";
 import OfflineRefreshControl from "./src/components/OfflineRefreshControl";
-import { FAILURE_COPY, classifyFailure, publishNetworkFailure } from "./src/feedback/failure";
+import { FAILURE_COPY, classifyFailure } from "./src/feedback/failure";
 import { hyperviewLogger, reportHyperviewError } from "./src/feedback/logging";
 import AnimatedSplash from "./src/components/AnimatedSplash";
 import SwipeRow from "./src/components/SwipeRow";
@@ -75,50 +74,13 @@ const hyperviewProps = {
   onError: reportHyperviewError,
 };
 
-type HyperviewProps = React.ComponentProps<typeof Hyperview>;
-
-/** Only diagnostics may be replaced by the isolated native fixture. */
-export type SessionAppDiagnostics = {
-  logger: NonNullable<HyperviewProps["logger"]>;
-  onError: NonNullable<HyperviewProps["onError"]>;
-};
-
-function fixtureDiagnostics(diagnostics: SessionAppDiagnostics): SessionAppDiagnostics {
-  const logger = diagnostics.logger;
-  const onError = diagnostics.onError;
-  const contain = (level: keyof SessionAppDiagnostics["logger"]) => (...args: unknown[]): void => {
-    try {
-      logger[level](...args);
-    } catch {
-      // Diagnostics cannot change SDK outcomes.
-    }
-  };
-  return {
-    logger: { error: contain("error"), warn: contain("warn"), info: contain("info"), log: contain("log") },
-    onError: error => {
-      // Keep refresh/error UI behavior without forwarding raw fixture errors to the default log.
-      publishNetworkFailure();
-      try {
-        onError(error);
-      } catch {
-        // The real error remains visible through the existing UI.
-      }
-    },
-  };
-}
-
-/** Same App composition for normal launch and an isolated, injected native fixture. */
-export function createSessionApp(
-  options: Omit<AppSessionOptions, "onTheme">,
-  theme: ThemeStore,
-  diagnostics?: SessionAppDiagnostics,
-) {
-  const props = diagnostics ? { ...hyperviewProps, ...fixtureDiagnostics(diagnostics) } : hyperviewProps;
+/** The App composition: normal launch passes the real ports, tests inject their own. */
+export function createSessionApp(options: Omit<AppSessionOptions, "onTheme">, theme: ThemeStore) {
   return function SessionApp(): React.JSX.Element {
     const [session] = useState(() => createAppSession({ ...options, onTheme: theme.publish }));
     return (
       <ThemeProvider store={theme}>
-        <AppFrame session={session} hyperviewProps={props} />
+        <AppFrame session={session} />
       </ThemeProvider>
     );
   };
@@ -131,12 +93,7 @@ function SessionNavigation({ session, children }: { session: ReturnType<typeof c
   return <NavigationContainer key={key}>{children}</NavigationContainer>;
 }
 
-type AppHyperviewProps = typeof hyperviewProps;
-
-function AppFrame({ session, hyperviewProps }: {
-  session: ReturnType<typeof createAppSession>;
-  hyperviewProps: AppHyperviewProps;
-}): React.JSX.Element {
+function AppFrame({ session }: { session: ReturnType<typeof createAppSession> }): React.JSX.Element {
   const styles = STYLES[useThemeName()];
   useEffect(() => {
     const subscription = AppState.addEventListener("change", state => {
@@ -173,10 +130,10 @@ function AppFrame({ session, hyperviewProps }: {
 }
 
 const DefaultApp = createSessionApp({
-  // Read when this app first renders, not when the module loads: the isolated native
-  // fixture imports createSessionApp from here with its own origin and never renders
-  // this one, so it must not need the production extra.apiUrl. A build without one
-  // still fails on first render with getApiUrl's error.
+  // Read when this app first renders, not when the module loads: tests import
+  // createSessionApp from here with their own origin and never render this one, so
+  // they must not need the production extra.apiUrl. A build without one still fails
+  // on first render with getApiUrl's error.
   get entrypointUrl() { return getApiUrl(); },
   http: (input, init) => fetch(input, init),
   credentials: sessionCredentials,

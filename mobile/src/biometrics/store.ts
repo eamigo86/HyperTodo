@@ -20,7 +20,7 @@ function serialized<T>(operation: () => Promise<T>): Promise<T> {
   return result;
 }
 
-/** Internal composition point: fixture keys never read the normal app credential. */
+/** Internal composition point: a port built on another key never reads the normal app credential. */
 export function createSessionCredentialPort(key:string):{read():Promise<string|null>;storage:StorageQueue} {
   if(!key)throw new Error("missing-credential-key");
   return Object.freeze({

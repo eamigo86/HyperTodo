@@ -149,29 +149,7 @@ it("contains observer/receiver exceptions without changing real layout, requests
   } finally { ui.unmount(); f.session.dispose(); }
 });
 
-it("supplies fixture-only diagnostics without raw default logging and preserves the real error UI", async () => {
-  const f = fixture(); f.fail();
-  const codes: string[] = [], failures = jest.fn(), unsubscribe = subscribeToNetworkFailures(failures);
-  const defaultLog = jest.spyOn(hyperviewLogger, "error").mockImplementation(() => {});
-  const diagnostics = {
-    logger: { error: (..._args: unknown[]) => { codes.push("sdk-error"); throw new Error("sink"); }, warn: () => {}, info: () => {}, log: () => {} },
-    onError: (_error: Error) => { codes.push("sdk-error"); throw new Error("sink"); },
-  };
-  const App = createSessionApp(f.options, createThemeStore({ read: () => null, write: () => {} }), diagnostics);
-  const ui = render(<App />);
-  fireEvent(ui.getByTestId("animated-splash"), "layout");
-  try {
-    await ui.findByText("Something went wrong");
-    expect(failures).toHaveBeenCalled(); expect(codes).toContain("sdk-error");
-    expect(defaultLog).not.toHaveBeenCalled();
-    const secureStore = jest.requireMock("expo-secure-store");
-    expect(secureStore.getItem).not.toHaveBeenCalled();
-    expect(secureStore.setItem).not.toHaveBeenCalled();
-    expect(ui.queryByText("private request context must not be logged")).toBe(null);
-  } finally { ui.unmount(); unsubscribe(); }
-});
-
-it("retains normal default diagnostic reporting when no fixture override is supplied", async () => {
+it("reports a failed request through the default diagnostics", async () => {
   const f = fixture(); f.fail();
   const defaultLog = jest.spyOn(hyperviewLogger, "error").mockImplementation(() => {});
   const failures = jest.fn(), unsubscribe = subscribeToNetworkFailures(failures);

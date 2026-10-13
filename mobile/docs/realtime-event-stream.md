@@ -17,9 +17,8 @@ Admin/CSRF and subscriber evidence in
 physical-iPhone, concurrent-B-client or exhaustive native transport claim.
 
 `AppSessionOptions.stream = {fetch, clock?}` is internal dependency injection,
-not a user feature flag. Historical isolated fixtures without that port do not
-open SSE. A native SSE fixture must explicitly supply the same `expo/fetch`
-transport; a fixture's earlier HTTP-only acceptance is not SSE evidence.
+not a user feature flag. A composition without that port does not open SSE; it
+must explicitly supply the same `expo/fetch` transport.
 
 ## Connection ownership
 

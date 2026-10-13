@@ -86,22 +86,19 @@ filters and uses ordinary validated HTTP. App notice text follows accepted
 as theme; no language metadata is published from bare HTTP, session observations
 or unconfirmed auth responses. Changing labels does not remount Root or lose drafts.
 
-## Isolated native fixture
+## Injected ports
 
 `createSessionApp(options, themeStore)` is an internal composition factory, not a
 public configuration toggle. The normal App retains its existing API URL and
-credential/theme keys. A fixture supplies its own origin, HTTP implementation,
+credential/theme keys. A test supplies its own origin, HTTP implementation,
 credential port, native port and theme store to the **same App and SDK**.
 
-- Create the credential port with a unique fixture key and pass its `read` method
+- Create the credential port with a unique key and pass its `read` method
   into the native adapter too. Never let probe/unlock fall through to the normal App credential (`sessionCredentials`).
 - Theme stores are lazy: importing App/theme does not access SecureStore. The
   injected provider covers existing shell hooks and retains exact palettes.
-- Historical HTTP-only fixtures provide a stream-stop port but no transport.
-  An SSE fixture must explicitly supply the same `expo/fetch` stream port used
-  by normal App; the stop port alone does not open a connection.
-- Use synthetic accounts/DB, cookies and storage namespaces. Do not run the fixture
-  against existing development data or the original Expo Go credential keys.
+- Without the `expo/fetch` stream port no SSE connection is opened; the
+  stream-stop port alone does not open one.
 
 ## Verification and remaining work
 

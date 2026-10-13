@@ -10,6 +10,7 @@ import { createSessionApp } from "../App";
 import { createThemeStore, defaultThemeStore, THEME_TOKENS } from "../src/theme";
 import { createAppSession, AppSessionSurface } from "../src/realtime/app-session";
 import { SESSION_HEADERS as H } from "../src/realtime/session-protocol";
+import { hyperviewLogger } from "../src/feedback/logging";
 jest.mock("expo-splash-screen", () => ({
   preventAutoHideAsync: jest.fn(),
   hideAsync: jest.fn()
@@ -1068,8 +1069,8 @@ it('leaves the actual neutral recovery navigator for B after a mutated A task ro
   const add = AppState.addEventListener;
   const spy = jest.fn((...args:Parameters<typeof add>) => add(...args));
   AppState.addEventListener = spy;
-  const onError = jest.fn();
-  const ActualApp = createSessionApp(f.options, createThemeStore({read:()=> 'light',write:()=>{}}), {onError, logger:{error:()=>{},warn:()=>{},info:()=>{},log:()=>{}}});
+  const onError = jest.spyOn(hyperviewLogger, 'error').mockImplementation(() => {});
+  const ActualApp = createSessionApp(f.options, createThemeStore({read:()=> 'light',write:()=>{}}));
   const ui = render(<ActualApp />);
   const state = (next:'inactive'|'active') => {
     for (const [event, callback] of spy.mock.calls) if (event === 'change') callback(next);
@@ -1101,5 +1102,6 @@ it('leaves the actual neutral recovery navigator for B after a mutated A task ro
   } finally {
     ui.unmount();
     AppState.addEventListener = add;
+    onError.mockRestore();
   }
 });

@@ -41,7 +41,7 @@ export type AppSessionOptions = {
   onResourceReceiver?: (receive: CapturedResourceReceiver | null) => void;
 };
 
-/** Internal composition for normal App and the isolated native fixture. */
+/** Internal composition for the App; tests inject their own ports. */
 export function createAppSession(options: AppSessionOptions) {
   const listeners = new Set<() => void>();
   const mutations=createMutationLedger();
