@@ -59,6 +59,11 @@ it("collects probe results before one public DOM update without opting in",async
  expect(Array.from(f.doc().getElementsByTagName("image")).filter(e=>e.getAttribute("variant")).map(e=>e.getAttribute("hide"))).toEqual(["false","true"]);
 });
 
+it.each([["has no biometric hardware","hasHardware"],["has no strong biometric enrolled","isEnrolled"]] as const)("offers nothing when the device %s",async(_label,port)=>{
+ const f=await fixture();f.native[port].mockResolvedValueOnce(false);await f.run("probe-biometrics");
+ expect(f.updateRoot).not.toHaveBeenCalled();expect(f.doc().getElementById("available")!.getAttribute("hide")).toBe("true");expect(f.native.readToken).not.toHaveBeenCalled();expect(f.notice).not.toHaveBeenCalled();
+});
+
 it.each(["hasHardware","isEnrolled","readToken","supportedTypes"] as const)("stops a stale probe after %s await before further work",async(stage)=>{
  const f=await fixture(),delayed=deferred<unknown>();(f.native[stage] as jest.Mock).mockImplementationOnce(()=>delayed.promise);const task=f.run("probe-biometrics");await tick();expect(f.native[stage]).toHaveBeenCalledTimes(1);f.remove();delayed.resolve(stage==="readToken"?"token":stage==="supportedTypes"?[2]:true);await task;
  expect(f.updateRoot).not.toHaveBeenCalled();expect(f.notice).not.toHaveBeenCalled();expect(f.doc().getElementById("available")!.getAttribute("hide")).toBe("true");

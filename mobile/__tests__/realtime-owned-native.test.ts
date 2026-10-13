@@ -2,7 +2,7 @@ import * as LocalAuthentication from "expo-local-authentication";
 import * as ImagePicker from "expo-image-picker";
 import {ImageManipulator,SaveFormat} from "expo-image-manipulator";
 import {createOwnedNativePorts} from "../src/behaviors/owned-native";
-jest.mock("expo-local-authentication",()=>({hasHardwareAsync:jest.fn(),isEnrolledAsync:jest.fn(),supportedAuthenticationTypesAsync:jest.fn(),authenticateAsync:jest.fn()}));
+jest.mock("expo-local-authentication",()=>({hasHardwareAsync:jest.fn(),isEnrolledAsync:jest.fn(),getEnrolledLevelAsync:jest.fn(),supportedAuthenticationTypesAsync:jest.fn(),authenticateAsync:jest.fn(),SecurityLevel:{NONE:0,SECRET:1,BIOMETRIC_WEAK:2,BIOMETRIC_STRONG:3}}));
 jest.mock("expo-image-picker",()=>({launchImageLibraryAsync:jest.fn()}));
 jest.mock("expo-image-manipulator",()=>({ImageManipulator:{manipulate:jest.fn()},SaveFormat:{JPEG:"jpeg"}}));
 const auth=LocalAuthentication as jest.Mocked<typeof LocalAuthentication>,picker=ImagePicker as jest.Mocked<typeof ImagePicker>;
@@ -11,9 +11,25 @@ it("uses only the supplied credential namespace/read port, never the legacy stor
  const read=jest.fn(async()=>"synthetic-only");const native=createOwnedNativePorts(read,"ios");expect(await native.readToken()).toBe("synthetic-only");expect(read).toHaveBeenCalledTimes(1);
 });
 it("preserves the public biometric prompt contract as separate checked awaits",async()=>{
- const native=createOwnedNativePorts(async()=>null,"ios");auth.hasHardwareAsync.mockResolvedValue(true);auth.isEnrolledAsync.mockResolvedValue(true);auth.supportedAuthenticationTypesAsync.mockResolvedValue([2]);auth.authenticateAsync.mockResolvedValue({success:true});
- await native.hasHardware();await native.isEnrolled();await native.supportedTypes();await native.unlock("Owned prompt");
- expect(auth.authenticateAsync).toHaveBeenCalledWith({cancelLabel:"Use password",disableDeviceFallback:true,biometricsSecurityLevel:"strong",promptMessage:"Owned prompt"});expect(auth.hasHardwareAsync).toHaveBeenCalledTimes(1);expect(auth.isEnrolledAsync).toHaveBeenCalledTimes(1);
+ const native=createOwnedNativePorts(async()=>null,"ios");auth.hasHardwareAsync.mockResolvedValue(true);auth.getEnrolledLevelAsync.mockResolvedValue(LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG);auth.supportedAuthenticationTypesAsync.mockResolvedValue([2]);auth.authenticateAsync.mockResolvedValue({success:true});
+ await native.hasHardware();expect(await native.isEnrolled()).toBe(true);await native.supportedTypes();await native.unlock("Owned prompt");
+ expect(auth.authenticateAsync).toHaveBeenCalledWith({cancelLabel:"Use password",disableDeviceFallback:true,biometricsSecurityLevel:"strong",promptMessage:"Owned prompt"});expect(auth.hasHardwareAsync).toHaveBeenCalledTimes(1);expect(auth.getEnrolledLevelAsync).toHaveBeenCalledTimes(1);
+});
+// The unlock prompt demands strong biometrics (Android Class 3) and otherwise falls back to the password form, so an
+// enrolment offer for a device with only Class 2 (weak) biometrics would promise a sign-in the prompt then refuses.
+// isEnrolledAsync counts weak biometrics too. iOS reports every enrolled biometric as strong, so it is unchanged.
+it.each([
+ ["nothing",LocalAuthentication.SecurityLevel.NONE,false],
+ ["only a PIN, pattern or password",LocalAuthentication.SecurityLevel.SECRET,false],
+ ["only weak (Class 2) biometrics",LocalAuthentication.SecurityLevel.BIOMETRIC_WEAK,false],
+ ["strong biometrics",LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG,true],
+])("treats a device enrolled with %s as strongly enrolled: %s",async(_label,level,expected)=>{
+ const native=createOwnedNativePorts(async()=>null,"android");auth.isEnrolledAsync.mockResolvedValue(true);auth.getEnrolledLevelAsync.mockResolvedValue(level);
+ expect(await native.isEnrolled()).toBe(expected);expect(auth.isEnrolledAsync).not.toHaveBeenCalled();
+});
+it("lets an enrolment level failure reach the probe, which then offers nothing",async()=>{
+ const native=createOwnedNativePorts(async()=>null,"android");auth.getEnrolledLevelAsync.mockRejectedValue(new Error("unavailable"));
+ await expect(native.isEnrolled()).rejects.toThrow("unavailable");
 });
 it("keeps picker crop/privacy and JPEG resize in three separately guarded native stages",async()=>{
  const native=createOwnedNativePorts(async()=>null,"android");picker.launchImageLibraryAsync.mockResolvedValue({canceled:false,assets:[{uri:"file://test"}]} as ImagePicker.ImagePickerResult);

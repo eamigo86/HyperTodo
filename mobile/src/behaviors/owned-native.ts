@@ -8,7 +8,10 @@ export function createOwnedNativePorts(readCredential:()=>Promise<string|null>,p
   return {
     platform,readToken:readCredential,
     hasHardware:()=>LocalAuthentication.hasHardwareAsync(),
-    isEnrolled:()=>LocalAuthentication.isEnrolledAsync(),
+    // The unlock prompt below demands strong biometrics, so only strong enrolment counts. isEnrolledAsync also
+    // counts Android Class 2 (weak), and the offer would promise a sign-in the prompt then refuses. iOS reports
+    // every enrolled biometric as strong, so it is unchanged.
+    isEnrolled:async()=>(await LocalAuthentication.getEnrolledLevelAsync())===LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG,
     supportedTypes:()=>LocalAuthentication.supportedAuthenticationTypesAsync(),
     // "strong" is Android Class 3 only. The library default admits Class 2 (e.g. camera face unlock),
     // and this prompt releases a long-lived bearer credential. Ignored on iOS.
