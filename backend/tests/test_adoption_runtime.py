@@ -116,7 +116,10 @@ def test_development_commands_do_not_migrate_seed_or_weaken_go_guard():
         command not in target for command in ("runserver", "migrate", "seed_demo")
     )
     go = text.split("\nmobile-start-go:", 1)[1].split("\n\n", 1)[0]
-    assert "EXPO_PUBLIC_ALLOW_LOCAL_API=1" in go
+    # Every development target shares one opt-in; test_makefile_workflow.py checks
+    # the environment that each recipe actually passes.
+    assert "$(LOCAL_API)" in go
+    assert "LOCAL_API := EXPO_PUBLIC_ALLOW_LOCAL_API=1" in text
     assert "start:go" in go
 
 

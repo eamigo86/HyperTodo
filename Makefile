@@ -3,6 +3,8 @@ SHELL := /bin/bash
 
 BACKEND_DIR := backend
 MOBILE_DIR := mobile
+# mobile/.nvmrc is the one place that pins Node; CI reads it too.
+NODE_VERSION := $(strip $(shell cat $(MOBILE_DIR)/.nvmrc))
 NVM_DIR ?= $(HOME)/.nvm
 NVM_SH := $(NVM_DIR)/nvm.sh
 YARN := COREPACK_HOME="$(CURDIR)/$(MOBILE_DIR)/.corepack" corepack yarn
@@ -10,6 +12,13 @@ REDIS_URL ?= redis://127.0.0.1:6379/15
 REDIS_TEST_URL ?= redis://127.0.0.1:6379/14
 DJANGO_DEBUG ?= 1
 EXPO_PUBLIC_API_URL ?= http://127.0.0.1:8000/hv/
+# The Android Emulator reaches the host's loopback as 10.0.2.2.
+EMULATOR_API_URL := http://10.0.2.2:8000/hv/
+# Validation only, as in CI: Expo Doctor resolves the app config, which needs an https
+# URL. Nothing connects to this host.
+DOCTOR_API_URL ?= https://hypertodo-ci.invalid/hv/
+# mobile/app.config.ts refuses cleartext HTTP, and a missing URL, without this opt-in.
+LOCAL_API := EXPO_PUBLIC_ALLOW_LOCAL_API=1
 # $(if) splits its arguments at every comma, so a literal one is spelled through this.
 comma := ,
 
@@ -21,12 +30,18 @@ define run_backend
 		--loop asyncio --http h11 --ws none --no-proxy-headers
 endef
 
+# Run a command on the pinned Node, loaded through nvm; say what is missing if it fails.
+define with_node
+	export NVM_DIR="$(NVM_DIR)" && \
+		{ [[ -s "$(NVM_SH)" ]] || { echo "nvm not found at $(NVM_SH): install nvm or set NVM_DIR." >&2; exit 1; }; } && \
+		source "$(NVM_SH)" && \
+		{ nvm use --silent "$(NODE_VERSION)" || { echo "Node $(NODE_VERSION) missing: run 'nvm install' in $(MOBILE_DIR)/" >&2; exit 1; }; } && \
+		$(1)
+endef
+
 define run_mobile
 	cd "$(MOBILE_DIR)" && \
-		export NVM_DIR="$(NVM_DIR)" && \
-		source "$(NVM_SH)" && \
-		nvm use --silent && \
-		$(1)
+		$(call with_node,$(1))
 endef
 
 .PHONY: help setup test check \
@@ -44,17 +59,17 @@ help: ## List available commands and their descriptions.
 
 setup: backend-install mobile-install ## Install backend and mobile dependencies.
 
-test: backend-test mobile-test ## Run all automated backend and mobile tests.
+test: backend-test mobile-test ## Run the backend pytest and mobile Jest suites.
 
 check: backend-quality mobile-check ## Run every automated project quality gate.
 
 backend-install: ## Install locked Python dependencies with uv.
-	@cd "$(BACKEND_DIR)" && uv sync
+	@cd "$(BACKEND_DIR)" && uv sync --locked
 
 backend-migrate: ## Apply Django and dj-hyperview database migrations.
 	@cd "$(BACKEND_DIR)" && uv run python manage.py migrate
 
-backend-seed: ## Create idempotent admin and user demo data.
+backend-seed: ## Create or reset the admin and demo accounts with sample data.
 	@cd "$(BACKEND_DIR)" && \
 		DJANGO_DEBUG="$(DJANGO_DEBUG)" \
 		HYPERTODO_ADMIN_PASSWORD="$(HYPERTODO_ADMIN_PASSWORD)" \
@@ -86,17 +101,18 @@ backend-test: ## Run backend tests with branch-aware coverage enforcement.
 
 backend-test-editor: ## Exercise the installed Admin formatter with a real HXML screen.
 	@cd "$(BACKEND_DIR)" && \
-		HXML_EDITOR_JS="$$(uv run python -c 'from importlib.resources import files; print(files("dj_hyperview").joinpath("static/dj_hyperview/admin/hxml_editor.js"))')" \
-		node --test tests/js/*.mjs
+		HXML_EDITOR_JS="$$(uv run python -c 'from importlib.resources import files; print(files("dj_hyperview").joinpath("static/dj_hyperview/admin/hxml_editor.js"))')" && \
+		export HXML_EDITOR_JS && \
+		$(call with_node,node --test tests/js/*.mjs)
 
-backend-test-redis: ## Run isolated cross-process cache acceptance against Redis.
+backend-test-redis: ## Run the opt-in Redis tests; needs an owned disposable Redis.
 	@cd "$(BACKEND_DIR)" && \
 		HYPERTODO_REDIS_INTEGRATION=1 \
 		HYPERTODO_REDIS_TEST_URL="$(REDIS_TEST_URL)" \
 		uv run pytest -m redis --no-cov
 
-backend-lint: ## Run Ruff lint checks for backend code and tests.
-	@cd "$(BACKEND_DIR)" && uv run ruff check .
+backend-lint: ## Run Ruff lint and format checks for backend code and tests.
+	@cd "$(BACKEND_DIR)" && uv run ruff check . && uv run ruff format --check .
 
 backend-check: ## Run Django checks and verify that migrations are current.
 	@cd "$(BACKEND_DIR)" && uv run python manage.py check
@@ -107,19 +123,19 @@ backend-quality: backend-lint backend-test backend-test-editor backend-check ## 
 mobile-install: ## Install locked mobile dependencies with Node and Corepack.
 	@$(call run_mobile,$(YARN) install --frozen-lockfile)
 
-mobile-start: ## Start Metro for iOS or a physical device using EXPO_PUBLIC_API_URL.
-	@$(call run_mobile,EXPO_PUBLIC_API_URL="$(EXPO_PUBLIC_API_URL)" $(YARN) start)
+mobile-start: ## Start Metro for the development client; EXPO_PUBLIC_API_URL defaults to the local backend.
+	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="$(EXPO_PUBLIC_API_URL)" $(YARN) start)
 
 mobile-start-android: ## Start Metro with the Android Emulator backend address.
-	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://10.0.2.2:8000/hv/" $(YARN) start)
+	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="$(EMULATOR_API_URL)" $(YARN) start)
 
 mobile-start-device: ## Start Metro for a physical device; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
-	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) start)
+	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) start)
 
 mobile-start-go: ## Start local Expo Go QR workflow; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
-	@$(call run_mobile,EXPO_PUBLIC_ALLOW_LOCAL_API=1 EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) start:go)
+	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) start:go)
 
 mobile-login: ## Sign in to Expo CLI through the browser.
 	@$(call run_mobile,$(YARN) expo login --browser)
@@ -127,34 +143,35 @@ mobile-login: ## Sign in to Expo CLI through the browser.
 mobile-whoami: ## Display the Expo account used by the CLI.
 	@$(call run_mobile,$(YARN) expo whoami)
 
-mobile-test: ## Run focused Jest tests for the owned mobile shell.
+mobile-test: ## Run the mobile Jest suite.
 	@$(call run_mobile,$(YARN) test)
 
 mobile-typecheck: ## Run strict TypeScript validation without producing a build.
 	@$(call run_mobile,$(YARN) typecheck)
 
-mobile-doctor: ## Validate the Expo dependency and configuration matrix.
-	@$(call run_mobile,$(YARN) doctor)
+mobile-doctor: ## Run Expo Doctor against a validation-only API URL (needs network access).
+	@$(call run_mobile,EXPO_PUBLIC_ALLOW_LOCAL_API=0 EXPO_PUBLIC_API_URL="$(DOCTOR_API_URL)" $(YARN) doctor)
 
 mobile-check: mobile-typecheck mobile-test mobile-doctor ## Run every automated mobile quality gate.
 
-mobile-ios: ## Create or launch the iOS development build for manual acceptance.
-	@$(call run_mobile,$(YARN) ios)
+mobile-ios: ## Build and launch the iOS development app on a Simulator.
+	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="$(EXPO_PUBLIC_API_URL)" $(YARN) ios)
 
 mobile-ios-device: ## Build and install HyperTodo on an iPhone; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
-	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) expo run:ios --device)
+	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) expo run:ios --device)
 
-mobile-android: ## Create or launch the Android development build for manual acceptance.
-	@$(call run_mobile,$(YARN) android)
+mobile-android: ## Build and launch the Android development app on an emulator.
+	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="$(EMULATOR_API_URL)" $(YARN) android)
 
 mobile-android-device: ## Build and install HyperTodo on Android; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
-	@$(call run_mobile,EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) expo run:android --device)
+	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) expo run:android --device)
 
-lan-ip: ## Display the Mac LAN address used by physical devices.
-	@ifconfig | awk '/inet / && $$2 != "127.0.0.1" { print $$2; found=1; exit } END { if (!found) exit 1 }' \
-		|| (echo "No LAN address found; inspect network settings." && exit 1)
+lan-ip: ## Print the macOS default-route address, a candidate LAN IP for physical devices.
+	@iface="$$(route -n get default 2>/dev/null | awk '/interface:/ { print $$2; exit }')" && \
+		ip="$$(ipconfig getifaddr "$$iface" 2>/dev/null)" && [[ -n "$$ip" ]] && echo "$$ip" \
+		|| { echo "No LAN address found; inspect network settings." >&2; exit 1; }
 
 acceptance: ## Display the manual iOS and Android acceptance checklist.
 	@printf '%s\n' \

@@ -42,9 +42,10 @@ require a Navigation 7 migration.
 
 ## Makefile commands
 
-Prerequisites: Python 3.14 with **uv**, Node **22.19.0** through **nvm/Corepack**,
-and Expo Go for SDK 57. SSE also needs an **existing Redis server**; installing
-its Python client does not start one. Run commands from the repository root.
+Prerequisites: **macOS with bash** (the Makefile targets it), Python 3.14 with
+**uv**, Node **22.19.0** through **nvm/Corepack** (`nvm install 22.19.0` once), and
+Expo Go for SDK 57. SSE also needs an **existing Redis server**; installing its
+Python client does not start one. Run commands from the repository root.
 
 **Database safety:** migration/seed commands below are for deliberate setup of a
 **new disposable database**. For existing data, back up and review migrations;
@@ -67,8 +68,8 @@ with `LAN_IP`); `backend-run` and `backend-run-redis` listen on loopback only.
 | `LAN_IP=192.168.1.20 make mobile-start-go` | Start the matching Expo Go QR workflow with explicit local-HTTP permission. |
 | `make backend-run`, `make backend-run-redis` | Start ASGI/SSE on loopback only, without or with the Redis template cache, respectively. |
 | `LAN_IP=192.168.1.20 make backend-run-device` | Start the same ASGI/SSE app on all interfaces with Redis cache and device host/CSRF settings. |
-| `make mobile-start`, `make mobile-start-device` | Development-client workflows, **not Expo Go**; device target requires `LAN_IP`. |
-| `make lan-ip` | Print a candidate computer address; verify reachability from the phone. |
+| `make mobile-start`, `make mobile-start-device` | Development-client workflows, **not Expo Go**; device target requires `LAN_IP`. Every development target enables the local-HTTP opt-in itself, so no `mobile/.env` is needed. |
+| `make lan-ip` | Print the default-route interface address as a candidate; verify reachability from the phone. |
 
 For SSE, run `make setup`, prepare the database as appropriate, then keep the
 **ASGI and Expo Go commands in separate terminals**. Replace the example IP in
@@ -206,14 +207,16 @@ The side menu is a fetched fragment, not an independent SSE boundary. Login/reco
 ## Quality checks
 
 ```console
-EXPO_PUBLIC_API_URL=https://hypertodo-ci.invalid/hv/ make check
+make check
 ```
 
-Runs backend Ruff/tests/coverage, installed Admin-editor JavaScript, Django checks
-and migration-drift checks, plus mobile TypeScript/Jest/Expo Doctor. The HTTPS
-`.invalid` address is **validation-only**, not a backend. Doctor must resolve
-Expo config and report all checks successfully; unavailable online checks are
-not a PASS. No native build is required.
+Runs backend Ruff lint and format checks, tests and coverage, installed
+Admin-editor JavaScript, Django checks and migration-drift checks, plus mobile
+TypeScript/Jest/Expo Doctor. Doctor runs against `DOCTOR_API_URL`, by default the
+HTTPS `.invalid` address `https://hypertodo-ci.invalid/hv/`, which is
+**validation-only**, not a backend. It must resolve Expo config and report all
+checks successfully, needs network access, and unavailable online checks are
+not a PASS. No native build or private `mobile/.env` is required.
 
 CI also runs the full backend suite against a disposable Redis 8 service, with
 the same coverage gate. The Redis tests exercise the default cache, database
