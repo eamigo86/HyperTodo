@@ -4,10 +4,18 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    # Weekly, so that drift (notably Expo Doctor's remote data) surfaces without a push.
+    - cron: "23 5 * * 1"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# A newer run of the same event and ref supersedes the one still in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend:
@@ -24,9 +32,20 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           version: "0.12.21"
+      # The Admin editor JavaScript test needs the Node that mobile/.nvmrc pins.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: mobile/.nvmrc
       - run: uv sync --locked
       - run: uv run ruff check .
+      - run: uv run ruff format --check .
       - run: uv run pytest
+      # The same test as `make backend-test-editor`, which loads Node through nvm.
+      - name: Exercise the installed Admin editor with a real HXML screen
+        run: |
+          HXML_EDITOR_JS="$(uv run python -c 'from importlib.resources import files; print(files("dj_hyperview").joinpath("static/dj_hyperview/admin/hxml_editor.js"))')"
+          export HXML_EDITOR_JS
+          node --test tests/js/*.mjs
       - run: uv run python manage.py check
       - run: uv run python manage.py makemigrations --check --dry-run
 
@@ -71,16 +90,35 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: "22.19.0"
+          node-version-file: mobile/.nvmrc
           cache: yarn
           cache-dependency-path: mobile/yarn.lock
       - run: corepack enable
       - run: corepack yarn install --frozen-lockfile
       - run: corepack yarn typecheck
       - run: corepack yarn test
+
+  # Doctor compares the installed versions with data it fetches from api.expo.dev, so it
+  # can turn red without any commit. A job of its own keeps the typecheck and Jest
+  # results above visible when that happens.
+  expo-doctor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      # Validation only: the synthetic backend is not contacted or deployed.
+      EXPO_PUBLIC_API_URL: https://hypertodo-ci.invalid/hv/
+      EXPO_PUBLIC_ALLOW_LOCAL_API: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: mobile/.nvmrc
+          cache: yarn
+          cache-dependency-path: mobile/yarn.lock
+      - run: corepack enable
+      - run: corepack yarn install --frozen-lockfile
       - name: Verify Expo configuration and complete Doctor report
-        env:
-          # Validation only: the synthetic backend is not contacted or deployed.
-          EXPO_PUBLIC_API_URL: https://hypertodo-ci.invalid/hv/
-          EXPO_PUBLIC_ALLOW_LOCAL_API: "0"
         run: corepack yarn doctor
