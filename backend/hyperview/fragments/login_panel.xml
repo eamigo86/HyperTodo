@@ -11,7 +11,11 @@
            instead of the error. -->
       {% if form.errors %}<view id="login-error" style="error-card"><text style="error-text">{{ form.non_field_errors.0|default:_("Enter your username and password.") }}</text></view>{% endif %}
       <text style="label">{% translate "Username" %}</text>
-      <text-field id="username" name="username" value="{{ form.username.value|default:'' }}" placeholder="{% translate "Enter your username" %}" placeholderTextColor="{{ theme.ink_muted }}" text-content-type="username" style="field" />
+      <!-- autoCapitalize reaches the native TextInput as it is written (createProps copies
+           every attribute), and its default is "sentences": the phone capitalised the
+           first letter of case-sensitive usernames like admin and demo. The schema has
+           no autoCorrect attribute, so this is the only keyboard hint available. -->
+      <text-field id="username" name="username" value="{{ form.username.value|default:'' }}" placeholder="{% translate "Enter your username" %}" placeholderTextColor="{{ theme.ink_muted }}" text-content-type="username" autoCapitalize="none" style="field" />
       <text style="label">{% translate "Password" %}</text>
       <text-field id="password" name="password" placeholder="{% translate "Enter your password" %}" placeholderTextColor="{{ theme.ink_muted }}" secure-text="true" text-content-type="password" href="/hv/login/" verb="post" action="replace" target="login-panel" trigger="submit" style="field" />
       <view id="biometric-optin" hide="true" style="optin-row">

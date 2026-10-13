@@ -6,7 +6,8 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
-from dj_hyperview import HyperviewFragmentTemplateResponse
+from dj_hyperview import HyperviewFragmentTemplateResponse, validate_hyperview_schema
+from dj_hyperview.exceptions import TemplateValidationError
 from django.contrib.auth import get_user_model
 from django.contrib.staticfiles import finders
 from django.template.defaultfilters import date as date_filter
@@ -167,6 +168,57 @@ def test_login_screen_uses_secure_credentials_and_fragment_submission():
     hero_mark = root.find(".//hv:text[@style='hero-mark-check']", NS)
     assert hero_mark is not None
     assert hero_mark.text == "✓"
+
+
+def test_the_username_field_turns_keyboard_capitalisation_off():
+    # React Native's TextInput capitalises the first letter by default and Hyperview
+    # spreads the element's attributes onto it. Usernames are case-sensitive, so
+    # "admin" and "demo" were typed as "Admin" and "Demo" and the first sign-in failed.
+    root = assert_hxml(Client().get(reverse("todo:login")))
+
+    username = root.find(".//hv:text-field[@name='username']", NS)
+
+    assert username is not None
+    assert username.attrib["autoCapitalize"] == "none"
+
+
+def test_a_refused_sign_in_keeps_the_username_keyboard_setting(user):
+    # The panel is replaced whole, so a field that lost the attribute would capitalise
+    # again from the second attempt on.
+    client = csrf_client()
+    token = token_from(client.get(reverse("todo:login")))
+
+    refused = client.post(
+        reverse("todo:login"),
+        {"username": "ada", "password": "wrong", "csrfmiddlewaretoken": token},
+    )
+
+    username = assert_hxml(refused, status=422).find(
+        ".//hv:text-field[@name='username']", NS
+    )
+    assert username is not None
+    assert username.attrib["autoCapitalize"] == "none"
+
+
+def test_the_login_screen_with_the_keyboard_setting_still_validates():
+    response = Client().get(reverse("todo:login"))
+
+    validate_hyperview_schema(response.content.decode())
+
+
+def test_the_schema_takes_autocapitalize_on_a_text_field_and_not_autocorrect():
+    # Why the username field sets autoCapitalize and nothing else: autoCorrect is not
+    # in the Hyperview schema, so adding it would refuse the whole screen.
+    document = (
+        '<doc xmlns="https://hyperview.org/hyperview"><screen><body><view><form>'
+        '<text-field name="username" {attributes} />'
+        "</form></view></body></screen></doc>"
+    )
+
+    validate_hyperview_schema(document.format(attributes='autoCapitalize="none"'))
+    for attributes in ('autoCorrect="false"', 'autoCapitalize="nobody"'):
+        with pytest.raises(TemplateValidationError):
+            validate_hyperview_schema(document.format(attributes=attributes))
 
 
 def test_login_requires_csrf_and_returns_direct_hxml(user):
