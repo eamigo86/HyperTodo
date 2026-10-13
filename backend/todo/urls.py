@@ -1,5 +1,6 @@
 """HXML URL routes for the TODO application."""
 
+from django.conf import settings
 from django.urls import path
 
 from . import recovery_views, session_views, views
@@ -9,7 +10,6 @@ urlpatterns = [
     path("recovery/", recovery_views.recovery_view, name="recovery"),
     path("session-state/", session_views.session_state, name="session-state"),
     path("", views.root, name="root"),
-    path("source-probe/", views.source_probe, name="source-probe"),
     path("login/", views.login_view, name="login"),
     path("logout/", views.logout_view, name="logout"),
     path("biometric/login/", views.biometric_login, name="biometric-login"),
@@ -35,3 +35,8 @@ urlpatterns = [
         name="category-delete",
     ),
 ]
+
+if settings.HYPERTODO_SOURCE_PROBE:
+    # An acceptance fixture that answers without a session, so a deployment only
+    # routes it when asked to (see config/settings.py).
+    urlpatterns.append(path("source-probe/", views.source_probe, name="source-probe"))

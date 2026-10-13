@@ -25,6 +25,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone, translation
 from django.utils.cache import patch_cache_control
 from django.utils.translation import gettext as _
+from django.views.csrf import csrf_failure as default_csrf_failure
 from django.views.decorators.vary import vary_on_headers
 
 from .context_processors import THEME_COOKIE, THEME_COOKIE_MAX_AGE
@@ -56,6 +57,9 @@ from .services import (
 )
 from .session_contract import AuthOutcome, attach_auth_outcome
 
+# Where config/urls.py mounts the Hyperview API. The rest of what the project serves,
+# the Django admin first among it, is read by people in a browser, not by the client.
+HYPERVIEW_PATH_PREFIX = "/hv/"
 APP_VERSION_HEADER = "X-App-Version"
 # The header is attacker-controlled text rendered into the settings document, so it
 # is validated at the trust boundary rather than merely escaped on the way out.
@@ -1378,16 +1382,25 @@ def category_delete(request: HttpRequest, category_id: UUID) -> HttpResponse:
     )
 
 
-def csrf_failure(request: HttpRequest, reason: str = "") -> HyperviewTemplateResponse:
+def csrf_failure(request: HttpRequest, reason: str = "") -> HttpResponse:
     """Return CSRF rejection using the Hyperview media contract.
+
+    CSRF_FAILURE_VIEW is project-wide, so Django calls this for the admin as well,
+    whose forms a person submits from a browser. Only the Hyperview routes owe HXML;
+    every other path gets Django's own page. The realtime stream needs neither:
+    it answers GET only, and the exact-path method middleware turns every other
+    method away before CSRF is ever checked.
 
     Args:
         request: Rejected request.
-        reason: Internal Django rejection reason, deliberately not exposed.
+        reason: Internal Django rejection reason, deliberately not exposed to
+            Hyperview clients.
 
     Returns:
-        Generic HXML CSRF error.
+        Generic HXML CSRF error on a Hyperview route, Django's 403 page elsewhere.
     """
+    if not request.path_info.startswith(HYPERVIEW_PATH_PREFIX):
+        return default_csrf_failure(request, reason=reason)
     # The ONLY place that sniffs Accept. CsrfViewMiddleware runs before any view, so
     # hxml_endpoint has not set request.hv_fragment yet. Substring membership only,
     # never first-match negotiation: the client sends "application/xml" FIRST in both
@@ -1406,6 +1419,8 @@ def csrf_failure(request: HttpRequest, reason: str = "") -> HyperviewTemplateRes
 @hxml_endpoint
 def source_probe(request: HttpRequest) -> HttpResponse:
     """Render the source-precedence acceptance template.
+
+    Routed only while HYPERTODO_SOURCE_PROBE is on, because it answers anonymously.
 
     Args:
         request: Incoming acceptance request.

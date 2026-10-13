@@ -4,6 +4,9 @@ from config import settings as base
 
 # Keep the actual application configuration, but never its database or cache.
 globals().update({key: value for key, value in vars(base).items() if key.isupper()})
+# Explicit rather than inherited from DEBUG, which the test runner forces off: the
+# source-precedence, schema and realtime-template tests all request the fixture.
+HYPERTODO_SOURCE_PROBE = True
 HYPERVIEW = {**base.HYPERVIEW, "REALTIME": None}
 HYPERVIEW.pop("CACHE", None)
 DATABASES = {

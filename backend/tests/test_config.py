@@ -67,20 +67,34 @@ PROBE = (
     "'csrf_secure': getattr(s, 'CSRF_COOKIE_SECURE', False), "
     "'proxy': getattr(s, 'SECURE_PROXY_SSL_HEADER', None), "
     "'validators': [v['NAME'].rsplit('.', 1)[1] for v in s.AUTH_PASSWORD_VALIDATORS], "
+    "'source_probe': s.HYPERTODO_SOURCE_PROBE, "
     "'namespace': s.HYPERVIEW['REALTIME']['NAMESPACE']}))"
 )
+# Whether the real URLconf routes the acceptance fixture, which only a started
+# project can answer: the routes are built once, when todo.urls is first imported.
+ROUTING = (
+    "import json, django; django.setup()\n"
+    "from django.urls import Resolver404, resolve\n"
+    "try:\n"
+    "    resolve('/hv/source-probe/')\n"
+    "    routed = True\n"
+    "except Resolver404:\n"
+    "    routed = False\n"
+    "print(json.dumps({'routed': routed}))"
+)
 STRONG_KEY = "abcdefghij" * 6
+PRODUCTION = {"DJANGO_DEBUG": "0", "DJANGO_SECRET_KEY": STRONG_KEY}
 
 
-def load_settings(**env):
-    """Import config.settings in a clean interpreter, like a real process start."""
+def load_settings(script=PROBE, **env):
+    """Run a script in a clean interpreter, like a real process start."""
     inherited = {
         name: value
         for name, value in os.environ.items()
         if not name.startswith(("DJANGO_", "HYPERTODO_"))
     }
     return subprocess.run(
-        [sys.executable, "-c", PROBE],
+        [sys.executable, "-c", script],
         cwd=BACKEND,
         env={**inherited, **env},
         capture_output=True,
@@ -140,6 +154,31 @@ def test_the_proxy_ssl_header_is_opt_in():
     state = resolved(DJANGO_SECURE_PROXY_SSL_HEADER="HTTP_X_FORWARDED_PROTO")
 
     assert state["proxy"] == ["HTTP_X_FORWARDED_PROTO", "https"]
+
+
+def test_the_source_probe_follows_debug_unless_the_environment_says_otherwise():
+    assert resolved()["source_probe"] is True
+    assert resolved(**PRODUCTION)["source_probe"] is False
+    assert resolved(**PRODUCTION, HYPERTODO_SOURCE_PROBE="1")["source_probe"] is True
+    assert resolved(HYPERTODO_SOURCE_PROBE="0")["source_probe"] is False
+
+
+def routed(**env):
+    result = load_settings(ROUTING, DJANGO_SETTINGS_MODULE="config.settings", **env)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)["routed"]
+
+
+def test_the_source_probe_is_only_routed_when_it_is_enabled():
+    # The fixture answers anonymous callers, so a production URLconf must not carry
+    # it unless an operator asked. Not a 404 from the view: the route is absent.
+    assert routed(**PRODUCTION) is False
+    assert routed(**PRODUCTION, HYPERTODO_SOURCE_PROBE="1") is True
+    assert routed() is True
+
+
+def test_the_test_settings_enable_the_source_probe_their_consumers_need():
+    assert settings.HYPERTODO_SOURCE_PROBE is True
 
 
 def test_the_realtime_namespace_defaults_and_follows_the_environment():

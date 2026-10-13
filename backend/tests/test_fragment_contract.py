@@ -561,6 +561,20 @@ def test_csrf_failure_is_a_bare_fragment_for_a_fragment_load(user):
     assert_bare_fragment(response, "csrf failure on a fragment load")
 
 
+def test_csrf_failure_outside_the_hyperview_routes_is_djangos_own_html_page():
+    # CSRF_FAILURE_VIEW is project-wide, so it also answers the Django admin, whose
+    # forms are submitted by a browser. An expired admin form used to get a 403 typed
+    # application/vnd.hyperview+xml: an XML document where a person expected a page.
+    response = Client(enforce_csrf_checks=True).post(
+        "/admin/login/", {"username": "ada", "password": "correct-horse"}
+    )
+
+    assert response.status_code == 403
+    assert response.headers["Content-Type"].startswith("text/html")
+    assert b"CSRF verification failed" in response.content
+    assert b"hyperview.org" not in response.content
+
+
 # A transition fragment is always the response to `action="replace"` whose target is
 # its host screen's only content, so performUpdate (services/behaviors/index.ts:76-82)
 # empties that screen before the transition's own behaviors run. The screen left

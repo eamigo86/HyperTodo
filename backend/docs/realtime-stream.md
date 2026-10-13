@@ -39,7 +39,10 @@ Exact route: **GET `/realtime/events/`**, with no query string. Require the actu
 Django session cookie plus `X-HyperTodo-Client-Contract: realtime-v1` and the
 previously confirmed `X-HyperTodo-Expected-Session`. The binding is not a bearer
 credential. Native requests may omit Origin; a supplied Origin must match the
-request's scheme/host/effective port, with no path, credentials, query or fragment.
+request's scheme/host/effective port, or exactly an entry of
+`CSRF_TRUSTED_ORIGINS` (no wildcard entries), with no path, credentials, query or
+fragment. The second rule is what lets a page served over HTTPS through a
+TLS-terminating proxy connect when Django sees plain HTTP.
 There are no redirects, CORS reflection or client-selected topics.
 
 | Condition before headers | Status |

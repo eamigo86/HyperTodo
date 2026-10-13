@@ -172,3 +172,9 @@ if ENABLE_REDIS_CACHE:
         "FAILURE_MODE": "bypass",
     }
 CSRF_FAILURE_VIEW = "todo.views.csrf_failure"
+# The source-precedence acceptance fixture (/hv/source-probe/) answers without a
+# session, so it follows DEBUG, which only a development machine has on, unless the
+# environment says otherwise: HYPERTODO_SOURCE_PROBE=1 routes it, =0 never does.
+HYPERTODO_SOURCE_PROBE = (
+    os.environ.get("HYPERTODO_SOURCE_PROBE", "1" if DEBUG else "0") == "1"
+)

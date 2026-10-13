@@ -93,35 +93,54 @@ def same_identity(expected: Identity, actual: Identity | None) -> bool:
     )
 
 
+def _origin_key(origin: str) -> tuple[str, str | None, int] | None:
+    """Reduce a serialized origin to the parts that identify it.
+
+    Args:
+        origin: Origin header value or CSRF_TRUSTED_ORIGINS entry.
+
+    Returns:
+        Scheme, host and effective port, or None when the text is not a bare
+        http(s) origin: userinfo (even empty), path, query, fragment or an
+        unparseable port all disqualify it.
+    """
+    try:
+        parts = urlsplit(origin)
+        port = parts.port
+    except ValueError:
+        return None
+    if (
+        parts.scheme not in {"http", "https"}
+        or parts.username is not None
+        or parts.password is not None
+        or parts.path
+        or parts.query
+        or parts.fragment
+    ):
+        return None
+    if port is None:
+        port = 443 if parts.scheme == "https" else 80
+    return parts.scheme, parts.hostname, port
+
+
 def _origin(request: HttpRequest) -> bool:
     origin = request.headers.get("Origin")
     if origin is None:
         return True  # Native fetch has no browser Origin header.
-    try:
-        incoming = urlsplit(origin)
-        expected = urlsplit(f"{request.scheme}://{request.get_host()}")
-        return (
-            incoming.scheme in {"http", "https"}
-            and incoming.username is None
-            and incoming.password is None
-            and not incoming.path
-            and not incoming.query
-            and not incoming.fragment
-            and incoming.scheme == expected.scheme
-            and incoming.hostname == expected.hostname
-            and (
-                (443 if incoming.scheme == "https" else 80)
-                if incoming.port is None
-                else incoming.port
-            )
-            == (
-                (443 if expected.scheme == "https" else 80)
-                if expected.port is None
-                else expected.port
-            )
-        )
-    except ValueError:
+    incoming = _origin_key(origin)
+    if incoming is None:
         return False
+    # Behind a TLS-terminating proxy Django sees http for a page served over https,
+    # so the request alone refuses the origin the browser really sends. The origins
+    # an operator trusts for CSRF are the ones to add. Exact matches only: a wildcard
+    # entry is Django's own syntax and is deliberately not honoured here.
+    allowed = {_origin_key(f"{request.scheme}://{request.get_host()}")}
+    allowed.update(
+        _origin_key(entry)
+        for entry in settings.CSRF_TRUSTED_ORIGINS
+        if "*" not in entry
+    )
+    return incoming in allowed
 
 
 async def authorize(request: HttpRequest) -> Access:

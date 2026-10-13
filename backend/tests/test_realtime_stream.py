@@ -1,6 +1,7 @@
 """Fresh Django authentication and bounded app-owned streaming resources."""
 
 import asyncio
+import copy
 from dataclasses import FrozenInstanceError
 from datetime import timedelta
 
@@ -585,6 +586,89 @@ def test_origin_explicit_default_port_is_equivalent(authenticated):
     request = authenticated[2]
     request.META["HTTP_ORIGIN"] = "http://testserver:80"
     assert async_to_sync(authorize)(request).identity.binding == authenticated[3]
+
+
+@pytest.fixture
+def behind_a_tls_proxy(authenticated, settings):
+    """A request the proxy received over HTTPS, which Django sees as plain http."""
+    settings.ALLOWED_HOSTS = ["api.example.com", "testserver"]
+    settings.CSRF_TRUSTED_ORIGINS = ["https://api.example.com"]
+    request = authenticated[2]
+    request.META["HTTP_HOST"] = "api.example.com"
+    assert request.scheme == "http"
+    return authenticated
+
+
+def admitted(authenticated, origin):
+    """Report whether authorize() lets this Origin through."""
+    from todo.realtime_auth import RealtimeDenied, authorize
+
+    # A copy per call: request.headers is computed once, so a second Origin set on
+    # the same request would never be seen.
+    request = copy.copy(authenticated[2])
+    request.META = {**request.META, "HTTP_ORIGIN": origin}
+    try:
+        async_to_sync(authorize)(request)
+    except RealtimeDenied as denied:
+        assert denied.status == 403
+        return False
+    return True
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://api.example.com",
+        "https://api.example.com:443",
+        "https://API.example.com",
+        # Still the request's own origin, whatever the proxy does to the scheme.
+        "http://api.example.com",
+    ],
+)
+def test_a_trusted_origin_is_admitted_behind_a_tls_terminating_proxy(
+    behind_a_tls_proxy, origin
+):
+    # request.scheme is http here, so comparing the Origin with the request alone
+    # refused the page's real origin and silently turned realtime off. The origin the
+    # operator already trusts for CSRF is the one the browser will send.
+    assert admitted(behind_a_tls_proxy, origin)
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://evil.example",
+        "https://api.example.com:8443",
+        "https://sub.api.example.com",
+        "https://api.example.com.evil.example",
+        "http://api.example.com:8080",
+        "https://api.example.com/path",
+        "https://user@api.example.com",
+        "null",
+    ],
+)
+def test_an_origin_nobody_trusts_is_still_refused_behind_a_proxy(
+    behind_a_tls_proxy, origin
+):
+    assert not admitted(behind_a_tls_proxy, origin)
+
+
+def test_trusted_origins_are_matched_exactly_and_never_as_wildcards(
+    behind_a_tls_proxy, settings
+):
+    settings.CSRF_TRUSTED_ORIGINS = ["https://*.example.com", "https://[bad"]
+
+    assert not admitted(behind_a_tls_proxy, "https://api.example.com")
+    assert not admitted(behind_a_tls_proxy, "https://*.example.com")
+
+
+def test_without_trusted_origins_only_the_requests_own_origin_is_admitted(
+    behind_a_tls_proxy, settings
+):
+    settings.CSRF_TRUSTED_ORIGINS = []
+
+    assert not admitted(behind_a_tls_proxy, "https://api.example.com")
+    assert admitted(behind_a_tls_proxy, "http://api.example.com")
 
 
 @pytest.mark.parametrize("options", [{}, {"using": None}])
