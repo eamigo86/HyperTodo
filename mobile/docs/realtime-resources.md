@@ -59,7 +59,8 @@ and own-operation echoes are silent, while retaining the same resource policy. S
 and reconciliation versions prevent a later resync from hiding an unacknowledged
 invalidation; only matching real layout covers the versions admitted with its HTTP.
 
-The themed notice card is accessible, with an alert/live region, dismiss action and
+The themed notice card is accessible, with an alert/live region (announced to
+VoiceOver explicitly on iOS), dismiss action and
 Update button, outside FlatList's item collection. Dismiss hides one warning revision,
 not staleness. Pressing Update while work is
 active is disabled; duplicate admission is also guarded. App rerender can change

@@ -1,8 +1,9 @@
 import type { ElementErrorComponentProps } from "hyperview/src/types";
-import React from "react";
+import React, { useEffect } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { announce } from "../feedback/announce";
 import { FAILURE_COPY, classifyFailure } from "../feedback/failure";
 import { THEME_TOKENS, useThemeName, type ThemeTokens } from "../theme";
 
@@ -20,6 +21,10 @@ export default function ElementErrorBanner({
 }: ElementErrorComponentProps): React.JSX.Element {
   const copy = FAILURE_COPY[classifyFailure(error)];
   const styles = STYLES[useThemeName()];
+  // Keyed on the copy, not on `error`: a second failure of the same kind says nothing new.
+  useEffect(() => {
+    announce(`${copy.title}. ${copy.body}`);
+  }, [copy.title, copy.body]);
   return (
     <SafeAreaView
       edges={["top"]}

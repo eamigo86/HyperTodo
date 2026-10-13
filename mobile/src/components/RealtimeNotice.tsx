@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { announce } from "../feedback/announce";
 import { THEME_TOKENS, useThemeName, type ThemeTokens } from "../theme";
 
 export type RealtimeNoticeProps = {
@@ -23,6 +24,11 @@ export default function RealtimeNotice({
 }: RealtimeNoticeProps): React.JSX.Element {
   const theme = useThemeName();
   const styles = STYLES[theme];
+  // Once per appearance and per change of text, not per render: pending and theme
+  // changes re-render this card without saying anything new.
+  useEffect(() => {
+    announce(message);
+  }, [message]);
   return (
     <View style={styles.card} testID="realtime-notice">
       <View style={styles.header}>

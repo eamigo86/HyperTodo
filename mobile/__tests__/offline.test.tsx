@@ -1,6 +1,6 @@
 import React from "react";
 import { Parser } from "hyperview";
-import { RefreshControl, StyleSheet } from "react-native";
+import { AccessibilityInfo, Platform, RefreshControl, StyleSheet } from "react-native";
 import { act, fireEvent, render } from "@testing-library/react-native";
 
 import ElementErrorBanner from "../src/components/ElementErrorBanner";
@@ -150,6 +150,44 @@ describe("ElementErrorBanner", () => {
     fireEvent.press(screen.getByRole("button", { name: "Dismiss" }));
     expect(onPressClose).toHaveBeenCalledTimes(1);
     expect(onPressReload).toHaveBeenCalledTimes(1);
+  });
+});
+
+// VoiceOver ignores accessibilityLiveRegion (Android only), so the banner's copy is
+// announced when it appears or when the failure it describes changes. TalkBack speaks
+// the live region itself, so Android is not announced to twice.
+describe("ElementErrorBanner announcements", () => {
+  const announce = AccessibilityInfo.announceForAccessibility as jest.Mock;
+  const offline = new TypeError("Network request failed");
+  const server = Object.assign(new Error("ServerError (status 500)"), { name: "ServerError" });
+  const banner = (error: Error) => (
+    <ElementErrorBanner error={error} onPressClose={jest.fn()} onPressReload={jest.fn()} />
+  );
+  const spoken = (kind: "offline" | "server") => `${FAILURE_COPY[kind].title}. ${FAILURE_COPY[kind].body}`;
+
+  beforeEach(() => announce.mockClear());
+  afterEach(() => jest.restoreAllMocks());
+
+  it("announces the failure copy when the banner appears and again only when the failure changes", () => {
+    const screen = render(banner(offline));
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenLastCalledWith(spoken("offline"));
+
+    screen.rerender(banner(new TypeError("Network request timed out")));
+    expect(announce).toHaveBeenCalledTimes(1);
+
+    screen.rerender(banner(server));
+    expect(announce).toHaveBeenCalledTimes(2);
+    expect(announce).toHaveBeenLastCalledWith(spoken("server"));
+    expect(JSON.stringify(announce.mock.calls)).not.toContain("ServerError");
+    expect(screen.getByTestId("element-error-card").props.accessibilityLiveRegion).toBe("polite");
+  });
+
+  it("leaves Android to the live region instead of announcing twice", () => {
+    jest.replaceProperty(Platform, "OS", "android");
+    const screen = render(banner(offline));
+    expect(announce).not.toHaveBeenCalled();
+    expect(screen.getByTestId("element-error-card").props.accessibilityLiveRegion).toBe("polite");
   });
 });
 

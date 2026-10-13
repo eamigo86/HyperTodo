@@ -26,7 +26,9 @@ function EdgeMenuOpenerComponent({
           }
           const href = element.getAttribute("href") ?? "/hv/menu/?active=dashboard";
           const targetId = element.getAttribute("target") ?? "side-menu-host";
-          onUpdate(href, "replace", element, { targetId, verb: "get" });
+          // hypertodo.xsd requires `action` (navigate | replace); anything else keeps the shipped replace.
+          const action = element.getAttribute("action") === "navigate" ? "navigate" : "replace";
+          onUpdate(href, action, element, { targetId, verb: "get" });
         },
         onPanResponderTerminationRequest: () => false,
       }),

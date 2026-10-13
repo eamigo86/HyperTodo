@@ -361,22 +361,27 @@ export function AppSessionSurface({
           </Text>
           {/* Nothing has failed during bootstrap, and Sign in would invalidate it in flight and send a valid cookie to the login screen. */}
           {state.session.availability === "uncertain" && state.session.reason !== "bootstrap-required" ? (
-            <>
+            <View style={styles.actions}>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={state.labels.retry}
+                hitSlop={8}
                 onPress={() => { void session.retry(); }}
+                style={({ pressed }) => [styles.action, { backgroundColor: tokens.brand, borderColor: tokens.brand }, pressed && styles.pressed]}
               >
-                <Text style={{ color: tokens.ink }}>{state.labels.retry}</Text>
+                <Text style={[styles.actionText, { color: tokens.on_brand }]}>{state.labels.retry}</Text>
               </Pressable>
+              {/* The fill alone is too close to the canvas to show an edge, so the border carries it. */}
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={state.labels.signIn}
+                hitSlop={8}
                 onPress={() => { void session.beginRecovery(); }}
+                style={({ pressed }) => [styles.action, { backgroundColor: tokens.chip, borderColor: tokens.brand_ink }, pressed && styles.pressed]}
               >
-                <Text style={{ color: tokens.ink }}>{state.labels.signIn}</Text>
+                <Text style={[styles.actionText, { color: tokens.ink }]}>{state.labels.signIn}</Text>
               </Pressable>
-            </>
+            </View>
           ) : null}
         </View>
       ) : null}
@@ -394,5 +399,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 24
+  },
+  // The gap equals the two hit slops, so neither button's slop reaches into the other.
+  actions: {
+    alignSelf: "stretch",
+    gap: 16,
+    marginTop: 24
+  },
+  // 44 points is the smallest touch target the platforms recommend. The label may
+  // wrap, so the height is a minimum.
+  action: {
+    alignItems: "center",
+    borderRadius: 16,
+    borderWidth: 2,
+    justifyContent: "center",
+    minHeight: 44,
+    minWidth: 44,
+    paddingHorizontal: 20,
+    paddingVertical: 10
+  },
+  // White on light's #278CFF is 3.34:1, so it only clears WCAG large-text contrast at 19/700.
+  actionText: {
+    fontSize: 19,
+    fontWeight: "700",
+    textAlign: "center"
+  },
+  pressed: {
+    opacity: 0.7
   }
 });

@@ -1,6 +1,7 @@
 import React from "react";
+import { NavigationContext } from "@react-navigation/native";
 import { act, fireEvent, render } from "@testing-library/react-native";
-import { Animated, StyleSheet } from "react-native";
+import { Animated, BackHandler, StyleSheet } from "react-native";
 
 jest.mock("expo-secure-store", () => ({ getItem: () => null, setItem: () => undefined }));
 jest.mock("hyperview", () => ({
@@ -153,6 +154,165 @@ describe("AnimatedSideMenu", () => {
       expect.anything(),
       expect.objectContaining({ toValue: -312 }),
     );
+  });
+});
+
+// The drawer is a full-screen overlay: assistive technology has to treat it as modal,
+// Android Back has to close it, and a close that never completes must not leave an
+// invisible overlay swallowing taps.
+describe("AnimatedSideMenu as a modal overlay", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockWindowWidth = 390;
+    props.onUpdate.mockClear();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+
+  // Hidden elements are included: a closing overlay is deliberately hidden from assistive technology.
+  const root = (screen: ReturnType<typeof render>) => screen.getByTestId("side-menu-host", { includeHiddenElements: true });
+  const closeRequests = () => props.onUpdate.mock.calls.filter(([href]) => href === "/hv/menu/close/");
+  const backHandler = () => {
+    let handler: Parameters<typeof BackHandler.addEventListener>[1] | undefined;
+    const remove = jest.fn();
+    const add = jest.spyOn(BackHandler, "addEventListener").mockImplementation((_event, listener) => {
+      handler = listener;
+      return { remove };
+    });
+    return { add, remove, press: () => handler!({ type: "hardwareBackPress", timeStamp: 0 }) };
+  };
+
+  it("is modal for assistive technology and closes on the VoiceOver escape gesture", () => {
+    const screen = render(<AnimatedSideMenu {...props} />);
+
+    expect(root(screen).props.accessibilityViewIsModal).toBe(true);
+    expect(typeof root(screen).props.onAccessibilityEscape).toBe("function");
+    act(() => root(screen).props.onAccessibilityEscape());
+    expect(props.onUpdate).not.toHaveBeenCalled();
+    act(() => jest.advanceTimersByTime(220));
+
+    expect(closeRequests()).toHaveLength(1);
+  });
+
+  it("exposes the scrim as a button that closes the menu", () => {
+    const screen = render(<AnimatedSideMenu {...props} />);
+
+    const scrim = screen.getByRole("button", { name: "Close menu overlay" });
+    expect(scrim.props.accessibilityRole).toBe("button");
+    fireEvent.press(scrim);
+    act(() => jest.advanceTimersByTime(220));
+
+    expect(closeRequests()).toHaveLength(1);
+  });
+
+  it("closes on Android Back, swallowing the press, and stops listening on unmount", () => {
+    const back = backHandler();
+    const screen = render(<AnimatedSideMenu {...props} />);
+    expect(back.add).toHaveBeenCalledWith("hardwareBackPress", expect.any(Function));
+
+    let handled: boolean | null | undefined;
+    act(() => { handled = back.press(); });
+    expect(handled).toBe(true);
+    act(() => jest.advanceTimersByTime(220));
+    expect(closeRequests()).toHaveLength(1);
+
+    screen.unmount();
+    expect(back.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not trap Android Back while the menu is already closing", () => {
+    const back = backHandler();
+    render(<AnimatedSideMenu {...props} />);
+
+    act(() => { back.press(); });
+    let handled: boolean | null | undefined;
+    act(() => { handled = back.press(); });
+    act(() => jest.advanceTimersByTime(220));
+
+    expect(handled).toBe(false);
+    expect(closeRequests()).toHaveLength(1);
+  });
+
+  // A link in the menu navigates, and its close request can fail offline: the menu then stays
+  // mounted under the screen that was pushed over it, and must not take that screen's Back.
+  it("leaves Back to the screen on top while its own screen is not focused", () => {
+    const back = backHandler();
+    const navigation = { isFocused: jest.fn(() => false) } as unknown as React.ContextType<typeof NavigationContext>;
+    render(
+      <NavigationContext.Provider value={navigation}>
+        <AnimatedSideMenu {...props} />
+      </NavigationContext.Provider>,
+    );
+
+    let handled: boolean | null | undefined;
+    act(() => { handled = back.press(); });
+    act(() => jest.advanceTimersByTime(220));
+    expect(handled).toBe(false);
+    expect(props.onUpdate).not.toHaveBeenCalled();
+
+    (navigation!.isFocused as jest.Mock).mockReturnValue(true);
+    act(() => { handled = back.press(); });
+    expect(handled).toBe(true);
+  });
+
+  it("stops taking touches and hides from assistive technology once it is closing", () => {
+    const screen = render(<AnimatedSideMenu {...props} />);
+    expect(root(screen).props.pointerEvents).toBe("auto");
+    expect(root(screen).props.importantForAccessibility).toBe("auto");
+
+    fireEvent.press(screen.getByTestId("side-menu-scrim"));
+
+    // A full-screen overlay that is invisible and still modal would swallow every tap and
+    // keep VoiceOver away from the screen behind it.
+    expect(root(screen).props.pointerEvents).toBe("none");
+    expect(root(screen).props.accessibilityViewIsModal).toBe(false);
+    expect(root(screen).props.accessibilityElementsHidden).toBe(true);
+    expect(root(screen).props.importantForAccessibility).toBe("no-hide-descendants");
+  });
+
+  it("opens again when the server renders the menu anew after a close request that failed", () => {
+    const timing = jest.spyOn(Animated, "timing");
+    const back = backHandler();
+    const screen = render(<AnimatedSideMenu {...props} />);
+
+    // The close request goes out and fails: the element never changes, the overlay stays.
+    fireEvent.press(screen.getByTestId("side-menu-scrim"));
+    act(() => jest.advanceTimersByTime(220));
+    expect(closeRequests()).toHaveLength(1);
+    expect(root(screen).props.pointerEvents).toBe("none");
+
+    // The edge swipe asks for the menu again and gets a fresh element in the same place.
+    timing.mockClear();
+    const reopened = elementWith({ id: "side-menu-host", "close-href": "/hv/menu/close/", "animation-duration": "220" });
+    screen.rerender(<AnimatedSideMenu {...props} element={reopened} />);
+
+    expect(root(screen).props.pointerEvents).toBe("auto");
+    expect(root(screen).props.accessibilityViewIsModal).toBe(true);
+    expect(timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ duration: 220, toValue: 0 }));
+    expect(timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ duration: 220, toValue: 0.22 }));
+    fireEvent.press(screen.getByTestId("side-menu-scrim"));
+    act(() => jest.advanceTimersByTime(220));
+    expect(closeRequests()).toHaveLength(2);
+    expect(closeRequests()[1][2]).toBe(reopened);
+
+    let handled: boolean | null | undefined;
+    screen.rerender(<AnimatedSideMenu {...props} element={elementWith({ id: "side-menu-host", "close-href": "/hv/menu/close/" })} />);
+    act(() => { handled = back.press(); });
+    expect(handled).toBe(true);
+  });
+
+  it("keeps the dismissal latched while the same element is only re-rendered", () => {
+    const screen = render(<AnimatedSideMenu {...props} />);
+
+    fireEvent.press(screen.getByTestId("side-menu-scrim"));
+    screen.rerender(<AnimatedSideMenu {...props} />);
+    act(() => jest.advanceTimersByTime(220));
+
+    expect(root(screen).props.pointerEvents).toBe("none");
+    expect(closeRequests()).toHaveLength(1);
   });
 });
 

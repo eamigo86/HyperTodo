@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { announce } from "../feedback/announce";
 import type { SnackbarNotice } from "../feedback/snackbar";
 import { subscribeToSnackbars } from "../feedback/snackbar";
 
@@ -22,6 +23,9 @@ export default function SnackbarHost(): React.JSX.Element | null {
 
   const dismiss = useCallback(() => {
     clearDismissTimer();
+    // A notice that arrives during the fade-out stops it (opacity.setValue) and the
+    // callback then runs with finished:false. Only a fade-out that completed may clear
+    // the notice, or the stale callback would clear the new one.
     Animated.parallel([
       Animated.timing(opacity, {
         duration: ANIMATION_DURATION,
@@ -35,13 +39,18 @@ export default function SnackbarHost(): React.JSX.Element | null {
         toValue: 12,
         useNativeDriver: true,
       }),
-    ]).start(() => setNotice(null));
+    ]).start(({ finished }) => {
+      if (finished) {
+        setNotice(null);
+      }
+    });
   }, [clearDismissTimer, opacity, translateY]);
 
   useEffect(() => {
     const unsubscribe = subscribeToSnackbars((nextNotice) => {
       clearDismissTimer();
       setNotice(nextNotice);
+      announce(nextNotice.message);
       opacity.setValue(0);
       translateY.setValue(12);
       Animated.parallel([

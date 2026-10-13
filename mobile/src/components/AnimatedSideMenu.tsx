@@ -1,8 +1,10 @@
+import { NavigationContext } from "@react-navigation/native";
 import type { HvComponentProps } from "hyperview";
 import { createStyleProp, renderChildren } from "hyperview";
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  BackHandler,
   Easing,
   Pressable,
   StyleSheet,
@@ -43,6 +45,7 @@ function AnimatedSideMenuComponent({
   stylesheets,
 }: HvComponentProps): React.JSX.Element {
   const styles = STYLES[useThemeName()];
+  const navigation = useContext(NavigationContext);
   const duration = useMemo(() => parseDuration(element), [element]);
   const { width: windowWidth } = useWindowDimensions();
   const panelWidth = useMemo(
@@ -51,7 +54,13 @@ function AnimatedSideMenuComponent({
   );
   const translateX = useRef(new Animated.Value(-panelWidth)).current;
   const scrimOpacity = useRef(new Animated.Value(0)).current;
-  const dismissing = useRef(false);
+  // The element a close was started for, as a latch against a second dismissal and as
+  // state for rendering. Keyed on the element, not a boolean: a close request that fails
+  // (offline) leaves this component mounted, invisible and still latched, and a menu the
+  // server renders anew arrives as a new element and so as a new, open menu.
+  const dismissed = useRef<Element | null>(null);
+  const [closing, setClosing] = useState<Element | null>(null);
+  const isClosing = closing === element;
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -75,13 +84,15 @@ function AnimatedSideMenuComponent({
         clearTimeout(closeTimer.current);
       }
     };
-  }, [duration, scrimOpacity, translateX]);
+  }, [duration, element, scrimOpacity, translateX]);
 
-  const dismiss = useCallback(() => {
-    if (dismissing.current) {
-      return;
+  /** Starts closing; false when this element is already closing. */
+  const dismiss = useCallback((): boolean => {
+    if (dismissed.current === element) {
+      return false;
     }
-    dismissing.current = true;
+    dismissed.current = element;
+    setClosing(element);
 
     Animated.parallel([
       Animated.timing(translateX, {
@@ -103,19 +114,44 @@ function AnimatedSideMenuComponent({
       const targetId = element.getAttribute("id") ?? "side-menu-host";
       onUpdate(href, "replace", element, { targetId, verb: "get" });
     }, duration);
+    return true;
   }, [duration, element, onUpdate, panelWidth, scrimOpacity, translateX]);
+
+  // Android Back closes the menu instead of leaving the screen behind it. Once the menu
+  // is closing the press is not swallowed, so a close that failed cannot trap Back, and
+  // a menu left mounted under a screen pushed over it (a link navigated and its close
+  // request failed) leaves Back to that screen. Without a navigator there is no screen
+  // to defer to.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () =>
+      navigation && !navigation.isFocused() ? false : dismiss(),
+    );
+    return () => subscription.remove();
+  }, [dismiss, navigation]);
 
   const rootStyle = createStyleProp(element, stylesheets, options);
   const children = renderChildren(element, stylesheets, onUpdate, options);
 
+  // A full-screen overlay: modal for VoiceOver (with its escape gesture), and once it is
+  // closing it is inert, because an invisible overlay left behind by a failed close
+  // would otherwise swallow every tap and keep VoiceOver away from the screen under it.
   return (
-    <View style={rootStyle} testID={element.getAttribute("id") ?? undefined}>
+    <View
+      accessibilityElementsHidden={isClosing}
+      accessibilityViewIsModal={!isClosing}
+      importantForAccessibility={isClosing ? "no-hide-descendants" : "auto"}
+      onAccessibilityEscape={dismiss}
+      pointerEvents={isClosing ? "none" : "auto"}
+      style={rootStyle}
+      testID={element.getAttribute("id") ?? undefined}
+    >
       <Animated.View
         style={[styles.scrim, { opacity: scrimOpacity }]}
         testID="side-menu-backdrop"
       >
         <Pressable
           accessibilityLabel="Close menu overlay"
+          accessibilityRole="button"
           onPress={dismiss}
           style={styles.scrimPressable}
           testID="side-menu-scrim"

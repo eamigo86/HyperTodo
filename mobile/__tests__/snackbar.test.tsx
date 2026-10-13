@@ -1,4 +1,5 @@
 import React from "react";
+import { AccessibilityInfo, Platform } from "react-native";
 import { act, fireEvent, render } from "@testing-library/react-native";
 
 import ShowSnackbarBehavior from "../src/behaviors/ShowSnackbarBehavior";
@@ -57,6 +58,68 @@ describe("server-driven snackbar feedback", () => {
     act(() => jest.runAllTimers());
 
     expect(screen.queryByText("Category deleted.")).toBeNull();
+  });
+
+  // The fade-out reports through `.start(callback)`. A notice that arrives during it
+  // stops that animation (opacity.setValue), and the callback then runs synchronously
+  // with finished:false. Under jest the native-driver animation completes on the first
+  // timer tick, so the interruption has to land before any timer advances.
+  it("keeps a newer notice when the fade-out of the previous one is interrupted", () => {
+    const screen = render(<SnackbarHost />);
+    act(() => publishSnackbar({ message: "First.", tone: "success" }));
+    act(() => jest.advanceTimersByTime(300));
+
+    fireEvent.press(screen.getByRole("button", { name: "Dismiss notification" }));
+    act(() => publishSnackbar({ message: "Second.", tone: "error" }));
+    act(() => jest.advanceTimersByTime(600));
+
+    expect(screen.getByText("Second.")).toBeTruthy();
+    // It still leaves on its own timer, and a fade-out that finishes still clears it.
+    act(() => jest.advanceTimersByTime(5000));
+    expect(screen.queryByText("Second.")).toBeNull();
+  });
+});
+
+// VoiceOver ignores accessibilityLiveRegion (Android only) and gives the alert role no
+// trait, so a snackbar was silent on iOS. TalkBack speaks the live region itself, so the
+// announcement is iOS only and Android is not told twice.
+describe("snackbar announcements", () => {
+  const announce = AccessibilityInfo.announceForAccessibility as jest.Mock;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    announce.mockClear();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+
+  it("announces each notice to VoiceOver, also a repeated one, and keeps the live region", () => {
+    const screen = render(<SnackbarHost />);
+    expect(announce).not.toHaveBeenCalled();
+
+    act(() => publishSnackbar({ message: "Task created.", tone: "success" }));
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenLastCalledWith("Task created.");
+
+    act(() => publishSnackbar({ message: "Task created.", tone: "success" }));
+    expect(announce).toHaveBeenCalledTimes(2);
+
+    act(() => publishSnackbar({ message: "Could not save task.", tone: "error" }));
+    expect(announce).toHaveBeenLastCalledWith("Could not save task.");
+    expect(screen.getByTestId("snackbar-surface").props.accessibilityLiveRegion).toBe("polite");
+  });
+
+  it("leaves Android to the live region instead of announcing twice", () => {
+    jest.replaceProperty(Platform, "OS", "android");
+    const screen = render(<SnackbarHost />);
+
+    act(() => publishSnackbar({ message: "Task created.", tone: "success" }));
+
+    expect(announce).not.toHaveBeenCalled();
+    expect(screen.getByTestId("snackbar-surface").props.accessibilityLiveRegion).toBe("polite");
   });
 });
 

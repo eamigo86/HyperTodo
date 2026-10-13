@@ -58,6 +58,31 @@ describe("EdgeMenuOpener", () => {
     );
   });
 
+  // backend/schema/hypertodo.xsd requires `action` (navigate | replace) on this element.
+  it.each([
+    ["navigate", "navigate"],
+    ["replace", "replace"],
+    [undefined, "replace"],
+    ["push", "replace"],
+  ])("opens the menu with the declared action %s as %s", (declared, expected) => {
+    const withAction = elementWith({
+      id: "dashboard-edge-menu",
+      href: "/hv/menu/?active=dashboard",
+      target: "side-menu-host",
+      ...(declared ? { action: declared } : {}),
+    });
+    render(<EdgeMenuOpener {...props} element={withAction} />);
+
+    act(() => responder().onPanResponderRelease({}, { dx: 64, dy: 4 }));
+
+    expect(props.onUpdate).toHaveBeenCalledWith(
+      "/hv/menu/?active=dashboard",
+      expected,
+      withAction,
+      { targetId: "side-menu-host", verb: "get" },
+    );
+  });
+
   it("ignores a short edge drag", () => {
     render(<EdgeMenuOpener {...props} />);
 

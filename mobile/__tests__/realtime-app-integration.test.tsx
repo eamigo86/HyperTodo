@@ -3,11 +3,11 @@ declare const __dirname: string; // Supplied by this Jest module, not the native
 import React from "react";
 import type Hyperview from "hyperview";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { Alert, AppState } from "react-native";
+import { Alert, AppState, StyleSheet } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import { createSessionApp } from "../App";
-import { createThemeStore } from "../src/theme";
+import { createThemeStore, getThemeName, THEME_TOKENS } from "../src/theme";
 import { createAppSession, AppSessionSurface } from "../src/realtime/app-session";
 import { SESSION_HEADERS as H } from "../src/realtime/session-protocol";
 jest.mock("expo-splash-screen", () => ({
@@ -329,6 +329,35 @@ it("shields an unexpected foreground identity without fetching it or replaying a
     expect(f.session.snapshot().session.identity).toBeNull();
     expect(f.http.mock.calls.filter(([url]) => url === ENTRY)).toHaveLength(1);
     expect(f.http.mock.calls.filter(([, init]) => (init?.method ?? '').toUpperCase() === 'POST')).toHaveLength(0);
+  } finally {
+    ui.unmount();
+  }
+});
+it("gives the shield's Retry and Sign in actions button semantics, theme colors and 44-point touch targets", async () => {
+  const f = fixture(),
+    ui = mount(f.session);
+  try {
+    await ui.findByText('Login');
+    await act(async () => f.session.pause());
+    f.setBinding(B);
+    await act(async () => {
+      await f.session.foreground();
+    });
+    expect(ui.getByLabelText('Session protection')).toBeTruthy();
+    const tokens = THEME_TOKENS[getThemeName()];
+    for (const [label, background, ink] of [
+      ['Retry session confirmation', tokens.brand, tokens.on_brand],
+      ['Sign in', tokens.chip, tokens.ink],
+    ] as const) {
+      // Found by role and accessible name, so both are announced as buttons with their label.
+      const button = ui.getByRole('button', { name: label });
+      const style = StyleSheet.flatten(button.props.style);
+      expect(style.minHeight).toBeGreaterThanOrEqual(44);
+      expect(style.minWidth).toBeGreaterThanOrEqual(44);
+      expect(style.backgroundColor).toBe(background);
+      expect(button.props.hitSlop).toBeTruthy();
+      expect(StyleSheet.flatten(ui.getByText(label).props.style).color).toBe(ink);
+    }
   } finally {
     ui.unmount();
   }

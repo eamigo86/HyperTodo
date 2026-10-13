@@ -1,6 +1,6 @@
 import React from "react";
 import { act, fireEvent, render } from "@testing-library/react-native";
-import { StyleSheet } from "react-native";
+import { AccessibilityInfo, Platform, StyleSheet } from "react-native";
 
 import RealtimeNotice from "../src/components/RealtimeNotice";
 import { createThemeStore, THEME_TOKENS, ThemeProvider, type ThemeName } from "../src/theme";
@@ -127,5 +127,44 @@ describe("RealtimeNotice presentation", () => {
     expect(screen.getByText(message)).toBeTruthy();
     expect(screen.onAction).not.toHaveBeenCalled();
     expect(screen.onDismiss).not.toHaveBeenCalled();
+  });
+});
+
+// VoiceOver ignores accessibilityLiveRegion (Android only) and the alert role has no iOS
+// trait, so the message is announced when the notice appears or its text changes.
+// TalkBack speaks the live region itself, so Android is not announced to twice.
+describe("RealtimeNotice announcements", () => {
+  const announce = AccessibilityInfo.announceForAccessibility as jest.Mock;
+  const tree = (store: ReturnType<typeof createThemeStore>, props: Partial<React.ComponentProps<typeof RealtimeNotice>> = {}) => (
+    <ThemeProvider store={store}>
+      <RealtimeNotice {...{ message, actionLabel, dismissLabel, onAction: jest.fn(), onDismiss: jest.fn() }} {...props} />
+    </ThemeProvider>
+  );
+  const store = () => createThemeStore({ read: () => "light", write: jest.fn() });
+
+  beforeEach(() => announce.mockClear());
+  afterEach(() => jest.restoreAllMocks());
+
+  it("announces the message when it appears and again only when its text changes", () => {
+    const themeStore = store();
+    const screen = render(tree(themeStore));
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenLastCalledWith(message);
+
+    screen.rerender(tree(themeStore, { pending: true }));
+    act(() => themeStore.publish("dark"));
+    expect(announce).toHaveBeenCalledTimes(1);
+
+    screen.rerender(tree(themeStore, { message: "Otro cambio nuevo." }));
+    expect(announce).toHaveBeenCalledTimes(2);
+    expect(announce).toHaveBeenLastCalledWith("Otro cambio nuevo.");
+    expect(screen.getByRole("alert").props.accessibilityLiveRegion).toBe("polite");
+  });
+
+  it("leaves Android to the live region instead of announcing twice", () => {
+    jest.replaceProperty(Platform, "OS", "android");
+    const screen = render(tree(store()));
+    expect(announce).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").props.accessibilityLiveRegion).toBe("polite");
   });
 });
