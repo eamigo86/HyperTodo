@@ -362,7 +362,13 @@ def store_avatar(*, user: AbstractBaseUser, data: bytes) -> Profile:
         # Django does not delete the file a FileField stops pointing at, so every
         # re-upload would otherwise leave an orphan behind forever. on_commit, so a
         # rolled-back transaction cannot delete a file the database still names.
-        transaction.on_commit(lambda: profile.avatar.storage.delete(previous))
+        # robust, because the callback runs inside the outermost atomic().__exit__,
+        # i.e. inside settings_view's try block: a raise would land in its
+        # compensation branch, which deletes the NEW file although the commit already
+        # succeeded. Django logs the failure instead, and the cost is one orphan.
+        transaction.on_commit(
+            lambda: profile.avatar.storage.delete(previous), robust=True
+        )
     # Django caches a reverse one-to-one on the instance that walked it, and the
     # theme context processor reads `request.user.profile` on EVERY render, so by
     # the time this runs the request's user is already holding a stale copy.

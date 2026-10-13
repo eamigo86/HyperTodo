@@ -7,6 +7,7 @@ describe and nothing has to be trusted from a file nobody can read in a diff.
 
 import ast
 import os
+import random
 import re
 import struct
 import zlib
@@ -16,6 +17,7 @@ from pathlib import Path
 
 import pytest
 from django.conf import settings
+from django.core.files.storage import FileSystemStorage
 from django.test import Client
 from django.urls import reverse
 from PIL import Image
@@ -29,8 +31,14 @@ from tests.test_forms_ui import (
     style_ids,
     token_from,
 )
-from todo import urls, views
-from todo.forms import MAX_AVATAR_BYTES, NOT_AN_IMAGE, TOO_LARGE, AvatarForm
+from todo import forms, urls, views
+from todo.forms import (
+    MAX_AVATAR_BYTES,
+    MAX_SOURCE_PIXELS,
+    NOT_AN_IMAGE,
+    TOO_LARGE,
+    AvatarForm,
+)
 from todo.models import Profile
 from todo.services import store_avatar
 
@@ -89,6 +97,66 @@ def _with_declared_size(raw, width, height):
     header = struct.pack(">II", width, height) + raw[24:29]
     crc = zlib.crc32(b"IHDR" + header)
     return raw[:16] + header + struct.pack(">I", crc) + raw[33:]
+
+
+def _chunks(raw):
+    """Split a PNG into its (type, data) chunks."""
+    position, found = 8, []
+    while position < len(raw):
+        (length,) = struct.unpack(">I", raw[position : position + 4])
+        start = position + 8
+        found.append((raw[position + 4 : start], raw[start : start + length]))
+        position = start + length + 4
+    return found
+
+
+def _png_of(chunks):
+    """Join (type, data) chunks into a PNG, every chunk carrying a valid CRC."""
+    return b"\x89PNG\r\n\x1a\n" + b"".join(
+        struct.pack(">I", len(data))
+        + kind
+        + data
+        + struct.pack(">I", zlib.crc32(kind + data))
+        for kind, data in chunks
+    )
+
+
+def broken_chunk_png():
+    """Build a PNG whose pixels are cut short and followed by a header with no type.
+
+    Image.open reads up to the first IDAT only, so it accepts this file. The decoder
+    then goes for the missing pixels and Pillow raises SyntaxError ("broken PNG file
+    (chunk ...)"), which is not an OSError. Seeded noise, so the bytes are the same
+    on every run and the IDAT is too large to hold the whole image in its first half.
+    """
+    noise = Image.frombytes("RGB", (64, 64), random.Random(0).randbytes(64 * 64 * 3))
+    buffer = BytesIO()
+    noise.save(buffer, "PNG")
+    chunks = []
+    for kind, data in _chunks(buffer.getvalue()):
+        if kind == b"IDAT":
+            chunks += [(kind, data[: len(data) // 2]), (b"\x00\x00\x00\x00", b"")]
+        else:
+            chunks.append((kind, data))
+    return _png_of(chunks)
+
+
+def truncated_apng():
+    """Build an animated PNG whose frame-control chunks are cut short.
+
+    Pillow raises ValueError ("APNG contains truncated fcTL chunk") from Image.open
+    itself, and ValueError is not an OSError either.
+    """
+    colours = ((255, 0, 0, 255), (0, 0, 255, 255))
+    frames = [Image.new("RGBA", (16, 16), colour) for colour in colours]
+    buffer = BytesIO()
+    frames[0].save(buffer, "PNG", save_all=True, append_images=frames[1:])
+    return _png_of(
+        [
+            (kind, data[:10] if kind == b"fcTL" else data)
+            for kind, data in _chunks(buffer.getvalue())
+        ]
+    )
 
 
 def submit(raw):
@@ -190,7 +258,7 @@ def test_a_pixel_bomb_is_refused_even_though_its_file_is_small():
 
 def test_a_pixel_bomb_over_pillows_own_ceiling_is_refused_and_does_not_crash():
     # Above 2x Image.MAX_IMAGE_PIXELS, Pillow stops warning and RAISES
-    # DecompressionBombError from Image.open itself -- before the MAX_SOURCE_EDGE
+    # DecompressionBombError from Image.open itself -- before the MAX_SOURCE_PIXELS
     # guard below it ever runs. That error subclasses Exception, NOT OSError, so
     # without its own arm it escapes clean_avatar_data, escapes form.is_valid(),
     # and the endpoint answers a plain-HTML 500 that `replace` cannot parse.
@@ -201,6 +269,62 @@ def test_a_pixel_bomb_over_pillows_own_ceiling_is_refused_and_does_not_crash():
     assert len(bomb) < MAX_AVATAR_BYTES
 
     assert rejection(bomb) == TOO_LARGE
+
+
+def test_an_image_over_the_pixel_cap_is_refused_before_it_is_decoded():
+    # An edge cap alone let 4096x4096 through: 56KB on the wire, yet about 200MB of
+    # resident memory once decoded and converted to RGBA. Memory follows the area, so
+    # the area is what is capped. The header is rewritten rather than rendered, which
+    # is also why this test allocates nothing of its own.
+    assert 4096 * 4096 > MAX_SOURCE_PIXELS
+
+    assert rejection(_with_declared_size(png((1, 1)), 4096, 4096)) == TOO_LARGE
+
+
+def test_the_pixel_cap_is_inclusive():
+    side = int(MAX_SOURCE_PIXELS**0.5)
+    assert side * side == MAX_SOURCE_PIXELS
+    at_the_cap = png((side, side), (0, 0, 0, 255))
+    assert len(at_the_cap) < MAX_AVATAR_BYTES
+
+    assert normalised(at_the_cap)
+    assert rejection(_with_declared_size(png((1, 1)), side + 1, side)) == TOO_LARGE
+
+
+def test_a_large_jpeg_is_decoded_at_a_reduced_size(monkeypatch):
+    # The JPEG decoder can scale by 1/2, 1/4 or 1/8 while it decodes (Image.draft), so
+    # a big photo never has to exist at full size. What the normaliser is handed is
+    # the evidence that the decoder was asked: a 2048px source reaches it at 256px.
+    handed = []
+    original = forms._normalised_avatar
+
+    def spy(source):
+        handed.append(source.size)
+        return original(source)
+
+    monkeypatch.setattr(forms, "_normalised_avatar", spy)
+
+    stored = normalised(jpeg((2048, 2048)))
+
+    assert handed == [(256, 256)]
+    assert Image.open(BytesIO(stored)).size == (256, 256)
+
+
+CORRUPT_PNGS = pytest.mark.parametrize(
+    "make", [broken_chunk_png, truncated_apng], ids=["broken-chunk", "truncated-apng"]
+)
+
+
+@CORRUPT_PNGS
+def test_a_corrupt_png_is_not_an_image_and_does_not_crash(make):
+    # Pillow reports a damaged PNG as SyntaxError or ValueError, and neither is an
+    # OSError, so the form's `except OSError` let both escape is_valid(). The first
+    # assertion pins that the fixture still fails the way this test claims it does.
+    raw = make()
+    with pytest.raises((SyntaxError, ValueError)):
+        Image.open(BytesIO(raw)).load()
+
+    assert rejection(raw) == NOT_AN_IMAGE
 
 
 def test_an_exotic_decoder_is_never_reached():
@@ -307,6 +431,39 @@ def test_replacing_a_photo_deletes_the_one_it_replaced(
     assert len(stored_files()) == 1
 
 
+@pytest.mark.django_db(transaction=True)
+def test_a_failed_cleanup_of_the_replaced_photo_never_costs_the_new_one(
+    user, monkeypatch, caplog
+):
+    # on_commit callbacks run inside atomic().__exit__, which is INSIDE the view's
+    # try block. A failure deleting the OLD file therefore used to land in the
+    # compensation branch, which deleted the NEW file although the database already
+    # named it. Only a real commit runs the callback, hence transaction=True.
+    client = signed_in(user, **CURRENT_CLIENT)
+    token = csrf_token(client)
+    post_avatar(client, jpeg(colour=(10, 10, 10)), token=token)
+    user.refresh_from_db()
+    old = user.profile.avatar.name
+    delete = FileSystemStorage.delete
+
+    def flaky_delete(storage, name):
+        if name == old:
+            raise OSError("storage unavailable")
+        return delete(storage, name)
+
+    monkeypatch.setattr(FileSystemStorage, "delete", flaky_delete)
+
+    response = post_avatar(client, jpeg(colour=(200, 200, 200)), token=token)
+
+    assert_hxml(response)
+    user.refresh_from_db()
+    new = user.profile.avatar.name
+    assert new != old
+    assert (Path(settings.MEDIA_ROOT) / new).is_file()
+    # The old file is left behind, and the log says why instead of failing the save.
+    assert "storage unavailable" in caplog.text
+
+
 def test_a_failed_profile_save_removes_the_file_written_before_it(user, monkeypatch):
     """Compensate when FileField storage succeeds but the model save fails."""
     profile = Profile.objects.create(user=user)
@@ -379,6 +536,22 @@ def test_a_refused_photo_answers_422_and_writes_nothing(user):
     # Not merely 'no avatar': a refused upload must not even materialise the
     # shared preferences row, which would carry a theme and a language with it.
     assert not Profile.objects.filter(user=user).exists()
+
+
+@CORRUPT_PNGS
+def test_a_corrupt_png_answers_422_with_the_field_error_and_not_a_500(user, make):
+    # A 500 is a text/html page, which the Hyperview client cannot parse at all, so
+    # the person saw nothing instead of "That file is not an image.".
+    client = signed_in(user, **CURRENT_CLIENT)
+
+    response = post_avatar(client, make(), token=csrf_token(client))
+
+    root = assert_hxml(response, status=422)
+    error = root.find(
+        ".//hv:view[@id='avatar-panel']//hv:text[@style='field-error']", NS
+    )
+    assert error.text == NOT_AN_IMAGE
+    assert stored_files() == []
 
 
 def test_an_expired_session_gets_a_fragment_and_not_the_session_expired_screen():

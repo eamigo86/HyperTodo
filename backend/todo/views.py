@@ -792,6 +792,10 @@ def settings_view(request: HttpRequest) -> HttpResponse:
                 if forgotten:
                     revoke_biometric_token(user=request.user)
         except Exception:
+            # store_avatar registers its cleanup of the replaced file as a robust
+            # on_commit hook, which logs instead of raising. That is what keeps this
+            # branch to failures BEFORE the commit: a failing cleanup used to land
+            # here too and delete a file the database already names.
             if stored_avatar is not None:
                 stored_avatar.storage.delete(stored_avatar.name)
             raise

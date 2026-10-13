@@ -28,8 +28,11 @@ MAX_AVATAR_BYTES = 600_000
 MAX_AVATAR_B64 = 4 * ((MAX_AVATAR_BYTES + 2) // 3)
 AVATAR_PIXELS = 256
 # Pillow's own bomb check only WARNS between 1x and 2x MAX_IMAGE_PIXELS (89478485), so
-# a 5000x5000 PNG -- a few KB on the wire -- passes it and allocates ~100MB on decode.
-MAX_SOURCE_EDGE = 4096
+# it is no ceiling for this app. The cap is on AREA because memory follows the area: a
+# solid 4096x4096 PNG is 56KB on the wire and still raised resident memory by about
+# 200MB while it was decoded and converted to RGBA. The client always posts a 512px
+# JPEG (mobile/src/behaviors/owned-native.ts), a sixteenth of this.
+MAX_SOURCE_PIXELS = 2048 * 2048
 # The client always posts JPEG. Every other entry in Pillow's 43-format OPEN registry
 # is decoder surface this app has no use for.
 ALLOWED_IMAGE_FORMATS = frozenset({"JPEG", "PNG", "WEBP"})
@@ -244,7 +247,7 @@ class AvatarForm(forms.Form):
 
         Raises:
             ValidationError: If the payload is oversized, not base64, not a
-                supported image, or larger than MAX_SOURCE_EDGE on either side.
+                supported image, or holds more than MAX_SOURCE_PIXELS pixels.
         """
         value = self.cleaned_data["avatar_data"]
         if len(value) > MAX_AVATAR_B64:
@@ -255,27 +258,36 @@ class AvatarForm(forms.Form):
             raise forms.ValidationError(NOT_AN_IMAGE) from error
         try:
             # Image.open reads the header only, so `size` is known before a single
-            # pixel is decoded and the edge guard below is a real refusal, not a
-            # post-mortem. UnidentifiedImageError subclasses OSError, and so does a
-            # truncated file blowing up later in the pipeline.
+            # pixel is decoded and the area guard below is a real refusal, not a
+            # post-mortem.
             source = Image.open(BytesIO(raw))
             if source.format not in ALLOWED_IMAGE_FORMATS:
                 raise forms.ValidationError(NOT_AN_IMAGE)
-            if max(source.size) > MAX_SOURCE_EDGE:
+            if source.width * source.height > MAX_SOURCE_PIXELS:
                 raise forms.ValidationError(TOO_LARGE)
             # Named, not assumed. The 422 path echoes the RAW posted base64 back
             # into an <image source="data:..."> preview, and PNG and WEBP are both
             # accepted here, so hardcoding image/jpeg there would hand the client a
             # data URI whose declared type contradicts its bytes.
             self.source_format = source.format
+            # Only a JPEG decoder can scale while it decodes, by 1/2, 1/4 or 1/8, and
+            # draft() asks for the largest reduction that still covers the stored
+            # size. It is a no-op for every other format, so the area cap above is
+            # the only bound those get.
+            source.draft("RGB", (AVATAR_PIXELS, AVATAR_PIXELS))
             return _normalised_avatar(source)
         except Image.DecompressionBombError as error:
             # Above 2x Image.MAX_IMAGE_PIXELS, Image.open refuses the header itself
-            # and the MAX_SOURCE_EDGE guard above never runs. This error is a plain
+            # and the MAX_SOURCE_PIXELS guard above never runs. This error is a plain
             # Exception, not an OSError, so without its own arm it escapes
             # form.is_valid() and the endpoint answers 500 instead of a refusal.
             raise forms.ValidationError(TOO_LARGE) from error
-        except OSError as error:
+        except (OSError, ValueError, SyntaxError, EOFError) as error:
+            # Pillow has no single error for a damaged file. UnidentifiedImageError
+            # and a truncated stream are OSError, but the PNG plugin raises SyntaxError
+            # ("broken PNG file (chunk ...)") and ValueError ("APNG contains truncated
+            # fcTL chunk") on purpose, and a missing frame is an EOFError. Each of them
+            # used to escape form.is_valid() and answer a 500 the client cannot parse.
             raise forms.ValidationError(NOT_AN_IMAGE) from error
 
 
