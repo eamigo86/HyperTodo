@@ -36,7 +36,7 @@ def _stub(directory, name, body):
 
 @pytest.fixture
 def make(tmp_path):
-    """Return a runner for `make` with fake tools first on PATH."""
+    """Return a runner for make with fake tools first on PATH."""
     bin_dir, pinned_dir, nvm_dir = (tmp_path / n for n in ("bin", "pinned", "nvm"))
     for directory in (bin_dir, pinned_dir, nvm_dir):
         directory.mkdir()

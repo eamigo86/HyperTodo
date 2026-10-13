@@ -69,14 +69,20 @@ def mark_midnight_deadlines_all_day(apps, schema_editor):
 
 
 def restore_midnight_deadlines(apps, schema_editor):
-    """Put every all-day deadline back at the start of its day, the old shape."""
+    """Put every all-day deadline back at the start of its day, unflagged.
+
+    The flag goes with the end of the day: the forward migration only reads unflagged
+    rows, so a row left flagged here would be skipped by the next run and stay at
+    00:00. With it cleared, 0007, 0006 and 0007 again give the same rows.
+    """
     tasks = apps.get_model("todo", "Task")._default_manager.using(
         schema_editor.connection.alias
     )
     for chunk in _local_days(_convertible(tasks.filter(due_all_day=True))):
         for pk, day in chunk:
             tasks.filter(pk=pk).update(
-                due_at=timezone.make_aware(datetime.combine(day, time.min))
+                due_all_day=False,
+                due_at=timezone.make_aware(datetime.combine(day, time.min)),
             )
 
 

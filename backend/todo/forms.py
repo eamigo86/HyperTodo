@@ -5,6 +5,7 @@ import logging
 from base64 import b64decode
 from datetime import date, datetime, time
 from io import BytesIO
+from traceback import walk_tb
 
 from django import forms
 from django.contrib.auth import get_user_model
@@ -361,16 +362,35 @@ class AvatarForm(forms.Form):
             # whatever the decode or the re-encode raises means one thing to the
             # person who picked the file.
             #
-            # The same net also catches a bug in our own re-encode, which the person
-            # would only ever see as a photo that is "not an image". The warning keeps
-            # that visible. It names the failure and carries its traceback, and none of
-            # the upload: the payload and the decoded bytes never reach the log.
-            logger.warning(
+            # What differs is the log. A failure raised inside Pillow is the file's
+            # fault, whatever its type, and any upload can repeat it at will, so it is
+            # traced at DEBUG only. The same net also catches a bug in our own
+            # re-encode, which the person would only ever see as a photo that is "not
+            # an image" -- and AttributeError, TypeError and IndexError are exactly
+            # what such a bug raises. That one keeps its WARNING. Where the exception
+            # was raised tells the two apart and a list of types could not. Both
+            # records name the failure and carry its traceback, and none of the
+            # upload: the payload and the decoded bytes never reach the log.
+            logger.log(
+                logging.DEBUG if _raised_inside_pillow(error) else logging.WARNING,
                 "The avatar upload was refused: %s while decoding it.",
                 type(error).__name__,
                 exc_info=True,
             )
             raise forms.ValidationError(NOT_AN_IMAGE) from error
+
+
+def _raised_inside_pillow(error: BaseException) -> bool:
+    """Tell whether Pillow's own code raised a failure, rather than ours.
+
+    Args:
+        error: The exception being handled, with its traceback.
+
+    Returns:
+        True when the innermost frame of the traceback belongs to the PIL package.
+    """
+    *_, (frame, _line) = walk_tb(error.__traceback__)
+    return frame.f_globals.get("__name__", "").startswith("PIL.")
 
 
 def _normalised_avatar(source: Image.Image) -> bytes:

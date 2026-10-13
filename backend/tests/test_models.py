@@ -230,8 +230,47 @@ def test_reversing_the_migration_restores_the_start_of_the_day(user):
     timed.refresh_from_db()
     no_deadline.refresh_from_db()
     assert wall_clock(task.due_at) == datetime.combine(date(2026, 9, 6), time.min)
+    # The flag goes with the end of the day. Left on, the forward migration, which only
+    # reads unflagged rows, would skip this one and keep a flagged deadline at 00:00.
+    assert task.due_all_day is False
     assert wall_clock(timed.due_at) == datetime(2026, 9, 6, 9, 30)
     assert no_deadline.due_at is None
+    # A flag with no deadline behind it is not a row the migration ever moved.
+    assert no_deadline.due_all_day is True
+
+
+def test_running_forwards_again_after_reversing_gives_back_the_same_rows(user):
+    # 0007 -> 0006 -> 0007 has to be exact, for the rows the migration moved and for
+    # those the task form stored itself (the last instant of the day, already flagged).
+    Task.objects.create(
+        user=user, title="Rent", due_at=local(date(2026, 9, 6), time.min)
+    )
+    Task.objects.create(
+        user=user,
+        title="Form",
+        due_at=local(date(2026, 9, 8), time.max),
+        due_all_day=True,
+    )
+    Task.objects.create(
+        user=user, title="Spring", due_at=local(date(2026, 3, 8), time.min)
+    )
+    Task.objects.create(
+        user=user, title="Call", due_at=local(date(2026, 9, 6), time(9, 30))
+    )
+    Task.objects.create(user=user, title="Someday")
+
+    def rows():
+        return list(
+            Task.objects.order_by("pk").values_list("pk", "due_at", "due_all_day")
+        )
+
+    run_forwards()
+    migrated = rows()
+    run_backwards()
+    assert rows() != migrated
+    run_forwards()
+
+    assert rows() == migrated
 
 
 # --- deadlines at the ends of the calendar ---------------------------------------
@@ -318,6 +357,12 @@ def test_migrate_converts_forwards_and_restores_backwards_the_way_it_really_runs
     legacy = Task.objects.create(
         user=user, title="Rent", due_at=local(date(2026, 9, 6), time.min)
     )
+    from_form = Task.objects.create(
+        user=user,
+        title="Form",
+        due_at=local(date(2026, 9, 8), time.max),
+        due_all_day=True,
+    )
     forever = Task.objects.create(
         user=user, title="Forever", due_at=local(date(9999, 12, 31), time.min)
     )
@@ -326,7 +371,13 @@ def test_migrate_converts_forwards_and_restores_backwards_the_way_it_really_runs
     def migrate_to(target):
         MigrationExecutor(connection).migrate([target])
         legacy.refresh_from_db()
+        from_form.refresh_from_db()
         forever.refresh_from_db()
+
+    def state():
+        return [
+            (task.due_all_day, task.due_at) for task in (legacy, from_form, forever)
+        ]
 
     try:
         migrate_to(before)
@@ -335,11 +386,20 @@ def test_migrate_converts_forwards_and_restores_backwards_the_way_it_really_runs
         assert legacy.due_all_day is True
         assert wall_clock(legacy.due_at) == datetime.combine(date(2026, 9, 6), time.max)
         assert (forever.due_all_day, forever.due_at) == (False, untouched)
+        migrated = state()
 
-        # And `migrate todo 0006`: the end of the day goes back to its start.
+        # And `migrate todo 0006`: the end of the day goes back to its start, unflagged.
         migrate_to(before)
         assert wall_clock(legacy.due_at) == datetime.combine(date(2026, 9, 6), time.min)
+        assert wall_clock(from_form.due_at) == datetime.combine(
+            date(2026, 9, 8), time.min
+        )
+        assert (legacy.due_all_day, from_form.due_all_day) == (False, False)
         assert forever.due_at == untouched
+
+        # Forwards again lands on exactly the rows it produced the first time.
+        migrate_to(after)
+        assert state() == migrated
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())

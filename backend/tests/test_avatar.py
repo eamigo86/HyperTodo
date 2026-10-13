@@ -443,37 +443,123 @@ def test_running_out_of_memory_or_stack_is_not_called_a_bad_image(monkeypatch, f
         submit(jpeg()).is_valid()
 
 
+def truncated_jpeg():
+    """Cut a JPEG in half: the header opens, and the decoder runs out of data."""
+    raw = jpeg((256, 256))
+    return raw[: len(raw) // 2]
+
+
+def logged_by_the_form(caplog):
+    """Return what the avatar form logged, whatever the level."""
+    return [r for r in caplog.records if r.name == "todo.forms"]
+
+
+def raised_inside_pillow(failure):
+    """Return a stand-in for a Pillow function that raises failure from its module."""
+    namespace = {"__name__": "PIL.ImageFile", "failure": failure}
+    exec("def decode(*args, **kwargs):\n    raise failure", namespace)
+    return namespace["decode"]
+
+
 @DECODE_FAILURES
-def test_a_file_that_breaks_pillow_leaves_a_warning_with_the_traceback(
+def test_a_file_that_breaks_pillow_is_refused_and_only_traced_at_debug(
     make, raised, caplog
 ):
     raw = make()
 
-    with caplog.at_level(logging.WARNING, logger="todo.forms"):
+    with caplog.at_level(logging.DEBUG, logger="todo.forms"):
         assert rejection(raw) == NOT_AN_IMAGE
 
-    [record] = [r for r in caplog.records if r.name == "todo.forms"]
-    assert record.levelno == logging.WARNING
+    # A crafted file is the file's fault, not a fault of the server: nothing above
+    # DEBUG, or every hostile upload would be a traceback in the log.
+    [record] = logged_by_the_form(caplog)
+    assert record.levelno == logging.DEBUG
     assert record.exc_info is not None and record.exc_info[0] is raised
-    # The warning says what failed, and none of the upload goes into the log.
+    # The record says what failed, and none of the upload goes into the log.
     logged = logging.Formatter().format(record)
     payload = b64encode(raw).decode()
     assert payload[:48] not in logged and len(logged) < 4000
 
 
-def test_a_programming_error_in_the_decode_path_is_logged_and_still_refused(
-    monkeypatch, caplog
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda: b"#!/bin/sh\necho pwned\n",
+        lambda: b"This is a text file, not an image.",
+        lambda: b"\xcf\xfa\xed\xfe" + b"\x00" * 512,
+        truncated_jpeg,
+        broken_chunk_png,
+        truncated_apng,
+    ],
+    ids=[
+        "script",
+        "text",
+        "mach-o",
+        "truncated-jpeg",
+        "broken-chunk",
+        "truncated-apng",
+    ],
+)
+def test_an_ordinary_bad_upload_is_refused_without_a_warning(make, caplog):
+    # The commonest bad upload is not a crafted one: a document, a renamed file, a
+    # photo cut short by a bad connection. Pillow refuses each by name, and a WARNING
+    # with a traceback for every one of them floods the log.
+    with caplog.at_level(logging.WARNING, logger="todo.forms"):
+        assert rejection(make()) == NOT_AN_IMAGE
+
+    assert logged_by_the_form(caplog) == []
+
+
+def _dotted_name(failure):
+    return f"{failure.__module__}.{failure.__name__}"
+
+
+PILLOW_FAILURES = [
+    OSError,
+    ValueError,
+    SyntaxError,
+    EOFError,
+    struct.error,
+    IndexError,
+    TypeError,
+    AttributeError,
+    # Not in the list above on purpose: where the failure was raised decides, so the
+    # next type Pillow raises on a crafted file is as quiet as these.
+    zlib.error,
+    KeyError,
+]
+
+
+@pytest.mark.parametrize("failure", PILLOW_FAILURES, ids=_dotted_name)
+def test_whatever_pillow_itself_raises_on_a_bad_file_is_not_a_warning(
+    monkeypatch, caplog, failure
 ):
+    monkeypatch.setattr(forms, "_normalised_avatar", raised_inside_pillow(failure))
+
+    with caplog.at_level(logging.WARNING, logger="todo.forms"):
+        assert rejection(jpeg()) == NOT_AN_IMAGE
+
+    assert logged_by_the_form(caplog) == []
+
+
+@pytest.mark.parametrize("failure", PILLOW_FAILURES, ids=_dotted_name)
+def test_the_same_failure_raised_by_our_own_code_is_a_warning(
+    monkeypatch, caplog, failure
+):
+    # AttributeError, TypeError and IndexError are what a bug in the re-encode raises
+    # too, and the person would only ever see "not an image". The warning is how the
+    # bug is noticed, so it cannot depend on the type alone.
     def broken(source):
-        raise AttributeError("the re-encode has a bug")
+        raise failure("the re-encode has a bug")
 
     monkeypatch.setattr(forms, "_normalised_avatar", broken)
 
     with caplog.at_level(logging.WARNING, logger="todo.forms"):
         assert rejection(jpeg()) == NOT_AN_IMAGE
 
-    [record] = [r for r in caplog.records if r.name == "todo.forms"]
-    assert record.exc_info[0] is AttributeError
+    [record] = logged_by_the_form(caplog)
+    assert record.levelno == logging.WARNING
+    assert record.exc_info[0] is failure
     assert "the re-encode has a bug" in logging.Formatter().format(record)
 
 
