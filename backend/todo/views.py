@@ -389,7 +389,9 @@ def login_view(request: HttpRequest) -> HttpResponse:
                 cache.delete(attempts)
                 login(request, user)
                 if request.POST.get("enable_biometrics") == "on":
-                    token = issue_biometric_token(user=user)
+                    # The password was just proven, which is what entitles this
+                    # enrolment to a full lifetime even when it reuses an old row.
+                    token = issue_biometric_token(user=user, restart_lifetime=True)
                 else:
                     # A password login is authoritative about this device: without the
                     # opt-in the credential is revoked and the transition wipes the

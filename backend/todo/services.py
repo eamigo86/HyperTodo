@@ -232,7 +232,9 @@ def delete_task(*, user: AbstractBaseUser, task_id: UUID) -> None:
 
 
 @transaction.atomic
-def issue_biometric_token(*, user: AbstractBaseUser) -> str:
+def issue_biometric_token(
+    *, user: AbstractBaseUser, restart_lifetime: bool = False
+) -> str:
     """Issue a fresh device token and store only its digest.
 
     Any previously issued token for the user stops working. Rotation deliberately
@@ -241,18 +243,22 @@ def issue_biometric_token(*, user: AbstractBaseUser) -> str:
 
     Args:
         user: Account the device may unlock.
+        restart_lifetime: Start the lifetime over from now. Only a sign-in that
+            just proved the password may ask for it. The row is updated in place,
+            so without it an enrolment on top of an old row hands out a token that
+            is already (nearly) past its lifetime.
 
     Returns:
         Raw token, the only copy that ever exists outside the device.
     """
     raw_token = secrets.token_urlsafe(32)
-    BiometricCredential.objects.update_or_create(
-        user=user,
-        defaults={
-            "token_hash": _biometric_hash(raw_token),
-            "password_hash": _password_fingerprint(user),
-        },
-    )
+    defaults: dict[str, object] = {
+        "token_hash": _biometric_hash(raw_token),
+        "password_hash": _password_fingerprint(user),
+    }
+    if restart_lifetime:
+        defaults["created_at"] = timezone.now()
+    BiometricCredential.objects.update_or_create(user=user, defaults=defaults)
     return raw_token
 
 
@@ -270,12 +276,21 @@ def authenticate_biometric_token(*, raw_token: str) -> AbstractBaseUser | None:
     raw_token = raw_token.strip()
     if not raw_token:
         return None
-    credential = BiometricCredential.objects.filter(
-        token_hash=_biometric_hash(raw_token)
-    ).first()
+    credential = (
+        BiometricCredential.objects.select_related("user")
+        .filter(token_hash=_biometric_hash(raw_token))
+        .first()
+    )
     if credential is None:
         return None
     if credential.created_at < timezone.now() - BIOMETRIC_TOKEN_TTL:
+        credential.delete()
+        return None
+    if not credential.user.is_active:
+        # login() does not run the is_active test that ModelBackend.authenticate()
+        # applies, so an account an administrator switched off would still get a
+        # session (and a rotated token) here, to be refused one request later.
+        # Revoke the credential so the phone stops asking.
         credential.delete()
         return None
     if credential.password_hash != _password_fingerprint(credential.user):

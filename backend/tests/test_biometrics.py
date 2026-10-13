@@ -134,6 +134,22 @@ def test_rotation_keeps_the_original_issue_time(user):
     assert authenticate_biometric_token(raw_token=rotated) == user
 
 
+def test_issue_can_restart_the_lifetime_which_rotation_keeps(user):
+    issue_biometric_token(user=user)
+    BiometricCredential.objects.update(
+        created_at=timezone.now() - BIOMETRIC_TOKEN_TTL - timedelta(days=1)
+    )
+
+    renewed = issue_biometric_token(user=user, restart_lifetime=True)
+
+    # An expired row re-issued as-is would expire the token the moment it was handed
+    # out, so a sign-in that enrols the device has to start the clock again.
+    assert timezone.now() - BiometricCredential.objects.get().created_at < timedelta(
+        seconds=5
+    )
+    assert authenticate_biometric_token(raw_token=renewed) == user
+
+
 def test_rotation_keeps_the_recorded_last_use(user):
     raw = issue_biometric_token(user=user)
     authenticate_biometric_token(raw_token=raw)
@@ -175,6 +191,35 @@ def test_the_unlock_endpoint_refuses_a_credential_issued_before_a_password_chang
 
     assert response.status_code == 401
     assert "_auth_user_id" not in client.session
+
+
+def test_a_deactivated_account_loses_its_device_credential(user):
+    # login() skips the is_active check ModelBackend.authenticate() would have made,
+    # so without this an admin who switches an account off still lets the enrolled
+    # phone in (the next request then answers 401) and the credential lives on.
+    raw = issue_biometric_token(user=user)
+    user.is_active = False
+    user.save(update_fields=("is_active",))
+
+    assert authenticate_biometric_token(raw_token=raw) is None
+    assert not BiometricCredential.objects.exists()
+
+
+def test_the_unlock_endpoint_refuses_a_deactivated_account_and_wipes_the_device(
+    client, user
+):
+    raw = issue_biometric_token(user=user)
+    user.is_active = False
+    user.save(update_fields=("is_active",))
+
+    response = client.post(reverse("todo:biometric-login"), {"biometric_token": raw})
+
+    root = _panel_root(response, status=401)
+    assert "_auth_user_id" not in client.session
+    reset = root.find("./hv:behavior[@action='store-biometric-token']", NS)
+    assert reset is not None
+    assert reset.attrib["token"] == ""
+    assert not BiometricCredential.objects.exists()
 
 
 def test_an_untouched_password_leaves_the_credential_working(user):
@@ -400,6 +445,39 @@ def test_password_login_issues_a_token_when_the_user_opts_in(client, user):
     assert BiometricCredential.objects.count() == 1
     issued = store.attrib["token"]
     assert authenticate_biometric_token(raw_token=issued) == user
+
+
+def test_opting_in_again_after_the_credential_expired_issues_a_usable_token(
+    client, user
+):
+    issue_biometric_token(user=user)
+    BiometricCredential.objects.update(
+        created_at=timezone.now() - BIOMETRIC_TOKEN_TTL - timedelta(days=5)
+    )
+
+    root = ElementTree.fromstring(
+        _password_login(client, enable_biometrics="on").content
+    )
+    issued = root.find("./hv:behavior[@action='store-biometric-token']", NS)
+
+    # The row is updated in place, so it used to keep the old created_at and the
+    # token handed out by a fresh password sign-in was already past its lifetime.
+    assert authenticate_biometric_token(raw_token=issued.attrib["token"]) == user
+    assert timezone.now() - BiometricCredential.objects.get().created_at < timedelta(
+        seconds=5
+    )
+
+
+def test_unlocking_by_biometrics_does_not_restart_the_lifetime(client, user):
+    raw = issue_biometric_token(user=user)
+    issued_at = timezone.now() - BIOMETRIC_TOKEN_TTL + timedelta(hours=1)
+    BiometricCredential.objects.update(created_at=issued_at)
+
+    client.post(reverse("todo:biometric-login"), {"biometric_token": raw})
+
+    # Only a password sign-in is evidence enough to restart the clock; a rotation
+    # driven by the token itself must not, or a stolen phone would never expire.
+    assert BiometricCredential.objects.get().created_at == issued_at
 
 
 def test_password_login_never_stores_the_issued_token_in_the_database(client, user):
