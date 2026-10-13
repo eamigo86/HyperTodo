@@ -276,18 +276,28 @@ class AvatarForm(forms.Form):
             # the only bound those get.
             source.draft("RGB", (AVATAR_PIXELS, AVATAR_PIXELS))
             return _normalised_avatar(source)
+        except forms.ValidationError:
+            # The guards above already chose their copy; the arm below must not
+            # relabel a too-large photo as "not an image".
+            raise
         except Image.DecompressionBombError as error:
             # Above 2x Image.MAX_IMAGE_PIXELS, Image.open refuses the header itself
             # and the MAX_SOURCE_PIXELS guard above never runs. This error is a plain
             # Exception, not an OSError, so without its own arm it escapes
             # form.is_valid() and the endpoint answers 500 instead of a refusal.
             raise forms.ValidationError(TOO_LARGE) from error
-        except (OSError, ValueError, SyntaxError, EOFError) as error:
-            # Pillow has no single error for a damaged file. UnidentifiedImageError
-            # and a truncated stream are OSError, but the PNG plugin raises SyntaxError
+        except Exception as error:
+            # Pillow has no single error for a damaged file, and a list of the types
+            # seen so far only ever lags behind the next one. UnidentifiedImageError
+            # and a truncated stream are OSError, the PNG plugin raises SyntaxError
             # ("broken PNG file (chunk ...)") and ValueError ("APNG contains truncated
-            # fcTL chunk") on purpose, and a missing frame is an EOFError. Each of them
-            # used to escape form.is_valid() and answer a 500 the client cannot parse.
+            # fcTL chunk") on purpose, a missing frame is an EOFError, and its chunk
+            # and EXIF code unpacks untrusted bytes without checking them, which
+            # surfaces as struct.error, IndexError, TypeError or AttributeError.
+            # Each of them used to escape form.is_valid() and answer a 500 the client
+            # cannot parse. This form is the trust boundary for these bytes, so
+            # whatever the decode or the re-encode raises means one thing to the
+            # person who picked the file.
             raise forms.ValidationError(NOT_AN_IMAGE) from error
 
 

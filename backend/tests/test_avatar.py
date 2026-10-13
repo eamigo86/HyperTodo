@@ -20,7 +20,7 @@ from django.conf import settings
 from django.core.files.storage import FileSystemStorage
 from django.test import Client
 from django.urls import reverse
-from PIL import Image
+from PIL import Image, ImageOps
 
 from tests.test_forms_ui import (
     NS,
@@ -157,6 +157,64 @@ def truncated_apng():
             for kind, data in _chunks(buffer.getvalue())
         ]
     )
+
+
+def late_chunk_png(mode, kind, data):
+    """Build a PNG whose pixels decode and whose chunk after them is cut short.
+
+    Image.open reads up to the first IDAT, so it accepts this file and so does the
+    area guard. An ancillary chunk between the last IDAT and IEND is only parsed at
+    the end of load(), and Pillow unpacks it without checking its length: a short
+    gAMA, cHRM or tRNS raises struct.error and an empty iCCP raises IndexError.
+    Neither is an OSError, a ValueError or a SyntaxError.
+    """
+    buffer = BytesIO()
+    Image.new(mode, (16, 16)).save(buffer, "PNG")
+    chunks = []
+    for chunk_kind, chunk_data in _chunks(buffer.getvalue()):
+        if chunk_kind == b"IEND":
+            chunks.append((kind, data))
+        chunks.append((chunk_kind, chunk_data))
+    return _png_of(chunks)
+
+
+def exif_block(entries):
+    """Hand-build a little-endian EXIF block from (tag, type, count, payload) rows.
+
+    Pillow types a tag it writes from its own table, so a MISTYPED tag, which is what
+    a hostile or merely sloppy camera produces, can only be made by hand. Payloads of
+    up to four bytes sit inline; longer ones follow the table.
+    """
+    header = b"II*\x00" + struct.pack("<I", 8)
+    data_start = 8 + 2 + 12 * len(entries) + 4
+    rows, data = b"", b""
+    for tag, kind, count, payload in sorted(entries):
+        if len(payload) <= 4:
+            value = payload.ljust(4, b"\x00")
+        else:
+            value = struct.pack("<I", data_start + len(data))
+            data += payload
+        rows += struct.pack("<HHI", tag, kind, count) + value
+    return (
+        b"Exif\x00\x00"
+        + header
+        + struct.pack("<H", len(entries))
+        + rows
+        + struct.pack("<I", 0)
+        + data
+    )
+
+
+ORIENTATION_6 = (0x0112, 3, 1, struct.pack("<H", 6))
+
+
+def mistyped_exif_jpeg(entry):
+    """Build a JPEG that asks to be rotated and carries one mistyped EXIF tag.
+
+    The Orientation tag is what sends exif_transpose down the path that re-serialises
+    the whole EXIF block, and that rewrite is where the mistyped tag blows up.
+    """
+    return jpeg(exif=lambda _image: exif_block([ORIENTATION_6, entry]))
 
 
 def submit(raw):
@@ -323,6 +381,50 @@ def test_a_corrupt_png_is_not_an_image_and_does_not_crash(make):
     raw = make()
     with pytest.raises((SyntaxError, ValueError)):
         Image.open(BytesIO(raw)).load()
+
+    assert rejection(raw) == NOT_AN_IMAGE
+
+
+# Each case decodes far enough to pass every guard in clean_avatar_data and then
+# raises an exception type the form used to let through: ancillary PNG chunks that are
+# too short (struct.error, IndexError) and EXIF tags whose stored type contradicts the
+# tag (AttributeError: ImageDescription written as a RATIONAL, TypeError: XResolution
+# written as ASCII). `raised` is asserted on the decode itself, so a Pillow release
+# that starts validating these chunks makes the fixture fail loudly instead of
+# silently proving nothing.
+DECODE_FAILURES = pytest.mark.parametrize(
+    ("make", "raised"),
+    [
+        (lambda: late_chunk_png("RGB", b"gAMA", b""), struct.error),
+        (lambda: late_chunk_png("RGB", b"cHRM", b"\x01"), struct.error),
+        (lambda: late_chunk_png("L", b"tRNS", b"\x01"), struct.error),
+        (lambda: late_chunk_png("RGB", b"iCCP", b""), IndexError),
+        (
+            lambda: mistyped_exif_jpeg((0x010E, 5, 1, struct.pack("<II", 1, 2))),
+            AttributeError,
+        ),
+        (lambda: mistyped_exif_jpeg((0x011A, 2, 4, b"abc\x00")), TypeError),
+    ],
+    ids=[
+        "short-gAMA",
+        "short-cHRM",
+        "short-tRNS",
+        "empty-iCCP",
+        "description-as-rational",
+        "x-resolution-as-ascii",
+    ],
+)
+
+
+@DECODE_FAILURES
+def test_a_file_that_breaks_pillow_in_any_other_way_is_not_an_image(make, raised):
+    # The form cannot enumerate Pillow's failure modes: its plugins unpack untrusted
+    # bytes without length or type checks, so each of these used to escape
+    # form.is_valid() and answer a 500 the client cannot parse. Anything the decode or
+    # the re-encode raises means the same thing to the person who picked the file.
+    raw = make()
+    with pytest.raises(raised):
+        ImageOps.exif_transpose(Image.open(BytesIO(raw)))
 
     assert rejection(raw) == NOT_AN_IMAGE
 
@@ -542,6 +644,22 @@ def test_a_refused_photo_answers_422_and_writes_nothing(user):
 def test_a_corrupt_png_answers_422_with_the_field_error_and_not_a_500(user, make):
     # A 500 is a text/html page, which the Hyperview client cannot parse at all, so
     # the person saw nothing instead of "That file is not an image.".
+    client = signed_in(user, **CURRENT_CLIENT)
+
+    response = post_avatar(client, make(), token=csrf_token(client))
+
+    root = assert_hxml(response, status=422)
+    error = root.find(
+        ".//hv:view[@id='avatar-panel']//hv:text[@style='field-error']", NS
+    )
+    assert error.text == NOT_AN_IMAGE
+    assert stored_files() == []
+
+
+@DECODE_FAILURES
+def test_a_file_that_breaks_pillow_answers_422_with_the_field_error_and_not_a_500(
+    user, make, raised
+):
     client = signed_in(user, **CURRENT_CLIENT)
 
     response = post_avatar(client, make(), token=csrf_token(client))
