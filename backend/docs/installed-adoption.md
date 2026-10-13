@@ -60,6 +60,8 @@ Realtime does not turn on template caching. `backend-run` and `backend-run-sse` 
 
 Auth, database sessions, CSRF, cache and schema extensions remain in effect. Test-only settings isolate database/cache and disable transport unless a test explicitly enables it; they are not application profiles. Only DEBUG enables the development Admin/static handler; production assets belong to the web server/CDN.
 
+The default SQLite database begins every write transaction with `BEGIN IMMEDIATE` and waits up to 20 seconds for the write lock (`DATABASES["default"]["OPTIONS"]` in [application settings](../config/settings.py)). Without that, SQLite's deferred transactions refuse the second of two simultaneous writers at once with `database is locked`, and a double tap, two devices or two accounts saving together answered a 500 for a race the views already answer with a 422 on the right field. Writers now queue behind one another instead. A deployment on another database engine drops both options. [The concurrency test](../tests/test_sqlite_concurrency.py) runs the real write endpoints from two threads against a scratch file database; to see the failure, remove the options from a scratch copy of the settings and run `python -m tests.sqlite_race` with `DJANGO_SETTINGS_MODULE` and `HYPERTODO_RACE_DATABASE` set the way that test sets them (never against `db.sqlite3`).
+
 ### Environment variables
 
 | Variable | Default | Effect |

@@ -92,7 +92,18 @@ TEMPLATES = [
 ]
 WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
-    "default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
+        # SQLite's default transaction is deferred: it reads under a shared lock and
+        # asks for the write lock later, and when two of them do that at once the
+        # second is refused immediately ("database is locked") instead of waiting. A
+        # double tap, two devices or two accounts writing together then answered a 500
+        # for a race the views already know how to answer with a 422. IMMEDIATE takes
+        # the write lock when the transaction begins, so writers queue behind each
+        # other for up to the timeout, which is far longer than any request here.
+        "OPTIONS": {"transaction_mode": "IMMEDIATE", "timeout": 20},
+    }
 }
 # Django's four standard validators. They guard Admin and changepassword; seed_demo and
 # create_user call set_password, which skips validation by design.
