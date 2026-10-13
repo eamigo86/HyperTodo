@@ -81,13 +81,15 @@ is not duplicated by the controller.
   hash) and its flush of a failed session stay in memory. Nothing is rotated or
   deleted, the binding keeps naming the key the client holds, and the next ordinary
   request performs both with a response that can carry the cookie.
-- The check runs on the shared worker pool (`sync_to_async` with
-  `thread_sensitive=False`) and closes its database connection afterwards. A
-  thread-sensitive call would pin one OS thread and one connection to every open
-  stream for its whole life, because ASGIHandler gives each request an executor of
-  its own. With `CONN_MAX_AGE=0` (the default) every check opens and closes a
-  connection; a positive `CONN_MAX_AGE` lets a pool thread keep it between checks.
-  Either way the connections are bounded by the pool, not by the number of streams.
+- The check runs on the default executor, which every stream shares
+  (`sync_to_async` with `thread_sensitive=False`), and closes its database connection
+  afterwards. A thread-sensitive call would hold one connection per open stream for
+  its whole life, because ASGIHandler gives each request an executor of its own.
+  This frees the connection, not the thread: Django still creates a thread for each
+  request, and the shared executor adds its own. With `CONN_MAX_AGE=0` (the default)
+  every check opens and closes a connection; a positive `CONN_MAX_AGE` lets a pool
+  thread keep it between checks. Either way the connections are bounded by the pool,
+  not by the number of streams.
 - The captured binding, user primary key and database alias must all still match.
   Midstream loss emits only `auth-required` and closes; it never adopts a new user.
   Database/broker failure closes without private diagnostics.

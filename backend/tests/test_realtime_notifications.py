@@ -21,6 +21,21 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
+def cold_broker_cache():
+    """Forget the cached brokers, so a test that counts constructions starts cold.
+
+    get_broker is cached for the life of the process: without this the counting test
+    passes only the first time its namespace is seen, and fails on a rerun or when
+    another test has used the same configuration before it.
+    """
+    from todo.realtime_config import get_broker
+
+    get_broker.cache_clear()
+    yield
+    get_broker.cache_clear()
+
+
+@pytest.fixture
 def published(settings, monkeypatch):
     from todo import realtime_notifications as notifications
 
@@ -403,7 +418,7 @@ def test_one_broker_serves_every_publish_and_every_stream_of_a_configuration(
 
 
 def test_the_broker_is_constructed_once_not_per_publish_and_per_stream(
-    settings, monkeypatch
+    settings, monkeypatch, cold_broker_cache
 ):
     from dj_hyperview.realtime import RedisBroker
 
@@ -411,7 +426,6 @@ def test_the_broker_is_constructed_once_not_per_publish_and_per_stream(
     from todo.realtime_notifications import Notification, _publish
     from todo.realtime_views import _broker
 
-    # A namespace nothing else uses, so no earlier test has cached its broker.
     settings.HYPERVIEW = {
         **settings.HYPERVIEW,
         "REALTIME": {**CONFIG, "NAMESPACE": "built-once"},

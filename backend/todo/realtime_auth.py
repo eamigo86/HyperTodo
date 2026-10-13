@@ -122,9 +122,11 @@ def _fresh_identity_on_a_worker(session_key: str | None) -> Identity | None:
 
 
 # Not thread-sensitive: ASGIHandler gives every request an executor of its own for
-# thread-sensitive work, so each open stream pinned one OS thread and one database
-# connection for its whole life (32 streams measured +32 threads and +32
-# connections). Worker threads of the shared pool serve a check and are free again.
+# thread-sensitive work, so each open stream kept a database connection for its whole
+# life (32 streams measured 32 connections held). The checks of every stream share the
+# default executor instead, and each one gives its connection back when it ends (32
+# streams: 0 held). This frees the connection, not the thread: Django still creates a
+# thread per request, and the default executor adds its own.
 fresh_identity_async = sync_to_async(
     _fresh_identity_on_a_worker, thread_sensitive=False
 )

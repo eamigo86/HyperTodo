@@ -6,6 +6,7 @@ Overdue flip at New York midnight. The header names the zone the person is reall
 """
 
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from asgiref.sync import async_to_sync
@@ -154,6 +155,55 @@ def test_a_header_that_names_no_zone_is_ignored(user, value):
 
     assert "Good afternoon" in text_of(assert_hxml(response), "dashboard-hero")
     assert "X-Timezone" in response["Vary"]
+
+
+def test_a_header_over_the_length_bound_never_reaches_the_tz_lookup(monkeypatch):
+    # The names in the test above would be refused by the lookup anyway, so only a spy
+    # tells the bound from the lookup. 64 characters is the documented ceiling.
+    looked_up = []
+
+    def lookup(name):
+        looked_up.append(name)
+        return ZoneInfo(MADRID)
+
+    monkeypatch.setattr("todo.middleware.ZoneInfo", lookup)
+    seen = []
+
+    def view(request):
+        seen.append(timezone.get_current_timezone_name())
+        return HttpResponse()
+
+    for length in (64, 65):
+        request = RequestFactory().get("/hv/", headers={TIMEZONE_HEADER: "x" * length})
+        UserTimezoneMiddleware(view)(request)
+
+    assert looked_up == ["x" * 64]
+    assert seen == [MADRID, timezone.get_default_timezone_name()]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [KeyError, ValueError, OSError, IsADirectoryError, PermissionError],
+)
+def test_whatever_way_the_tz_lookup_fails_the_zone_is_ignored(monkeypatch, failure):
+    # ZoneInfoNotFoundError is a KeyError, a key that is not a normalized relative path
+    # is a ValueError, and a name that hits a directory or a file the process cannot
+    # read is an OSError. Each one is a client that sent rubbish, never a server error.
+    def lookup(name):
+        raise failure(name)
+
+    monkeypatch.setattr("todo.middleware.ZoneInfo", lookup)
+    seen = []
+
+    def view(request):
+        seen.append(timezone.get_current_timezone_name())
+        return HttpResponse()
+
+    request = RequestFactory().get("/hv/", headers={TIMEZONE_HEADER: MADRID})
+    response = UserTimezoneMiddleware(view)(request)
+
+    assert response.status_code == 200
+    assert seen == [timezone.get_default_timezone_name()]
 
 
 def test_the_zone_reaches_the_views_through_the_asgi_chain(user):

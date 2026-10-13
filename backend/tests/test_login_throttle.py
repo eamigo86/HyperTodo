@@ -28,6 +28,7 @@ from todo.throttle import (
     ADDRESS_ATTEMPT_LIMIT,
     BIOMETRIC_ATTEMPT_LIMIT,
     LOGIN_ATTEMPT_LIMIT,
+    LOGIN_ATTEMPT_WINDOW,
     biometric_attempt_key,
     claim_password_attempt,
     register_attempt,
@@ -36,6 +37,29 @@ from todo.throttle import (
 
 pytestmark = pytest.mark.django_db
 THROTTLED = "Too many sign-in attempts. Try again later."
+
+
+class Clock:
+    """A settable stand-in for time.time."""
+
+    def __init__(self, now):
+        self.now = now
+
+    def __call__(self):
+        return self.now
+
+
+@pytest.fixture(autouse=True)
+def clock(monkeypatch):
+    """Pin the clock to the middle of a window, so no test straddles a boundary.
+
+    The address bucket belongs to a window of the wall clock. A test that makes a
+    hundred claims would otherwise fail now and then, when the window changed under it.
+    """
+    now = time.time()
+    fake = Clock(now - now % LOGIN_ATTEMPT_WINDOW + LOGIN_ATTEMPT_WINDOW / 2)
+    monkeypatch.setattr(time, "time", fake)
+    return fake
 
 
 @pytest.fixture(autouse=True)
@@ -185,16 +209,62 @@ def test_sign_ins_that_succeed_never_exhaust_the_address_budget(client, user):
         client.logout()
 
 
-def test_a_refund_after_the_window_ended_buys_no_extra_attempt():
+def test_a_refund_after_the_window_ended_buys_no_extra_attempt(caplog):
     request = RequestFactory().post("/hv/login/")
     assert claim_password_attempt(request, "ada")
     cache.clear()  # the window ended between the claim and the success
 
     release_password_attempts(request, "ada")
 
+    # A bucket that is gone is the ordinary end of a window, not a cache failure.
+    assert throttle_warnings(caplog) == []
     for index in range(ADDRESS_ATTEMPT_LIMIT):
         assert claim_password_attempt(request, f"guesser{index}")
     assert not claim_password_attempt(request, "one-more")
+
+
+def test_a_refund_that_arrives_in_a_later_window_cannot_enlarge_its_budget(clock):
+    # Sign-ins claim in one window and are still inside authenticate() when it ends.
+    # Their refunds used to land on whichever bucket the address had by then: the next
+    # window's, opened by a guess, which then granted 100 + one attempt per refund and
+    # counted below zero.
+    slow = [post_from("10.1.1.1") for _ in range(3)]
+    for request in slow:
+        assert claim_password_attempt(request, "ada")
+    clock.now += LOGIN_ATTEMPT_WINDOW + 1
+    guesses = [post_from("10.1.1.1") for _ in range(2 * ADDRESS_ATTEMPT_LIMIT)]
+
+    granted = [claim_password_attempt(guesses[0], "guesser0")]
+    for request in slow:
+        release_password_attempts(request, "ada")
+    granted += [
+        claim_password_attempt(request, f"guesser{index}")
+        for index, request in enumerate(guesses[1:], start=1)
+    ]
+
+    assert sum(granted) == ADDRESS_ATTEMPT_LIMIT
+
+
+def test_a_refund_within_its_own_window_still_returns_the_claim(clock):
+    request = post_from("10.1.1.1")
+    for index in range(ADDRESS_ATTEMPT_LIMIT - 1):
+        assert claim_password_attempt(post_from("10.1.1.1"), f"guesser{index}")
+    assert claim_password_attempt(request, "ada")
+    clock.now += LOGIN_ATTEMPT_WINDOW / 4  # time passes inside the same window
+
+    release_password_attempts(request, "ada")
+
+    assert claim_password_attempt(post_from("10.1.1.1"), "after-the-success")
+    assert not claim_password_attempt(post_from("10.1.1.1"), "one-more")
+
+
+def test_each_window_starts_a_fresh_address_budget(clock):
+    spend_address_budget("10.1.1.1")
+    assert not claim_password_attempt(post_from("10.1.1.1"), "one-more")
+
+    clock.now += LOGIN_ATTEMPT_WINDOW
+
+    assert claim_password_attempt(post_from("10.1.1.1"), "one-more")
 
 
 def test_a_refund_never_returns_more_than_one_claim():
@@ -243,6 +313,12 @@ def spend_address_budget(address):
         # An IPv6 client owns its whole /64, so it can write 2**64 addresses.
         ("2001:db8:1:2::1", "2001:db8:1:2:ffff:ffff:ffff:ffff"),
         ("2001:db8:1:2::1", "2001:0DB8:1:2:0:0:0:2"),
+        # A zone names an interface, not the client. With no host bits set the network
+        # used to keep it, so each spelling of the zone was a budget of its own.
+        ("fe80::%en0", "fe80::1"),
+        ("fe80::%en0", "fe80::%eth1"),
+        ("2001:db8:1:2::%eth1", "2001:db8:1:2::ffff"),
+        ("fe80::1%en0", "fe80::2%eth1"),
         # An IPv4 client reached through a dual-stack socket arrives mapped.
         ("10.1.1.1", "::ffff:10.1.1.1"),
         ("::ffff:10.1.1.1", "10.1.1.1"),
@@ -278,6 +354,14 @@ def test_the_account_bucket_follows_the_same_normalisation():
 
     assert not claim_password_attempt(second, "ADA")
     assert claim_password_attempt(post_from("2001:db8:1:3::1"), "ada")
+
+
+def test_a_zone_id_never_reaches_a_cache_key():
+    for address in ("fe80::%en0", "fe80::1%en0"):
+        request = post_from(address, "/hv/biometric/login/", biometric_token="x")
+
+        assert "%" not in biometric_attempt_key(request)
+        assert "en0" not in biometric_attempt_key(request)
 
 
 def test_the_biometric_bucket_follows_the_same_normalisation():

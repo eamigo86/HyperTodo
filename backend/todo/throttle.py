@@ -10,10 +10,13 @@ Clients are told apart by address, normalised so that one machine cannot spell i
 into several: an IPv6 client is its whole /64 and an IPv4-mapped IPv6 address is the
 IPv4 address it wraps. A sign-in that succeeds gives its own address claim back, so
 the address budget counts failures and a NAT full of honest users cannot exhaust it.
+The address bucket belongs to a window of the clock and the claim remembers which, so a
+refund that arrives after the window ended cannot reach the next one.
 """
 
 import ipaddress
 import logging
+import time
 from hashlib import sha256
 
 from django.core.cache import cache
@@ -85,13 +88,15 @@ def refund_attempt(key: str) -> None:
     back, so it is left missing instead of being recreated below zero, which would
     buy extra attempts.
 
+    The key has to name the window the claim was made in. A newer window is a
+    different key, so a refund that arrives late cannot take an attempt back from it;
+    a key shared by every window would let it, and the cache API offers no
+    compare-and-set to tell them apart.
+
     Args:
-        key: Cache key of the bucket.
+        key: Cache key of the bucket the attempt was claimed in.
     """
     try:
-        # ponytail: if a new window opened since the claim, this takes back one attempt
-        # of that window instead, so a budget is off by one once per window at most;
-        # a compare-and-set would need a lock the cache API does not offer.
         cache.decr(key)
     except ValueError:
         # The window ended and nothing opened another: nothing is left to give back.
@@ -136,12 +141,27 @@ def _address(request: HttpRequest) -> str:
         return str(address)
     if address.ipv4_mapped is not None:
         return str(address.ipv4_mapped)
-    return str(ipaddress.ip_network((address, 64), strict=False))
+    # Built from the integer, which has no zone: a network handed a scoped address
+    # (fe80::%en0) whose host bits are already zero keeps the zone in its name, and
+    # every spelling of the interface would then be a budget of its own.
+    return str(ipaddress.IPv6Network((int(address), 64), strict=False))
 
 
 def _address_key(request: HttpRequest) -> str:
-    """Bucket password attempts by client address across every account name."""
-    return f"login-address:{_address(request)}"
+    """Bucket password attempts by client address and clock window, across every name.
+
+    The window is part of the key and is read once per request, when the attempt is
+    claimed. A sign-in that is still inside authenticate() when its window ends then
+    gives its claim back to the bucket it made it in, and not to the one a guess has
+    opened since, which would otherwise grant that window one extra attempt per
+    refund and count below zero.
+    """
+    key = getattr(request, "_hv_address_key", None)
+    if key is None:
+        window = int(time.time() // LOGIN_ATTEMPT_WINDOW)
+        key = f"login-address:{_address(request)}:{window}"
+        request._hv_address_key = key
+    return key
 
 
 def _account_key(request: HttpRequest, username: str) -> str:

@@ -191,7 +191,7 @@ def test_a_failing_identity_check_still_closes_its_connection(monkeypatch):
     assert closed == [1]
 
 
-def test_open_streams_share_the_worker_pool_instead_of_pinning_a_thread_each(
+def test_open_streams_share_the_default_executor_for_their_identity_checks(
     authenticated, monkeypatch
 ):
     from todo import realtime_auth
