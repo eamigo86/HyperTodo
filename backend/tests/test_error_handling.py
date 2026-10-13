@@ -287,6 +287,31 @@ def test_a_padded_date_or_time_is_echoed_without_losing_its_meaning(
     assert_hxml(created, status=201)
 
 
+@pytest.mark.parametrize(
+    ("field", "tag", "valid"),
+    [("due_time", "text-field", "09:30"), ("due_date", "date-field", "2026-09-07")],
+)
+def test_an_over_long_date_or_time_stays_refused_when_its_echo_is_saved(
+    user, field, tag, valid
+):
+    # Cut at 65 characters, a valid value followed by 60 spaces and a stray "x" came
+    # back as the value and trailing spaces, which Django strips on the next Save: the
+    # refused input turned into an accepted one.
+    client = Client()
+    client.force_login(user)
+    other = {name: v for name, v in DATE_AND_TIME.items() if name != field}
+
+    response = client.post(
+        "/hv/tasks/new/", {"title": "", **other, field: valid + " " * 60 + "x"}
+    )
+
+    root = assert_hxml(response, status=422)
+    echoed = root.find(f".//hv:{tag}[@name='{field}']", NS).attrib["value"]
+    again = client.post("/hv/tasks/new/", {"title": "Plan", **other, field: echoed})
+    assert_hxml(again, status=422)
+    assert not Task.objects.exists()
+
+
 def test_notes_that_only_fit_once_stripped_come_back_whole(user):
     client = Client()
     client.force_login(user)

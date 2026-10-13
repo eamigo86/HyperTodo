@@ -16,7 +16,7 @@ from django.utils.translation import gettext_lazy as _
 from PIL import Image, ImageOps
 
 from .models import Category, Task
-from .validators import scrub_xml, xml_safe_text
+from .validators import REPLACEMENT, scrub_xml, xml_safe_text
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,9 @@ class XmlSafeBoundField(forms.BoundField):
         so, and are treated alike; cut raw, "9:30" behind 62 spaces would come back as
         "9:3", which reads as another time. The cut falls one character past the limit,
         so an over-long value is echoed still over-long and a second Save refuses it
-        again instead of storing the cut text.
+        again instead of storing the cut text. A date or a time ends in U+FFFD there
+        instead: its extra characters may be spaces, which the next parse strips, and
+        no format accepts the replacement character.
 
         Returns:
             The bound submission or initial value, made XML-safe when it is text.
@@ -88,11 +90,12 @@ class XmlSafeBoundField(forms.BoundField):
         if not isinstance(value, str):
             return value
         if self.form.is_bound:
-            if getattr(self.field, "strip", False) or isinstance(
-                self.field, forms.fields.BaseTemporalField
-            ):
+            temporal = isinstance(self.field, forms.fields.BaseTemporalField)
+            if getattr(self.field, "strip", False) or temporal:
                 value = value.strip()
             limit = getattr(self.field, "max_length", None) or MAX_ECHO_CHARS
+            if temporal and len(value) > limit:
+                value = value[:limit] + REPLACEMENT
             value = value[: limit + 1]
         return scrub_xml(value)
 
