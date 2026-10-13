@@ -196,6 +196,9 @@ def test_redis_shares_committed_mutations_and_preserves_rollback_across_processe
 ):
     if os.environ.get("HYPERTODO_REDIS_INTEGRATION") != "1":
         pytest.skip("Redis multi-process acceptance is explicitly opt-in")
+    assert os.environ.get("HYPERTODO_REDIS_TEST_OWNED") == "1", (
+        "Redis acceptance requires an explicitly owned disposable service"
+    )
     if "fork" not in multiprocessing.get_all_start_methods():
         pytest.skip("Redis multi-process acceptance requires a POSIX fork context")
 
