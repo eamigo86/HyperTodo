@@ -10,11 +10,10 @@ without an injected hint, manual reload, navigation or other client interaction.
 One OS background/foreground cycle preserved that screen without reauthentication;
 the owned Redis subscriber count changed 1 → 0 → 1.
 
-Run `8fedb272794b44ccaa57c8a3e25d0523` has before/after screenshots and separate
-Admin/CSRF and subscriber evidence in
-`evidence/environment/sse-demo-8fedb272794b44ccaa57c8a3e25d0523/` and
-`evidence/environment/sse-demo-backend-retry-20260910/`. This is not an Android,
-physical-iPhone, concurrent-B-client or exhaustive native transport claim.
+Run `8fedb272794b44ccaa57c8a3e25d0523` recorded before/after screenshots and
+separate Admin/CSRF and subscriber evidence; none of it is kept in this repository.
+This is not an Android, physical-iPhone, concurrent-B-client or exhaustive native
+transport claim.
 
 `AppSessionOptions.stream = {fetch, clock?}` is internal dependency injection,
 not a user feature flag. A composition without that port does not open SSE; it

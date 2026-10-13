@@ -92,5 +92,5 @@ SSE or theme publication, and successful auth still requires explicit confirmati
 cookie and session-backed CSRF, unexpected-account DB-template probes, message
 retention, profile-query suppression, exact scope/Expected grammar, password and
 biometric transitions, normal-route controls and bounded rendering failures.
-Historical RED/GREEN commands, source provenance and freeze hashes are in
-`evidence/gate0-mobile/c3-recovery-backend-*` of the isolated worktree run.
+Historical RED/GREEN commands, source provenance and freeze hashes belong to the
+isolated worktree run and are not kept in this repository.

@@ -97,7 +97,7 @@ lists, page 2, exact DOM placement, resource enums and required attributes,
 request-ID bounds, auth-panel status/key branches and preserved invalid drafts.
 Existing schema, context-free Admin, session, CSRF and UI tests remain in place.
 The resource producer unit and login-panel key each have recorded permanent RED
-before implementation; evidence is under `evidence/gate0-mobile/c3-templates-*`.
+before implementation; that record is not kept in this repository.
 
 These backend tests do not exercise React Native layout, SSE transport or native
 authentication transitions. The final App-registration regression now verifies

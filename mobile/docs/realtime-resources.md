@@ -17,7 +17,7 @@ Resources are exactly `tasks`, `categories`, `ui`, in that order, without duplic
 The seven nonempty subsets are valid. Unknown values, combined strings pretending
 to be one token, old epochs and unavailable label configuration have no effect.
 A late callback must not obtain a new epoch to revive itself. The historical
-`invalidate()` remains for previous proof fixtures; App must not use it as fallback.
+`invalidate()` remains for the gate's own tests; App must not use it as fallback.
 
 A boundary's unqualified `resources` attribute declares dependencies, not ownership
 or routing. Categories depends on tasks because it renders task counts. Matching
