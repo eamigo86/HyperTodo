@@ -77,6 +77,17 @@ export function createSessionSupervisor(ports:SessionPorts) {
   function waitChange(){return new Promise<void>(resolve=>{const listener=()=>{listeners.delete(listener);resolve();};listeners.add(listener);});}
   async function waitPaused(owned:()=>boolean){while(owned()&&availability==="paused")await waitChange();}
   async function waitForeground(op:AuthOperation){while(current(op)&&!active)await waitChange();if(!current(op))throw new Error("stale-owner");}
+  /** Every HXML request gets a deadline. The platform adds none, and one that never settles would hold `inFlight`, and with it logout and recovery, forever. */
+  function bounded(url:string,prepared:RequestInit):Promise<Response> {
+    const controller=new AbortController(),source=prepared.signal;
+    let expire!:(reason:Error)=>void;
+    const deadline=new Promise<never>((_resolve,reject)=>{expire=reject;});
+    // The caller's own signal stays live, also while the body is read, so it is forwarded and never detached.
+    const abort=()=>controller.abort();source?.addEventListener("abort",abort,{once:true});if(source?.aborted)abort();
+    // Reject before aborting: the deadline, not the transport's AbortError, is what the caller sees, and a transport that ignores the signal still settles.
+    const cancel=clock.schedule(()=>{expire(new Error("request-timeout"));abort();},30000);
+    return Promise.race([Promise.resolve().then(()=>ports.transport(url,{...prepared,signal:controller.signal})),deadline]).finally(cancel);
+  }
   async function observe(neutral=false):Promise<Observation> {
     const controller=new AbortController();let expired=false;
     let timeoutReject!:(reason:Error)=>void;
@@ -202,13 +213,17 @@ export function createSessionSupervisor(ports:SessionPorts) {
     if(classifyAuth(url,method,origin))throw new Error("explicit-auth-required");
     if(!identity||availability!=="foreground"||!active||auth)throw new Error("session-unavailable");
     const owner=identity,captured=generation,prepared=options(init,owner.binding);
-    const raw=Promise.resolve().then(()=>ports.transport(url,prepared));inFlight.add(raw);
+    const raw=bounded(url,prepared);inFlight.add(raw);
     let response:Response;
     try{response=await raw;}finally{inFlight.delete(raw);}
     const owned=()=>captured===generation&&identity===owner;
     if(!owned())throw new Error("stale-owner");
-    try{validResponse(response);if(response.headers.get(H.binding)!==owner.binding||response.status===401)throw new Error("identity-mismatch");}
+    let claimed:string|null=null;
+    try{validResponse(response);claimed=response.headers.get(H.binding);if(response.status===401||(claimed!==null&&claimed!==owner.binding))throw new Error("identity-mismatch");}
     catch {protect("identity-mismatch");await reconcile(false);throw new Error("untrusted-response");}
+    // No binding header at all (a gateway error, a WAF or portal page, Django's own binding-less 409 or 5xx) names no session.
+    // Reject it, then re-observe: an unchanged owner is restored without a manual retry, any other one is revoked.
+    if(claimed===null){protect("invalid-response");await reconcile(true);throw new Error("untrusted-response");}
     await waitPaused(owned);
     if(!owned()||availability!=="foreground"||auth)throw new Error("session-unavailable");
     ports.onTheme(response.headers.get("X-HyperTodo-Theme"));
@@ -331,11 +346,11 @@ export function createSessionSupervisor(ports:SessionPorts) {
           if (!current() || url.origin !== origin || url.username || url.password || url.hash || url.pathname !== "/hv/recovery/" || !["", "?screen=login"].includes(url.search) || (init.method ?? "GET").toUpperCase() !== "GET" || init.body != null) throw new Error("recovery-unavailable");
           const headers = new Headers(init.headers);
           headers.set("X-HyperTodo-Recovery", "login-v1");
-          const raw = Promise.resolve().then(() => ports.transport(url.toString(), options({
+          const raw = bounded(url.toString(), options({
             ...init,
             method: "GET",
             headers
-          }, owner.binding)));
+          }, owner.binding));
           inFlight.add(raw);
           let response: Response;
           try {

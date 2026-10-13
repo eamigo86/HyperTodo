@@ -24,6 +24,14 @@ Parser tests use controlled HTTP and native ports, not native network proof.
   form and displays one safe notice.
   A canceled/timed-out POST is not proof of server rollback; there is no automatic
   POST replay.
+- Every ordinary and neutral HXML request has a 30 s deadline on the supervisor's
+  clock, because the platform adds none and a request whose headers never arrive
+  would hold logout and recovery forever. The transport is aborted, the caller gets
+  a rejection and the session state is unchanged. A response with no binding header
+  at all (a gateway error, a WAF or portal page) is rejected the same way and the
+  owner is then re-observed: an unchanged binding restores the foreground without a
+  manual retry, a different one revokes it. A present but different binding, or a
+  401, still waits for an explicit Retry.
 - Native probes, unlock and picker continuations use captured source authority.
   A removed source or old generation cannot read credentials, update XML, submit
   into another account or display a late snackbar. Settings clears require the
@@ -105,9 +113,12 @@ logout, expiry or its cause. **Retry session confirmation** retries confirmation
 **Sign in** remains an explicit recovery action, never an automatic redirect.
 
 Paused sessions retain their paused heading. Initial `bootstrap-required` retains
-the confirming heading because no failure is known yet. A retry can retain the
-last failure message while working; the UI does not infer a new busy state.
-Identity, retained Root, drafts, buttons and auth policy are unchanged.
+the confirming heading because no failure is known yet, and offers neither Retry
+nor Sign in: there is nothing to retry, and Sign in would invalidate the bootstrap in
+flight and send an account with a valid cookie to the login screen. Both appear once
+a confirmation has failed. A retry can retain the last failure message while
+working; the UI does not infer a new busy state. Otherwise identity, retained Root,
+drafts, buttons and auth policy are unchanged.
 
 Real-SDK tests cover two lifecycle cycles with a resource notice, a held fragment,
 three controlled failed confirmation attempts, and explicit retry preserving the

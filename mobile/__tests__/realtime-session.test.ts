@@ -273,3 +273,92 @@ it("publishes language only alongside an owned ordinary response, never stale A 
  await supervisor.bootstrap();expect(language).not.toHaveBeenCalled();const first=supervisor.request('/hv/tasks/');await tick();const owned=response('<view/>',A);owned.headers.set('Content-Language','es');pending.resolve(owned);await first;expect(language).toHaveBeenCalledWith('es');
  const stale=deferred<Response>();transport.mockImplementationOnce(()=>stale.promise);const request=supervisor.request('/hv/tasks/');await tick();supervisor.invalidate();binding=B;const late=response('<view/>',A);late.headers.set('Content-Language','en');stale.resolve(late);await expect(request).rejects.toThrow();expect(language.mock.calls).toEqual([['es']]);
 });
+
+// Ordinary HXML requests need a deadline of their own: the platform adds none, and a
+// request whose headers never arrive would hold the in-flight set, and with it logout
+// and recovery, forever.
+const settle=(pending:Promise<unknown>)=>pending.then(()=>"settled",(error:Error)=>error.message);
+
+it("bounds an ordinary request: the stalled transport is aborted at the deadline and logout is no longer held",async()=>{
+ const {supervisor,transport,timers,setAuth}=fixture();await supervisor.bootstrap();
+ transport.mockImplementationOnce(()=>new Promise<Response>(()=>{}));
+ const stalled=settle(supervisor.request("/hv/tasks/"));await tick();
+ const signal=transport.mock.calls[1][1].signal!;expect(signal.aborted).toBe(false);
+ setAuth(200,"logout-ok",logout);const signOut=supervisor.authenticate("/hv/logout/",{method:"POST"});await tick();
+ expect(transport.mock.calls.filter(([url])=>url.endsWith("/logout/"))).toHaveLength(0);
+ timers.find(timer=>timer.ms===30000&&timer.active)!.run();
+ await expect(stalled).resolves.toBe("request-timeout");expect(signal.aborted).toBe(true);
+ await expect(signOut).resolves.toMatchObject({kind:"transition"});
+ expect(transport.mock.calls.filter(([url])=>url.endsWith("/logout/"))).toHaveLength(1);
+});
+
+it("reports the deadline, not the transport's AbortError, when the transport honours the signal",async()=>{
+ const {supervisor,transport,timers}=fixture();await supervisor.bootstrap();
+ transport.mockImplementationOnce((_url,init)=>new Promise<Response>((_resolve,reject)=>{init.signal!.addEventListener("abort",()=>reject(new Error("AbortError")));}));
+ const stalled=settle(supervisor.request("/hv/tasks/"));await tick();
+ timers.find(timer=>timer.ms===30000&&timer.active)!.run();
+ await expect(stalled).resolves.toBe("request-timeout");expect(supervisor.snapshot()).toMatchObject({availability:"foreground",reason:null});
+});
+
+it("lets recovery start again once a stalled request has hit its deadline",async()=>{
+ const {supervisor,transport,timers}=fixture();await supervisor.bootstrap();
+ transport.mockImplementationOnce(()=>new Promise<Response>(()=>{}));
+ const stalled=settle(supervisor.request("/hv/tasks/"));await tick();
+ await expect(supervisor.beginRecovery()).resolves.toMatchObject({kind:"busy"});
+ timers.find(timer=>timer.ms===30000&&timer.active)!.run();await stalled;
+ await expect(supervisor.beginRecovery()).resolves.toMatchObject({kind:"recovery"});
+});
+
+it("keeps the caller's own abort working and cancels the deadline once the headers arrive",async()=>{
+ const {supervisor,transport,timers}=fixture();await supervisor.bootstrap();
+ transport.mockImplementationOnce((_url,init)=>new Promise<Response>((_resolve,reject)=>{init.signal!.addEventListener("abort",()=>reject(new Error("caller-aborted")));}));
+ const caller=new AbortController(),aborted=settle(supervisor.request("/hv/tasks/",{signal:caller.signal}));await tick();
+ caller.abort();await expect(aborted).resolves.toBe("caller-aborted");
+ await supervisor.request("/hv/tasks/");
+ expect(timers.filter(timer=>timer.ms===30000&&timer.active)).toHaveLength(0);
+});
+
+it("bounds the neutral recovery GET too, so a stalled one cannot block the recovery sign-in",async()=>{
+ const {supervisor,transport,timers}=fixture();await supervisor.bootstrap();
+ const recovery=await supervisor.beginRecovery();if(recovery.kind!=="recovery")throw new Error("Expected explicit recovery");
+ transport.mockImplementationOnce(()=>new Promise<Response>(()=>{}));
+ const stalled=settle(recovery.handle.fetch("/hv/recovery/"));await tick();
+ const signIn=recovery.handle.authenticate("/hv/login/",{method:"POST"});await tick();
+ expect(transport.mock.calls.filter(([url])=>url.endsWith("/login/"))).toHaveLength(0);
+ timers.find(timer=>timer.ms===30000&&timer.active)!.run();
+ await expect(stalled).resolves.toBe("request-timeout");
+ await expect(signIn).resolves.toMatchObject({kind:"transition"});
+});
+
+// A response with no binding header at all (a gateway error, a WAF or portal page) says
+// nothing about who owns the session. It is rejected, then the owner is re-observed.
+it("rejects a binding-less gateway response, then restores the unchanged owner without a manual retry",async()=>{
+ const {supervisor,transport,theme,identity}=fixture();await supervisor.bootstrap();
+ const gateway=response("<html>Bad gateway</html>",A,502);gateway.headers.delete(H.binding);transport.mockResolvedValueOnce(gateway);
+ await expect(supervisor.request("/hv/tasks/")).rejects.toThrow("untrusted-response");
+ expect(gateway.text).not.toHaveBeenCalled();expect(theme).not.toHaveBeenCalled();
+ expect(supervisor.snapshot()).toMatchObject({availability:"foreground",reason:null,identity:{binding:A,generation:1}});expect(identity).toHaveBeenCalledTimes(1);
+ await expect(supervisor.request("/hv/tasks/")).resolves.toBeDefined();
+});
+
+it("still revokes the owner when the re-observation after a binding-less response shows another binding",async()=>{
+ const {supervisor,transport,setBinding,identity}=fixture();await supervisor.bootstrap();
+ const mismatch=response('{"error":"session-binding-mismatch"}',A,409);mismatch.headers.delete(H.binding);transport.mockResolvedValueOnce(mismatch);setBinding(B);
+ await expect(supervisor.request("/hv/tasks/")).rejects.toThrow("untrusted-response");
+ expect(supervisor.snapshot()).toMatchObject({availability:"uncertain",reason:"identity-mismatch",identity:null});expect(identity).toHaveBeenLastCalledWith(null);
+});
+
+it.each([["a different binding",B,200],["a 401 that names the owner",A,401],["a binding-less 401",null,401]] as const)("keeps the shield after %s until an explicit retry confirms the owner",async(_label,binding,status)=>{
+ const {supervisor,transport}=fixture();await supervisor.bootstrap();
+ const refused=response("<view/>",binding??A,status);if(binding===null)refused.headers.delete(H.binding);transport.mockResolvedValueOnce(refused);
+ await expect(supervisor.request("/hv/tasks/")).rejects.toThrow("untrusted-response");
+ expect(supervisor.snapshot()).toMatchObject({availability:"uncertain",reason:"identity-mismatch"});
+ await expect(supervisor.retryConfirmation()).resolves.toMatchObject({kind:"held"});expect(supervisor.snapshot()).toMatchObject({availability:"foreground",reason:null});
+});
+
+it.each([["a 401",A,401],["a different binding",B,200]] as const)("revokes the owner on %s once the observation shows another binding",async(_label,binding,status)=>{
+ const {supervisor,transport,setBinding,identity}=fixture();await supervisor.bootstrap();
+ transport.mockResolvedValueOnce(response("<view/>",binding,status));setBinding(B);
+ await expect(supervisor.request("/hv/tasks/")).rejects.toThrow("untrusted-response");
+ expect(supervisor.snapshot()).toMatchObject({availability:"uncertain",reason:"identity-mismatch",identity:null});expect(identity).toHaveBeenLastCalledWith(null);
+});

@@ -876,6 +876,10 @@ it('does not label the initial unconfirmed bootstrap as a failed attempt', async
     expect(f.session.snapshot().session).toMatchObject({ availability: 'uncertain', reason: 'bootstrap-required' });
     expect(ui.getByText('Confirming your session')).toBeTruthy();
     expect(ui.queryByText('We could not confirm your session')).toBeNull();
+    // Nothing has failed yet. Sign in would invalidate the bootstrap in flight and send
+    // a user with a valid cookie to the login screen, so neither action is offered.
+    expect(ui.queryByLabelText('Retry session confirmation')).toBeNull();
+    expect(ui.queryByLabelText('Sign in')).toBeNull();
     await act(async () => {
       release(raw(JSON.stringify({ version: 1, authenticated: false, binding: A }), A));
     });

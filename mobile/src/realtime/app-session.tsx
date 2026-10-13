@@ -359,7 +359,8 @@ export function AppSessionSurface({
                 ? state.labels.unconfirmed
                 : state.labels.confirming}
           </Text>
-          {state.session.availability === "uncertain" ? (
+          {/* Nothing has failed during bootstrap, and Sign in would invalidate it in flight and send a valid cookie to the login screen. */}
+          {state.session.availability === "uncertain" && state.session.reason !== "bootstrap-required" ? (
             <>
               <Pressable
                 accessibilityRole="button"
