@@ -48,15 +48,28 @@ Scan the QR and sign in. This uses `--go` plus explicit local HTTP opt-in; the r
 ```python
 HYPERVIEW["REALTIME"] = {
     "REDIS_URL": REDIS_URL,
-    "NAMESPACE": "hypertodo-development",
+    "NAMESPACE": os.environ.get(
+        "HYPERTODO_REALTIME_NAMESPACE", "hypertodo-development"
+    ),
 }
 ```
 
-`REDIS_URL` comes from the environment and defaults to `redis://127.0.0.1:6379/15`; Make forwards its `REDIS_URL` variable to every launcher. All writers, including Admin and management commands, must use the same endpoint and namespace as stream workers. Review the namespace for each separate deployment: Redis PubSub is not isolated by database number. Do not mix old/new package workers on one namespace.
+`REDIS_URL` comes from the environment and defaults to `redis://127.0.0.1:6379/15`; Make forwards its `REDIS_URL` variable to every launcher. All writers, including Admin and management commands, must use the same endpoint and namespace as stream workers. Give each separate deployment its own `HYPERTODO_REALTIME_NAMESPACE`: Redis PubSub is not isolated by database number. Do not mix old/new package workers on one namespace.
 
 Realtime does not turn on template caching. `backend-run` and `backend-run-sse` use local-memory cache by default; `backend-run-redis` and `backend-run-device` enable Redis cache. Redis must already be available for notifications even with local-memory caching. If Redis is unavailable, committed database changes are not rolled back and notifications are not guaranteed; a later successful HTTP refresh still reads the effective template. No launcher provides replay.
 
 Auth, database sessions, CSRF, cache and schema extensions remain in effect. Test-only settings isolate database/cache and disable transport unless a test explicitly enables it; they are not application profiles. Only DEBUG enables the development Admin/static handler; production assets belong to the web server/CDN.
+
+### Environment variables
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `DJANGO_DEBUG` | `1` | `0` turns DEBUG off and marks the session and CSRF cookies `Secure`. Startup then refuses the public development secret key. |
+| `DJANGO_SECRET_KEY` | public development key | Required when `DJANGO_DEBUG=0`, also for `manage.py` commands and `make backend-seed DJANGO_DEBUG=0`. |
+| `DJANGO_SECURE_PROXY_SSL_HEADER` | unset | META name of the header a TLS-terminating proxy sets, for example `HTTP_X_FORWARDED_PROTO`; a value of `https` then counts as a secure request. Set it only behind a proxy that overwrites that header. |
+| `HYPERTODO_REALTIME_NAMESPACE` | `hypertodo-development` | Redis PubSub namespace shared by every writer and stream worker of one deployment. |
+
+Django's four standard password validators are active for Admin and `changepassword`. `seed_demo` sets its development passwords with `set_password`, which skips them.
 
 ## Check a real Admin update
 
