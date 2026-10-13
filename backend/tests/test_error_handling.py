@@ -262,6 +262,31 @@ def test_a_refused_form_echoes_the_text_django_validated_not_the_raw_submission(
     assert Task.objects.get(user=user).title == "t" * 150
 
 
+@pytest.mark.parametrize(
+    ("field", "tag", "posted"),
+    [
+        ("due_time", "text-field", " " * 62 + "9:30"),
+        ("due_date", "date-field", " " * 60 + "2026-09-07"),
+    ],
+)
+def test_a_padded_date_or_time_is_echoed_without_losing_its_meaning(
+    user, field, tag, posted
+):
+    # Django reads a date or a time stripped, but neither field has a `strip` flag. Cut
+    # raw at 65 characters the padded time came back as "9:3", which parses as 09:03.
+    client = Client()
+    client.force_login(user)
+    other = {name: v for name, v in DATE_AND_TIME.items() if name != field}
+
+    response = client.post("/hv/tasks/new/", {"title": "", **other, field: posted})
+
+    root = assert_hxml(response, status=422)
+    echoed = root.find(f".//hv:{tag}[@name='{field}']", NS).attrib["value"]
+    assert echoed == posted.strip()
+    created = client.post("/hv/tasks/new/", {"title": "Plan", **other, field: echoed})
+    assert_hxml(created, status=201)
+
+
 def test_notes_that_only_fit_once_stripped_come_back_whole(user):
     client = Client()
     client.force_login(user)

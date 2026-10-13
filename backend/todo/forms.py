@@ -75,9 +75,11 @@ class XmlSafeBoundField(forms.BoundField):
 
         A field that strips is echoed stripped, because that is the text Django
         validated: cutting the raw submission would drop valid text that sat behind
-        leading whitespace. The cut falls one character past the limit, so an
-        over-long value is echoed still over-long and a second Save refuses it again
-        instead of storing the cut text.
+        leading whitespace. Dates and times strip when they are parsed without saying
+        so, and are treated alike; cut raw, "9:30" behind 62 spaces would come back as
+        "9:3", which reads as another time. The cut falls one character past the limit,
+        so an over-long value is echoed still over-long and a second Save refuses it
+        again instead of storing the cut text.
 
         Returns:
             The bound submission or initial value, made XML-safe when it is text.
@@ -86,7 +88,9 @@ class XmlSafeBoundField(forms.BoundField):
         if not isinstance(value, str):
             return value
         if self.form.is_bound:
-            if getattr(self.field, "strip", False):
+            if getattr(self.field, "strip", False) or isinstance(
+                self.field, forms.fields.BaseTemporalField
+            ):
                 value = value.strip()
             limit = getattr(self.field, "max_length", None) or MAX_ECHO_CHARS
             value = value[: limit + 1]
