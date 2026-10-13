@@ -17,11 +17,12 @@ self-report remain separate for review.
 
 ## Run locally
 
-Use an existing Node 24 interpreter; no dependencies, installs or builds:
+Use an existing Node 22.19.0 interpreter (`mobile/.nvmrc`); no dependencies,
+installs or builds:
 
 ```sh
 cd "$REPO_ROOT" # absolute HyperTodo checkout
-NODE=${NODE:-node} # existing Node 24 interpreter
+NODE=${NODE:-node} # existing Node 22.19.0 interpreter
 "$NODE" --test mobile/test-support/realtime-native-server.test.cjs
 "$NODE" mobile/test-support/realtime-native-server.cjs --help
 "$NODE" mobile/test-support/realtime-native-server.cjs

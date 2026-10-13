@@ -27,7 +27,8 @@ Expo, DNS, a device, Redis or a backend, installs dependencies, or builds anythi
 
 ## Repeat checks without a native launch
 
-From the checkout root, use an existing Node 24 binary and dependency directory:
+From the checkout root, use an existing Node binary (the 22.19.0 that `mobile/.nvmrc`
+pins) and dependency directory:
 
 ```sh
 REPO_ROOT=$(pwd -P)
@@ -43,9 +44,12 @@ NATIVE_TEST_NODE_MODULES="$MODULES" "$NODE" --test \
 ```
 
 These tests copy source/templates into owned temporary directories, exercise
-relocation and rejection cases, and remove only their own test files. Four App
-suites read backend XML relative to their test files rather than the process's
-working directory or a maintainer's checkout. Existing full Jest/typecheck commands
+relocation and rejection cases, and remove only their own test files. Every Jest
+suite that reads backend files (`rg -l "../../backend" mobile/__tests__` lists them)
+resolves them relative to its test file rather than the process's working directory
+or a maintainer's checkout; the relocation test covers four of them
+(`realtime-sse-app`, `realtime-app-integration`, `realtime-app-hooks` and
+`realtime-session-recovery`). Existing full Jest/typecheck commands
 remain unchanged; an external readonly dependency root needs an explicit resolver
 adapter, not a symlink or a guessed `NODE_PATH` TypeScript override.
 

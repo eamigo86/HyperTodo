@@ -73,7 +73,9 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- Gate 0 only: declarations do not register mobile components or enable SSE. -->
+  <!-- Realtime boundary markup. These declarations only validate the HXML: the mobile
+       host registers app:realtime and app:realtime-page (mobile/src/realtime/gate.tsx),
+       and the backend serves SSE through HYPERVIEW["REALTIME"]. -->
   <xs:simpleType name="realtime-request-id">
     <xs:restriction base="xs:string">
       <xs:minLength value="1" />

@@ -15,7 +15,8 @@ Expo source 57.0.21 and native React Native 0.86.2 completed the isolated probe.
 The phone result matches the durable server record: its synthetic cookie was
 accepted by explicit Expo fetch, two reads were independently ACK-gated, and
 abort produced a client-side stream close with zero active server streams.
-See the [reviewed native result](../../../../evidence/gate0-native/native-ios-result.md).
+See the reviewed native result (`evidence/gate0-native/native-ios-result.md`, kept
+outside this repository).
 
 This does not prove Android, real application session/auth transitions, native
 Hyperview layout/ACK races, broad action coverage, notices/accessibility or

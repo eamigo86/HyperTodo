@@ -123,8 +123,8 @@ this same file. So localhost and cleartext are an explicit developer opt-in inst
    **Keep the server gate until 1.2.0 is the installed floor.**
 
 10. **Before the first build**, confirm what EAS uploads: this is a single git repo with `backend/` and
-   `mobile/` as siblings, and there is a large uncommitted working tree. Check the reported archive
-   size on the first `eas build`, and see `cli.requireCommit` if committed-only state is wanted.
+   `mobile/` as siblings. Check the reported archive size on the first `eas build`, and see
+   `cli.requireCommit` if committed-only state is wanted.
 
 11. **Known and accepted: OS chrome stays light while the app is dark.** The theme this app draws
     follows the SERVER preference (`todo/theme.py` → the stylesheet, `X-HyperTodo-Theme` → the native

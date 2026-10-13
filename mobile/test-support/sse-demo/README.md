@@ -60,7 +60,7 @@ Account expectations come from the official CLI flow, not its private auth files
 or from the manifest being checked.
 
 ```sh
-# From the HyperTodo checkout root, using an existing Node 24 interpreter.
+# From the HyperTodo checkout root, using an existing Node 22.19.0 interpreter.
 REPO_ROOT=$(pwd -P)
 NODE=${NODE:-node}
 HELPER="$REPO_ROOT/mobile/test-support/sse-demo"

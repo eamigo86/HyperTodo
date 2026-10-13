@@ -83,7 +83,8 @@ OS background/foreground cycle retained the updated Tasks screen; the own-topic
 subscriber count went1→0→1. The server then stopped, count returned0, and private
 SQLite/credentials were removed. No executable source changed for the run.
 
-Local execution report: [limited native proof](../../../evidence/environment/sse-demo-backend-retry-20260910/report.md).
-This worktree-only evidence link is not a published artifact or a promise that the
-example is still running. It does not claim Android native SSE, every race or a
-production deployment; the full automated gates remain separate evidence.
+Local execution report (limited native proof):
+`evidence/environment/sse-demo-backend-retry-20260910/report.md`, kept outside this
+repository. This worktree-only evidence is not a published artifact or a promise
+that the example is still running. It does not claim Android native SSE, every race
+or a production deployment; the full automated gates remain separate evidence.

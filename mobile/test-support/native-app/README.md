@@ -57,10 +57,11 @@ allocated fresh values, choose an unused launcher directory, and use `android`
 for that platform's guard. Do not derive expected account/source from the
 manifest being checked. No credentials or tokens belong here.
 
-4. With the existing Node24 binary and readonly dependency directory, run:
+4. With the existing Node 22.19.0 binary (`mobile/.nvmrc`) and readonly dependency
+   directory, run:
 
 ```sh
-# Run from the checkout root with an existing Node 24 binary.
+# Run from the checkout root with an existing Node 22.19.0 binary.
 REPO_ROOT=$(pwd -P)
 NODE=${NODE:-node}
 MODULES=${MODULES:-"$REPO_ROOT/mobile/node_modules"}
@@ -98,7 +99,8 @@ The older synthetic I/O entry and guard remain unchanged.
 
 ## Small native campaign
 
-Use the [run design](../../../../evidence/gate0-mobile/native-app-run-design.md):
+Use the run design (`evidence/gate0-mobile/native-app-run-design.md`, kept outside
+this repository):
 real login/refusal/logout/mismatch; page1 document refresh preserving filters;
 form notice/draft; representative append-first and reload-before-POST races;
 real focus/background/confirmation. Navigate and edit through the actual App,

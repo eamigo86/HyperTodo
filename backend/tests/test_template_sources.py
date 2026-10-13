@@ -132,6 +132,13 @@ def test_locmem_cache_is_invalidated_after_database_publication():
 
 @pytest.mark.redis
 def test_existing_redis_service_uses_isolated_namespace_without_flushing():
+    # The same opt-in as the other Redis tests: a plain `make backend-test` must not
+    # connect to whatever Redis happens to listen on this machine.
+    if os.environ.get("HYPERTODO_REDIS_INTEGRATION") != "1":
+        pytest.skip("Redis acceptance is explicitly opt-in")
+    assert os.environ.get("HYPERTODO_REDIS_TEST_OWNED") == "1", (
+        "Redis acceptance requires an explicitly owned disposable service"
+    )
     namespace = f"dj-hyperview-test-tests:{uuid4().hex}"
     redis_cache = {
         "default": {

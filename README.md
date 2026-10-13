@@ -22,15 +22,13 @@ not intended to be a reusable task-management product.
 - Light/dark themes, English/Spanish, avatars, biometrics and accessible native UI.
 
 Automated checks and manual device acceptance are separate; a passing XML or
-Jest test does not prove every native flow. Hyperview 0.112.0 retains the
-fragment-fetch cleanup introduced in 0.111.0; mounted regressions cover HTTP
-500, network rejection, retry and intentional sync drops. The 0.112.0 release
-removes `createTestProps` and maps XML `id` to native `testID` on its components;
-HyperTodo's custom components already map their IDs to `testID`. The Django
-backend still pins published dj-hyperview 0.1.0b2: upstream's 0.111.0 and
-0.112.0 XSD resources are byte-identical, so its corrected 0.111.0 schema
-remains the active contract. This does not change the SSE wire protocol or
-require a Navigation 7 migration.
+Jest test does not prove every native flow. Hyperview 0.112.0 keeps the 0.111.0
+fragment-fetch cleanup (covered by mounted regressions) and, replacing
+`createTestProps`, maps XML `id` to `testID`, as HyperTodo's custom components
+already did. The backend pins the published dj-hyperview 0.1.0b2, whose
+corrected 0.111.0 XSD is byte-identical to upstream's 0.112.0 one and stays the
+contract. None of this changes the SSE wire protocol or needs a Navigation 7
+migration.
 
 ## Repository layout
 
