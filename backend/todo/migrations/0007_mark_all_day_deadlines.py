@@ -12,6 +12,10 @@ The local day is the server's TIME_ZONE, the only zone the form ever used. The d
 rebuilt from its local date and never by adding 24 hours, which would slip an hour
 into the next day when the clocks change.
 
+A day whose clocks skip 00:00 (Africa/Cairo on a spring Friday) never had a midnight
+to store, so a date-only deadline the old form saved there sits at 01:00 and stays a
+timed one.
+
 The two ends of the calendar are left alone. The last instant of 9999-12-31 in New
 York is in year 10000 once it is converted to UTC, and the first days of year 1 have
 no local reading west of Greenwich; either raises OverflowError (or, inside SQLite's
@@ -78,7 +82,9 @@ def restore_midnight_deadlines(apps, schema_editor):
     A day whose clocks skip 00:00 (Africa/Cairo on a spring Friday) has no start to
     go back to: 00:00 would read 01:00, and the forward migration, which only moves
     rows at midnight, would never flag that row again. Such a row keeps its flag and
-    its end of day, which is exactly what a later forward run expects to find.
+    its end of day, which is exactly what a later forward run expects to find. The same
+    goes for a day whose start lies below CONVERTIBLE_FROM: the forward run never reads
+    that far back, so an unflagged row there would lose the flag for good.
     """
     tasks = apps.get_model("todo", "Task")._default_manager.using(
         schema_editor.connection.alias
@@ -88,7 +94,10 @@ def restore_midnight_deadlines(apps, schema_editor):
             start = timezone.make_aware(datetime.combine(day, time.min))
             # Through UTC, as the database stores it: an aware value already in the
             # local zone would read back as the 00:00 it was built with.
-            if timezone.localtime(start.astimezone(UTC)).time() != time.min:
+            start_utc = start.astimezone(UTC)
+            if start_utc < CONVERTIBLE_FROM or (
+                timezone.localtime(start_utc).time() != time.min
+            ):
                 continue
             tasks.filter(pk=pk).update(due_all_day=False, due_at=start)
 

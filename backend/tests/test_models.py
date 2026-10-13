@@ -440,3 +440,22 @@ def test_migrate_converts_forwards_and_restores_backwards_the_way_it_really_runs
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+def test_reversing_keeps_the_flag_where_the_start_would_fall_below_year_1(
+    user, settings
+):
+    # The end of 0001-01-01 in New York is 0001-01-02 04:56 UTC, so the row is read,
+    # but its day starts at 0001-01-01 04:56 UTC: below what the forward migration
+    # reads. Unflagged there, the row would never be flagged again.
+    settings.TIME_ZONE = "America/New_York"
+    end = local(date(1, 1, 1), time.max)
+    task = Task.objects.create(user=user, title="Epoch", due_at=end, due_all_day=True)
+
+    run_backwards()
+
+    task.refresh_from_db()
+    assert (task.due_all_day, task.due_at) == (True, end)
+    run_forwards()
+    task.refresh_from_db()
+    assert (task.due_all_day, task.due_at) == (True, end)
