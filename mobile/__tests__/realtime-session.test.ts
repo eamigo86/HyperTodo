@@ -99,11 +99,20 @@ it("never adopts unexpected A after capturing successful B, nor executes another
  expect(transport.mock.calls.filter(([url])=>url.endsWith("/login/"))).toHaveLength(1);
 });
 
-it.each([["password",422,"password-invalid",false],["password",403,"",false],["biometric",401,"biometric-invalid",true],["biometric",429,"biometric-throttled",false]] as const)("preserves %s/%s panels and credential clear policy",async(kind,status,outcome,clear)=>{
+it.each([["password",422,"password-invalid",false],["password",429,"password-throttled",false],["password",403,"",false],["biometric",401,"biometric-invalid",true],["biometric",429,"biometric-throttled",false]] as const)("preserves %s/%s panels and credential clear policy",async(kind,status,outcome,clear)=>{
  const {supervisor,setAuth,store,identity}=fixture();await supervisor.bootstrap();const body=status===403?"CSRF refusal":panel(clear);setAuth(status,outcome,body);
  const result=await supervisor.authenticate(kind==="password"?"/hv/login/":"/hv/biometric/login/",{method:"POST"});expect(result).toMatchObject({kind:status===403?"refused":"panel",status,body});
  expect(store.save).not.toHaveBeenCalled();expect(store.clear).toHaveBeenCalledTimes(clear?1:0);expect(identity).toHaveBeenCalledTimes(1);expect(supervisor.snapshot().identity?.binding).toBe(A);
+ // A refused attempt is an ordinary panel: no uncertainty shield, same owner.
+ expect(supervisor.snapshot()).toMatchObject({availability:"foreground",reason:null,generation:1});
  if(result.kind==="panel"&&clear){await supervisor.consumeEffect(result.receipt);expect(store.clear).toHaveBeenCalledTimes(1);}
+});
+
+it("fails closed on a 429 without the exact throttle outcome: shielded, no panel, nothing stored or published",async()=>{
+ const {supervisor,setAuth,store,identity}=fixture();await supervisor.bootstrap();setAuth(429,"password-unknown",panel());
+ await expect(supervisor.authenticate("/hv/login/",{method:"POST"})).resolves.toMatchObject({kind:"uncertain"});
+ expect(supervisor.snapshot()).toMatchObject({availability:"uncertain",reason:"network-uncertain"});
+ expect(store.save).not.toHaveBeenCalled();expect(store.clear).not.toHaveBeenCalled();expect(identity).toHaveBeenCalledTimes(1);
 });
 
 it("retains biometric enrollment on logout and clears password opt-out only once",async()=>{

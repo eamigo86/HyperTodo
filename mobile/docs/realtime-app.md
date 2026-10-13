@@ -17,8 +17,11 @@ Parser tests use controlled HTTP and native ports, not native network proof.
 - Inactive, background and unknown initial AppState retain an opaque accessible
   shield. Pausing preserves the Root, navigation stack and drafts; foreground
   confirms the same owner. Revocation cannot restart ordinary bootstrap.
-- Matching422/401/429 panels use the captured operation and real layout.401 clears
-  credentials once;429 does not.403 keeps the form and displays one safe notice.
+- Matching 422/401/429 panels (`password-invalid`, `password-throttled`,
+  `biometric-invalid`, `biometric-throttled`) use the captured operation and real
+  layout. Only the 401 clears credentials, once; neither 429 does, and a 429 that
+  lacks its exact throttle outcome is uncertain rather than a panel. 403 keeps the
+  form and displays one safe notice.
   A canceled/timed-out POST is not proof of server rollback; there is no automatic
   POST replay.
 - Native probes, unlock and picker continuations use captured source authority.

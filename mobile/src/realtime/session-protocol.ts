@@ -84,7 +84,8 @@ export function parseAuthBody(kind:AuthKind,status:number,outcome:string|null,bo
     if(behaviors.length!==2||!attributes(behaviors[0],{trigger:"load",action:"dispatch-event","event-name":"session-changed",once:"true"})||!attributes(behaviors[1],{trigger:"load",href:isLogout?"/hv/login/":"/hv/dashboard/",action:"reload"}))throw new Error("invalid-auth-transition");
     return {kind:"success",effect};
   }
-  const panelOutcome=kind==="password"&&status===422&&outcome==="password-invalid"||kind==="biometric"&&status===401&&outcome==="biometric-invalid"||kind==="biometric"&&status===429&&outcome==="biometric-throttled";
+  // A throttled password attempt answers the same login panel; it changes no session and stores nothing.
+  const panelOutcome=kind==="password"&&status===422&&outcome==="password-invalid"||kind==="password"&&status===429&&outcome==="password-throttled"||kind==="biometric"&&status===401&&outcome==="biometric-invalid"||kind==="biometric"&&status===429&&outcome==="biometric-throttled";
   if(!panelOutcome||root.getAttribute("id")!=="login-panel")throw new Error("invalid-auth-outcome");
   const stores=Array.from(root.getElementsByTagNameNS(HV,"behavior")).filter(node=>node.getAttribute("action")==="store-biometric-token");
   const clears=kind==="biometric"&&status===401;

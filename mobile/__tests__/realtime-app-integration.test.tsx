@@ -124,7 +124,8 @@ function fixture() {
         authenticated = true;
         return raw(loginTransition, B, 200, 'password-ok');
       }
-      return status === 403 ? raw('<view xmlns="' + HV + '"><text>Private refusal</text></view>', A, 403) : raw(loginPanel(id, 'Rejected input'), A, status, 'password-invalid');
+      // Mirrors the backend: a throttled attempt answers the same login panel with its own copy and outcome.
+      return status === 403 ? raw('<view xmlns="' + HV + '"><text>Private refusal</text></view>', A, 403) : status === 429 ? raw(loginPanel(id, 'Too many sign-in attempts. Try again later.'), A, 429, 'password-throttled') : raw(loginPanel(id, 'Rejected input'), A, status, 'password-invalid');
     }
     observedReady = session.snapshot().session.rootReady;
     return raw(doc(id, authenticated), binding);
@@ -257,6 +258,30 @@ it("preserves422 panel opt-in and submits its actual subsequent form", async () 
     expect(posts).toHaveLength(2);
     expect(new URLSearchParams(posts[1][1]!.body as string).get('enable_biometrics')).toBe('on');
     expect(new URLSearchParams(posts[1][1]!.body as string).get('username')).toBe('second attempt');
+  } finally {
+    ui.unmount();
+  }
+});
+it("renders the throttled 429 password panel instead of the session shield and accepts the next attempt", async () => {
+  const f = fixture();
+  f.setStatus(429);
+  const ui = mount(f.session);
+  try {
+    await ui.findByText('Login');
+    fireEvent.changeText(ui.getByPlaceholderText('Password'), 'entered');
+    fireEvent.press(ui.getByText('Sign in'));
+    await ui.findByText('Too many sign-in attempts. Try again later.');
+    expect(ui.queryByLabelText('Session protection')).toBeNull();
+    expect(ui.queryByText('We could not confirm your session')).toBeNull();
+    expect(f.session.snapshot().session).toMatchObject({ availability: 'foreground', reason: null });
+    expect(f.session.snapshot().session.identity).toMatchObject({ binding: A });
+    expect(f.save).not.toHaveBeenCalled();
+    expect(f.clear).not.toHaveBeenCalled();
+    f.setStatus(200);
+    fireEvent.press(ui.getByText('Sign in'));
+    await ui.findByText('Account B');
+    expect(f.http.mock.calls.filter(([, init]) => (init?.method ?? '').toUpperCase() === 'POST')).toHaveLength(2);
+    expect(f.save).toHaveBeenCalledTimes(1);
   } finally {
     ui.unmount();
   }

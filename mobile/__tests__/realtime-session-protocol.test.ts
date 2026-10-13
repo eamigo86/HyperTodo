@@ -34,6 +34,7 @@ it("consumes the actual login/logout template shapes without exposing successful
 it("preserves refusal statuses and exact credential-clear policy",()=>{
  expect(parseAuthBody("password",422,"password-invalid",panel())).toMatchObject({kind:"panel",effect:null,body:panel()});
  expect(parseAuthBody("biometric",401,"biometric-invalid",panel(true))).toMatchObject({kind:"panel",effect:{kind:"clear"}});
+ expect(parseAuthBody("password",429,"password-throttled",panel())).toMatchObject({kind:"panel",effect:null,body:panel()});
  expect(parseAuthBody("biometric",429,"biometric-throttled",panel())).toMatchObject({kind:"panel",effect:null});
  expect(parseAuthBody("password",403,null,"CSRF verification failed")).toEqual({kind:"refused",effect:null,body:"CSRF verification failed"});
 });
@@ -42,6 +43,12 @@ it.each([
  ["password",200,"biometric-ok",login],
  ["biometric",401,"biometric-invalid",panel()],
  ["biometric",429,"biometric-throttled",panel(true)],
+ ["password",429,"password-throttled",panel(true)],
+ ["password",429,"password-unknown",panel()],
+ ["password",429,"password-invalid",panel()],
+ ["password",429,"biometric-throttled",panel()],
+ ["biometric",429,"password-throttled",panel()],
+ ["logout",429,"password-throttled",panel()],
  ["password",422,"password-invalid",panel(true)],
  ["password",200,"password-ok",login.replace(token,"invalid token")],
  ["password",200,"password-ok",login.replace('action="reload"','action="unknown"')],
@@ -50,6 +57,10 @@ it.each([
  ["password",200,"password-ok","<broken"],
 ])("rejects malformed or mismatched auth metadata/body without an effect: %s/%s",(kind,status,outcome,body)=>{
  expect(()=>parseAuthBody(kind as "password",Number(status),String(outcome),String(body))).toThrow();
+});
+
+it("fails closed on a 429 that does not carry the exact throttle outcome",()=>{
+ for(const outcome of [null,"","password-ok","PASSWORD-THROTTLED"])expect(()=>parseAuthBody("password",429,outcome,panel())).toThrow("invalid-auth-outcome");
 });
 
 it("enforces the auth limit in UTF-8 bytes rather than Content-Length or code units",()=>{
