@@ -21,7 +21,7 @@ async function fixture(){
  return{supervisor,native,save,clear,notice,notifyResources,submit,source,bindSource,updateRoot,element,run,doc:()=>doc,setReceipt:(value:object|null)=>{receipt=value;},settings:()=>{settings=true;},remove:()=>{alive=false;},blur:()=>{focused=false;},setBinding:(value:string)=>{binding=value;},transport};
 }
 
-it("registers only the five existing app actions and captures a root generation",async()=>{
+it("registers only the six existing app actions and captures a root generation",async()=>{
  const f=await fixture();f.supervisor.invalidate();f.setBinding(B);await f.supervisor.foreground();await f.run("biometric-unlock");await f.run("pick-avatar");
  expect(f.bindSource).not.toHaveBeenCalled();expect(f.native.unlock).not.toHaveBeenCalled();expect(f.native.pick).not.toHaveBeenCalled();expect(f.notice).not.toHaveBeenCalled();
 });
@@ -63,7 +63,7 @@ it("clears a missing credential only with the current lease and reports safe cur
 it("collects probe results before one public DOM update without opting in",async()=>{
  const f=await fixture(),types=deferred<number[]>();f.native.supportedTypes.mockImplementationOnce(()=>types.promise);const task=f.run("probe-biometrics");await tick();
  expect(f.doc().getElementById("available")!.getAttribute("hide")).toBe("true");types.resolve([2]);await task;
- expect(f.updateRoot).toHaveBeenCalledTimes(1);expect(f.doc().getElementById("available")!.getAttribute("hide")).toBe("false");expect(f.doc().getElementsByTagName("switch")[0].getAttribute("value")).toBe("off");
+ expect(f.updateRoot).toHaveBeenCalledTimes(1);expect(f.doc().getElementById("available")!.getAttribute("hide")).toBe("false");expect(f.doc().getElementById("token")!.getAttribute("hide")).toBe("false");expect(f.doc().getElementsByTagName("switch")[0].getAttribute("value")).toBe("off");
  expect(Array.from(f.doc().getElementsByTagName("image")).filter(e=>e.getAttribute("variant")).map(e=>e.getAttribute("hide"))).toEqual(["false","true"]);
 });
 
@@ -78,8 +78,14 @@ it.each(["hasHardware","isEnrolled","readToken","supportedTypes"] as const)("sto
  const order=["hasHardware","isEnrolled","readToken","supportedTypes"] as const;for(const next of order.slice(order.indexOf(stage)+1))expect(f.native[next]).not.toHaveBeenCalled();
 });
 
+it.each(["hasHardware","isEnrolled","readToken"] as const)("keeps the probe silent when %s rejects",async(stage)=>{
+ const f=await fixture();f.native[stage].mockRejectedValueOnce(new Error("native secret"));
+ await expect(f.run("probe-biometrics")).resolves.toBeUndefined();
+ expect(f.notice).not.toHaveBeenCalled();expect(f.updateRoot).not.toHaveBeenCalled();expect(f.doc().getElementById("available")!.getAttribute("hide")).toBe("true");
+});
+
 it("prepares an avatar draft but never persists or posts it",async()=>{
- const f=await fixture();await f.run("pick-avatar");expect(f.doc().getElementById("field")!.getAttribute("value")).toBe("YWJj");expect(f.doc().getElementById("preview")!.getAttribute("source")).toBe("data:image/jpeg;base64,YWJj");expect(f.doc().getElementById("current")!.getAttribute("hide")).toBe("true");expect(f.notice).toHaveBeenCalledWith({message:"Photo ready. Tap Save settings to keep it.",tone:"success"});expect(f.updateRoot).toHaveBeenCalledTimes(1);expect(f.transport).toHaveBeenCalledTimes(1);expect(f.save).not.toHaveBeenCalled();
+ const f=await fixture();await f.run("pick-avatar");expect(f.doc().getElementById("field")!.getAttribute("value")).toBe("YWJj");expect(f.doc().getElementById("preview")!.getAttribute("source")).toBe("data:image/jpeg;base64,YWJj");expect(f.doc().getElementById("preview")!.getAttribute("hide")).toBe("false");expect(f.doc().getElementById("current")!.getAttribute("hide")).toBe("true");expect(f.notice).toHaveBeenCalledWith({message:"Photo ready. Tap Save settings to keep it.",tone:"success"});expect(f.updateRoot).toHaveBeenCalledTimes(1);expect(f.transport).toHaveBeenCalledTimes(1);expect(f.save).not.toHaveBeenCalled();
 });
 
 it('marks the live avatar field before a real value edit, not for identical picker output',async()=>{

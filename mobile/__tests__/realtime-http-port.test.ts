@@ -15,6 +15,12 @@ it("provides bare same-origin HTTP without consuming or repainting a genuine res
  expect(Object.fromEntries(init.headers.entries())).toMatchObject({accept:"custom",origin:"https://app.test","x-app-version":"1.2.3","x-csrftoken":"csrf","content-type":"application/x-www-form-urlencoded"});
 });
 
+it("resolves a URL object and a Request against the base like a string",async()=>{
+ const transport=jest.fn().mockResolvedValue(response("<doc/>"));const http=createHyperviewHttpPort(BASE,transport,"v");
+ await http(new URL("tasks/",BASE));await http(new Request(BASE+"tasks/"));
+ expect(transport.mock.calls.map(([url])=>url)).toEqual([BASE+"tasks/",BASE+"tasks/"]);
+});
+
 it("denies foreign/userinfo HTTP destinations before forwarding cookies or headers",async()=>{
  const transport=jest.fn();const http=createHyperviewHttpPort(BASE,transport,"v");
  for(const url of ["https://foreign.test/hv/","https://user:secret@app.test/hv/","file:///hv/test"]){await expect(http(url,{headers:{[H.expected]:A}})).rejects.toThrow();}

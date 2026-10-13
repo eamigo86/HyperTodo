@@ -94,7 +94,8 @@ credential/theme keys. A test supplies its own origin, HTTP implementation,
 credential port, native port and theme store to the **same App and SDK**.
 
 - Create the credential port with a unique key and pass its `read` method
-  into the native adapter too. Never let probe/unlock fall through to the normal App credential (`sessionCredentials`).
+  into the native adapter too. Never let probe/unlock fall through to the
+  normal App credential (`sessionCredentials`).
 - Theme stores are lazy: importing App/theme does not access SecureStore. The
   injected provider covers existing shell hooks and retains exact palettes.
 - Without the `expo/fetch` stream port no SSE connection is opened; the
