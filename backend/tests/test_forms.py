@@ -57,6 +57,15 @@ def test_task_form_requires_date_when_time_is_present(user):
     assert "date" in form.errors["due_time"][0].lower()
 
 
+def test_an_unreadable_date_is_not_also_reported_as_missing(user):
+    form = TaskForm(
+        {"title": "Plan", "due_date": "next friday", "due_time": "14:30"}, user=user
+    )
+
+    assert not form.is_valid()
+    assert list(form.errors) == ["due_date"]
+
+
 def test_task_form_limits_categories_to_current_user(user, other_user):
     own = Category.objects.create(user=user, name="Own", color=Category.Color.MINT)
     foreign = Category.objects.create(

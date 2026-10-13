@@ -15,8 +15,9 @@ from dj_hyperview import (
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 from django.core.paginator import EmptyPage, Page, PageNotAnInteger, Paginator
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, QuerySet
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
@@ -25,9 +26,18 @@ from django.utils.cache import patch_cache_control
 from django.utils.translation import gettext as _
 from django.views.csrf import csrf_failure as default_csrf_failure
 from django.views.decorators.vary import vary_on_headers
+from django.views.defaults import page_not_found as default_not_found
+from django.views.defaults import server_error as default_server_error
 
 from .context_processors import THEME_COOKIE, THEME_COOKIE_MAX_AGE
-from .forms import AvatarForm, CategoryForm, LoginForm, ProfileForm, TaskForm
+from .forms import (
+    DUPLICATE_CATEGORY,
+    AvatarForm,
+    CategoryForm,
+    LoginForm,
+    ProfileForm,
+    TaskForm,
+)
 from .models import Category, Profile, Task
 from .realtime_changes import negotiated
 from .realtime_templates import realtime_context
@@ -75,6 +85,11 @@ MIN_AVATAR_UPLOAD_VERSION = (1, 2, 0)
 
 View = Callable[..., HttpResponse]
 PAGE_SIZE = 20
+# What a service raises when a parallel request (or a double tap) wrote between a
+# form's own check and the write: full_clean() sees the other row, or, when both got
+# past it, the database constraint does. Either is the form's answer to give, as a
+# 422 on the field, and neither is a server error.
+LOST_RACE = (ValidationError, IntegrityError)
 
 
 def _paginate(queryset: QuerySet, raw_page: str) -> Page:
@@ -1026,6 +1041,18 @@ def _task_form_response(
     )
 
 
+def _category_vanished(form: TaskForm) -> None:
+    """Refuse a task whose category was deleted after the form accepted it.
+
+    The refusal is the one the form itself gives for a category that is not on offer,
+    and the panel is rebuilt from the database, so the deleted choice is gone from it.
+
+    Args:
+        form: Valid form whose write lost the race.
+    """
+    form.add_error("category", form.fields["category"].error_messages["invalid_choice"])
+
+
 @hxml_endpoint(fragment=_is_post)
 def task_new(request: HttpRequest) -> HttpResponse:
     """Create a task owned by the authenticated user.
@@ -1042,20 +1069,24 @@ def task_new(request: HttpRequest) -> HttpResponse:
         return invalid
     form = TaskForm(request.POST or None, user=request.user)
     if request.method == "POST" and form.is_valid():
-        create_task(
-            user=request.user,
-            title=form.cleaned_data["title"],
-            notes=form.cleaned_data["notes"],
-            category=form.cleaned_data["category"],
-            due_at=form.cleaned_data["due_at"],
-            due_all_day=form.cleaned_data["due_all_day"],
-        )
-        return _template_response(
-            request,
-            "fragments/task_transition.xml",
-            {"notice_message": _("Task created.")},
-            status=201,
-        )
+        try:
+            create_task(
+                user=request.user,
+                title=form.cleaned_data["title"],
+                notes=form.cleaned_data["notes"],
+                category=form.cleaned_data["category"],
+                due_at=form.cleaned_data["due_at"],
+                due_all_day=form.cleaned_data["due_all_day"],
+            )
+        except LOST_RACE:
+            _category_vanished(form)
+        else:
+            return _template_response(
+                request,
+                "fragments/task_transition.xml",
+                {"notice_message": _("Task created.")},
+                status=201,
+            )
     return _task_form_response(
         request, form, status=422 if request.method == "POST" else 200
     )
@@ -1079,20 +1110,24 @@ def task_edit(request: HttpRequest, task_id: UUID) -> HttpResponse:
     task = get_object_or_404(Task, pk=task_id, user=request.user)
     form = TaskForm(request.POST or None, instance=task, user=request.user)
     if request.method == "POST" and form.is_valid():
-        update_task(
-            user=request.user,
-            task_id=task.pk,
-            title=form.cleaned_data["title"],
-            notes=form.cleaned_data["notes"],
-            category=form.cleaned_data["category"],
-            due_at=form.cleaned_data["due_at"],
-            due_all_day=form.cleaned_data["due_all_day"],
-        )
-        return _template_response(
-            request,
-            "fragments/task_transition.xml",
-            {"notice_message": _("Task updated.")},
-        )
+        try:
+            update_task(
+                user=request.user,
+                task_id=task.pk,
+                title=form.cleaned_data["title"],
+                notes=form.cleaned_data["notes"],
+                category=form.cleaned_data["category"],
+                due_at=form.cleaned_data["due_at"],
+                due_all_day=form.cleaned_data["due_all_day"],
+            )
+        except LOST_RACE:
+            _category_vanished(form)
+        else:
+            return _template_response(
+                request,
+                "fragments/task_transition.xml",
+                {"notice_message": _("Task updated.")},
+            )
     return _task_form_response(
         request, form, task=task, status=422 if request.method == "POST" else 200
     )
@@ -1236,17 +1271,21 @@ def category_new(request: HttpRequest) -> HttpResponse:
         return invalid
     form = CategoryForm(request.POST or None, user=request.user)
     if request.method == "POST" and form.is_valid():
-        create_category(
-            user=request.user,
-            name=form.cleaned_data["name"],
-            color=form.cleaned_data["color"],
-        )
-        return _template_response(
-            request,
-            "fragments/category_transition.xml",
-            {"notice_message": _("Category created.")},
-            status=201,
-        )
+        try:
+            create_category(
+                user=request.user,
+                name=form.cleaned_data["name"],
+                color=form.cleaned_data["color"],
+            )
+        except LOST_RACE:
+            form.add_error("name", DUPLICATE_CATEGORY)
+        else:
+            return _template_response(
+                request,
+                "fragments/category_transition.xml",
+                {"notice_message": _("Category created.")},
+                status=201,
+            )
     return _category_form_response(
         request, form, status=422 if request.method == "POST" else 200
     )
@@ -1270,17 +1309,21 @@ def category_edit(request: HttpRequest, category_id: UUID) -> HttpResponse:
     category = get_object_or_404(Category, pk=category_id, user=request.user)
     form = CategoryForm(request.POST or None, instance=category, user=request.user)
     if request.method == "POST" and form.is_valid():
-        update_category(
-            user=request.user,
-            category_id=category.pk,
-            name=form.cleaned_data["name"],
-            color=form.cleaned_data["color"],
-        )
-        return _template_response(
-            request,
-            "fragments/category_transition.xml",
-            {"notice_message": _("Category updated.")},
-        )
+        try:
+            update_category(
+                user=request.user,
+                category_id=category.pk,
+                name=form.cleaned_data["name"],
+                color=form.cleaned_data["color"],
+            )
+        except LOST_RACE:
+            form.add_error("name", DUPLICATE_CATEGORY)
+        else:
+            return _template_response(
+                request,
+                "fragments/category_transition.xml",
+                {"notice_message": _("Category updated.")},
+            )
     return _category_form_response(
         request,
         form,
@@ -1331,19 +1374,107 @@ def csrf_failure(request: HttpRequest, reason: str = "") -> HttpResponse:
     """
     if not request.path_info.startswith(HYPERVIEW_PATH_PREFIX):
         return default_csrf_failure(request, reason=reason)
-    # The ONLY place that sniffs Accept. CsrfViewMiddleware runs before any view, so
-    # hxml_endpoint has not set request.hv_fragment yet. Substring membership only,
-    # never first-match negotiation: the client sends "application/xml" FIRST in both
-    # fragment and document loads (hyperview/src/services/dom/parser.ts:120), so the
-    # first acceptable type is always the wrong signal. Do not copy this into
-    # _error_response or _require_user: no test sends an Accept header, so every one
-    # of them would silently flip to the document branch and hide this bug class.
-    request.hv_fragment = HYPERVIEW_FRAGMENT_MEDIA_TYPE in request.headers.get(
-        "Accept", ""
-    )
+    _declare_shape_from_accept(request)
     return _error_response(
         request, _("Security validation failed. Reload and try again."), 403
     )
+
+
+def _declare_shape_from_accept(request: HttpRequest) -> None:
+    """Choose the response shape for an answer given before any view declared one.
+
+    CsrfViewMiddleware and the URL resolver both answer before a view runs, so
+    hxml_endpoint has not set request.hv_fragment yet. Substring membership only,
+    never first-match negotiation: the client sends "application/xml" FIRST in both
+    fragment and document loads (hyperview/src/services/dom/parser.ts:120), so the
+    first acceptable type is always the wrong signal. A view that already declared
+    its shape (an exception raised inside it) keeps that one.
+
+    These answers are the ONLY place that sniffs Accept. Do not copy this into
+    _error_response or _require_user: no test sends an Accept header, so every one
+    of them would silently flip to the document branch and hide this bug class.
+
+    Args:
+        request: Request being refused outside any view.
+    """
+    if not hasattr(request, "hv_fragment"):
+        request.hv_fragment = HYPERVIEW_FRAGMENT_MEDIA_TYPE in request.headers.get(
+            "Accept", ""
+        )
+
+
+def _hxml_failure(
+    request: HttpRequest, message: str, status: int
+) -> HttpResponse | None:
+    """Answer a failure no view handled in HXML, or decline.
+
+    Django sends an unknown URL and an unhandled exception to project-wide handlers,
+    and its own page for either is HTML, which the Hyperview client cannot parse. Only
+    the Hyperview routes owe HXML; the rest of the project is read in a browser.
+
+    This runs when something is already wrong, so it must never be what fails. Any
+    error while building or rendering the answer (a broken error template, a database
+    that is down when the session is looked up) declines instead. The response is
+    rendered here, inside the guard, because Django renders what a handler returns
+    only after leaving it, where a failure would escape as an unhandled exception.
+
+    Args:
+        request: Request that failed.
+        message: Copy explaining the failure.
+        status: HTTP status for the response.
+
+    Returns:
+        A rendered HXML error, or None when Django's own page should be used.
+    """
+    if not request.path_info.startswith(HYPERVIEW_PATH_PREFIX):
+        return None
+    try:
+        _declare_shape_from_accept(request)
+        response = _error_response(request, message, status)
+        if not getattr(response, "is_rendered", True):
+            response.render()
+    except Exception:
+        return None
+    return response
+
+
+def not_found(request: HttpRequest, exception: Exception) -> HttpResponse:
+    """Answer a URL nothing serves (handler404), in HXML on a Hyperview route.
+
+    Views already turn their own Http404 into an HXML refusal through hxml_endpoint;
+    this covers the routes that do not exist. DEBUG keeps Django's technical page,
+    which Django renders without asking a handler.
+
+    Args:
+        request: Request no route matched.
+        exception: What Django raised to say so.
+
+    Returns:
+        HXML 404 on a Hyperview route, Django's own page elsewhere.
+    """
+    response = _hxml_failure(request, _("The requested item was not found."), 404)
+    return default_not_found(request, exception) if response is None else response
+
+
+def server_error(request: HttpRequest) -> HttpResponse:
+    """Answer an unhandled exception (handler500), in HXML on a Hyperview route.
+
+    Django logs the exception itself once this returns (django.request, with the
+    traceback), so answering it here swallows nothing. The stock Hyperview parser
+    throws ServerError for any 5xx whose content type is not application/xml and never
+    reads the body, so the HXML matters to clients that do parse it and costs the rest
+    nothing.
+
+    Args:
+        request: Request whose handling raised.
+
+    Returns:
+        HXML 500 on a Hyperview route, Django's own page elsewhere.
+    """
+    response = _hxml_failure(
+        request, _("We could not complete that request. Try again in a moment."), 500
+    )
+    return default_server_error(request) if response is None else response
 
 
 @hxml_endpoint

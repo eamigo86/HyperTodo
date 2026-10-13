@@ -2,7 +2,7 @@
 
 import binascii
 from base64 import b64decode
-from datetime import datetime, time
+from datetime import date, datetime, time
 from io import BytesIO
 
 from django import forms
@@ -38,6 +38,11 @@ MAX_SOURCE_PIXELS = 2048 * 2048
 ALLOWED_IMAGE_FORMATS = frozenset({"JPEG", "PNG", "WEBP"})
 NOT_AN_IMAGE = _("That file is not an image.")
 TOO_LARGE = _("That photo is too large. Pick a smaller one.")
+DUPLICATE_CATEGORY = _("A category with this name already exists.")
+# Far enough out for any real plan, near enough that every instant converts to UTC and
+# fits a database datetime column: 9999-12-31 raised OverflowError and answered a 500.
+FIRST_DUE_YEAR = 2000
+LAST_DUE_YEAR = 2100
 
 
 class XmlSafeBoundField(forms.BoundField):
@@ -115,7 +120,7 @@ class CategoryForm(XmlSafeFormMixin, forms.ModelForm):
         if self.instance.pk:
             matches = matches.exclude(pk=self.instance.pk)
         if matches.exists():
-            raise forms.ValidationError(_("A category with this name already exists."))
+            raise forms.ValidationError(DUPLICATE_CATEGORY)
         return name
 
 
@@ -207,6 +212,27 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
                     "due_time", local_due.time().replace(second=0, microsecond=0)
                 )
 
+    def clean_due_date(self) -> date | None:
+        """Keep the deadline inside the years the app can store and convert.
+
+        Returns:
+            The date, or None when no deadline was given.
+
+        Raises:
+            ValidationError: If the year is outside FIRST_DUE_YEAR..LAST_DUE_YEAR.
+        """
+        due_date = self.cleaned_data["due_date"]
+        if (
+            due_date is not None
+            and not FIRST_DUE_YEAR <= due_date.year <= LAST_DUE_YEAR
+        ):
+            raise forms.ValidationError(
+                _("Choose a due date between %(first)s and %(last)s."),
+                code="out_of_range",
+                params={"first": FIRST_DUE_YEAR, "last": LAST_DUE_YEAR},
+            )
+        return due_date
+
     def clean(self) -> dict[str, object]:
         """Combine validated deadline components.
 
@@ -221,7 +247,9 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
         cleaned = super().clean()
         due_date = cleaned.get("due_date")
         due_time = cleaned.get("due_time")
-        if due_time and not due_date:
+        # A date that failed its own field was given, just not usably: say that once,
+        # under the date, and not also that it is missing.
+        if due_time and not due_date and "due_date" not in self.errors:
             self.add_error("due_time", _("A due date is required when a time is set."))
         cleaned["due_all_day"] = bool(due_date) and due_time is None
         cleaned["due_at"] = (

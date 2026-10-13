@@ -533,6 +533,11 @@ msgstr "Este correo ya está en uso."
 msgid "A due date is required when a time is set."
 msgstr "Se necesita una fecha límite cuando se indica una hora."
 
+#: todo/forms.py
+#, python-format
+msgid "Choose a due date between %(first)s and %(last)s."
+msgstr "Elige una fecha límite entre %(first)s y %(last)s."
+
 #: todo/models.py:18
 msgid "Lavender"
 msgstr "Lavanda"
@@ -564,6 +569,10 @@ msgstr "Quita los caracteres de control."
 #: todo/views.py:151
 msgid "The requested item was not found."
 msgstr "No se encontró el elemento solicitado."
+
+#: todo/views.py
+msgid "We could not complete that request. Try again in a moment."
+msgstr "No pudimos completar esa solicitud. Inténtalo de nuevo en un momento."
 
 #: todo/views.py:173
 msgid "Your session expired. Sign in again."

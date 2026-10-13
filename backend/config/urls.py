@@ -7,6 +7,12 @@ from django.urls import include, path
 
 from todo.realtime_views import events
 
+# Hyperview-aware answers for an unknown URL and an unhandled exception: an HTML page
+# is something the mobile client cannot parse. Anything outside the API keeps Django's
+# own page, and DEBUG keeps its technical pages, which Django renders without a handler.
+handler404 = "todo.views.not_found"
+handler500 = "todo.views.server_error"
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("hv/", include("todo.urls")),
