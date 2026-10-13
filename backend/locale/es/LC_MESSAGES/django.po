@@ -557,6 +557,10 @@ msgstr "Verde"
 msgid "Category must belong to the same user."
 msgstr "La categoría debe pertenecer al mismo usuario."
 
+#: todo/validators.py:28
+msgid "Remove control characters."
+msgstr "Quita los caracteres de control."
+
 #: todo/views.py:151
 msgid "The requested item was not found."
 msgstr "No se encontró el elemento solicitado."

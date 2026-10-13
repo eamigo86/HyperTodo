@@ -8,6 +8,8 @@ from django.db import models
 from django.db.models.functions import Lower
 from django.utils.translation import gettext_lazy as _
 
+from .validators import xml_safe_text
+
 
 class Category(models.Model):
     """A user-owned task category with a controlled display color."""
@@ -27,7 +29,7 @@ class Category(models.Model):
         on_delete=models.CASCADE,
         related_name="todo_categories",
     )
-    name = models.CharField(max_length=80)
+    name = models.CharField(max_length=80, validators=[xml_safe_text])
     color = models.CharField(max_length=16, choices=Color, default=Color.LAVENDER)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -59,8 +61,10 @@ class Task(models.Model):
     category = models.ForeignKey(
         Category, on_delete=models.SET_NULL, null=True, blank=True, related_name="tasks"
     )
-    title = models.CharField(max_length=160)
-    notes = models.TextField(blank=True)
+    title = models.CharField(max_length=160, validators=[xml_safe_text])
+    # The edit screen echoes the notes into one Hyperview document that dj-hyperview
+    # caps at 1 MB, so an unbounded column could outgrow its own screen.
+    notes = models.TextField(blank=True, max_length=10_000, validators=[xml_safe_text])
     due_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

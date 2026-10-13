@@ -8,11 +8,13 @@ from io import BytesIO
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser
+from django.forms.utils import ErrorList
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from PIL import Image, ImageOps
 
 from .models import Category, Task
+from .validators import scrub_xml, xml_safe_text
 
 # The whole payload rides in a form FIELD, and django/http/multipartparser.py:243-250
 # counts non-file field bytes against DATA_UPLOAD_MAX_MEMORY_SIZE (2.5MB), raising a
@@ -35,14 +37,50 @@ NOT_AN_IMAGE = _("That file is not an image.")
 TOO_LARGE = _("That photo is too large. Pick a smaller one.")
 
 
-class LoginForm(forms.Form):
+class XmlSafeBoundField(forms.BoundField):
+    """Render a field's submission and error copy as text XML 1.0 can carry.
+
+    The validators refuse forbidden characters, but a refused form is re-rendered
+    with the raw submission (and a choice error quotes it), and dj-hyperview rejects
+    the whole document when a single such character reaches it.
+    """
+
+    def value(self) -> object:
+        """Return the value to render, with forbidden characters replaced.
+
+        Returns:
+            The bound submission or initial value, made XML-safe when it is text.
+        """
+        value = super().value()
+        return scrub_xml(value) if isinstance(value, str) else value
+
+    @property
+    def errors(self) -> ErrorList:
+        """Return the error messages to render, made XML-safe.
+
+        Returns:
+            The field's errors with forbidden characters replaced.
+        """
+        errors = super().errors
+        return self.form.error_class(
+            [scrub_xml(message) for message in errors], renderer=self.form.renderer
+        )
+
+
+class XmlSafeFormMixin:
+    """Mixin for forms whose submission is echoed back into an HXML document."""
+
+    bound_field_class = XmlSafeBoundField
+
+
+class LoginForm(XmlSafeFormMixin, forms.Form):
     """Collect credentials for Django session authentication."""
 
     username = forms.CharField(max_length=150)
     password = forms.CharField(widget=forms.PasswordInput)
 
 
-class CategoryForm(forms.ModelForm):
+class CategoryForm(XmlSafeFormMixin, forms.ModelForm):
     """Validate a category within one user's namespace."""
 
     class Meta:
@@ -78,12 +116,27 @@ class CategoryForm(forms.ModelForm):
         return name
 
 
-class ProfileForm(forms.ModelForm):
+class ProfileForm(XmlSafeFormMixin, forms.ModelForm):
     """Validate the account details the settings screen lets a user edit."""
 
     class Meta:
         model = get_user_model()
         fields = ("first_name", "last_name", "email")
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        """Hold every account field to the XML-safe text rule.
+
+        auth.User is not ours to change, so the rule lives on the form. Every field
+        here is rendered into a Hyperview document, and an email can carry control
+        characters inside a quoted local part that Django still accepts.
+
+        Args:
+            *args: Positional arguments forwarded to ModelForm.
+            **kwargs: Keyword arguments forwarded to ModelForm.
+        """
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.validators.append(xml_safe_text)
 
     def clean_email(self) -> str:
         """Normalize the address and keep it unique across accounts.
@@ -117,7 +170,7 @@ class ProfileForm(forms.ModelForm):
         return email
 
 
-class TaskForm(forms.ModelForm):
+class TaskForm(XmlSafeFormMixin, forms.ModelForm):
     """Validate task input and combine separate deadline fields."""
 
     due_date = forms.DateField(required=False, input_formats=("%Y-%m-%d",))
