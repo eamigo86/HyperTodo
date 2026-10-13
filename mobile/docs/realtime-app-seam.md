@@ -72,7 +72,7 @@ Permanent actual-App tests reproduce a detached-panel blur/focus/change causing
 both are guarded without editing the SDK. They also retain repeated rejected
 panels followed by successful login. This controlled reproduction matches the
 Simulator error stack, not proof of the exact native event ordering or a native
-post-fix PASS. See isolated evidence `ios-root-failure-*`.
+post-fix PASS. The `ios-root-failure-*` record is not kept in this repository.
 
 A biometric401 clear node receives the exact accepted receipt before its real
 load callback. The factory consumes that receipt; it does not run another native
@@ -131,9 +131,9 @@ the exact cause or resolution of the separately recorded native recovery failure
 
 ## Verify and review
 
-Permanent tests: `mobile/__tests__/realtime-app-seam.test.tsx`. Reproduction and
-chronological RED/GREEN logs live in the isolated evidence directory, under
-`c3-app-seam-*`. Native Jest shims are explicit; ordinary HTTP responses and auth
+Permanent tests: `mobile/__tests__/realtime-app-seam.test.tsx`. The reproduction and
+chronological RED/GREEN logs (`c3-app-seam-*`) are not kept in this repository.
+Native Jest shims are explicit; ordinary HTTP responses and auth
 outcomes in these tests are synthetic fixtures. No phone or production broker
 participates in this unit.
 

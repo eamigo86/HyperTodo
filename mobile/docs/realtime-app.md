@@ -111,8 +111,8 @@ settlement barriers and failure outcomes. The behavior contracts (biometric, ava
 snackbar) are tested through `createOwnedBehaviors` and `createOwnedNativePorts`;
 no SDK source is patched.
 
-The evidence directory preserves the chronological RED phases, commands and hashes,
-including the earlier inconclusive foreground-confirmation trace. Later finite
+The chronological RED phases, commands and hashes, including the earlier
+inconclusive foreground-confirmation trace, are not kept in this repository. Later finite
 Gate0 acceptance is recorded separately; it does not establish native production
 SSE delivery. The producer, broker, authenticated endpoint and normal App connection
 are now implemented and software-tested. **The current end-to-end/native SSE verdict
