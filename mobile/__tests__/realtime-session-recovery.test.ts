@@ -103,6 +103,27 @@ it('mints only explicit neutral capability without adopting observed B or publis
   expect(f.language).not.toHaveBeenCalled();
   expect(f.supervisor.snapshot().rootReady).toBe(false);
 });
+it('sends the device time zone on every neutral recovery request', async () => {
+  const spy = jest.spyOn(Intl, 'DateTimeFormat').mockImplementation(() => ({
+    resolvedOptions: () => ({
+      timeZone: 'Europe/Madrid'
+    })
+  }) as unknown as Intl.DateTimeFormat);
+  try {
+    const f = setup(),
+      handle = await recover(f);
+    await handle.fetch(ORIGIN + '/hv/recovery/?screen=login');
+    await handle.authenticate('/hv/login/', {
+      method: 'POST',
+      body: 'csrfmiddlewaretoken=real&username=C'
+    });
+    const urls = f.transport.mock.calls.map(([url]) => new URL(url).pathname);
+    expect(urls).toEqual(expect.arrayContaining(['/hv/session-state/', '/hv/recovery/', '/hv/login/']));
+    for (const [, init] of f.transport.mock.calls) expect(new Headers(init.headers).get('X-Timezone')).toBe('Europe/Madrid');
+  } finally {
+    spy.mockRestore();
+  }
+});
 it.each(['/hv/', '/hv/tasks/', '/hv/recovery/?screen=other', 'https://other.test/hv/recovery/'])('rejects recovery URL %s before transport', async url => {
   const f = setup(),
     handle = await recover(f),

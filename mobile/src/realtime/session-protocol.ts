@@ -5,6 +5,8 @@ export const SESSION_HEADERS = Object.freeze({
   expected:"X-HyperTodo-Expected-Session",
   binding:"X-HyperTodo-Session-Binding",
   outcome:"X-HyperTodo-Auth-Outcome",
+  // The IANA zone the person is in; the backend runs the request in it (backend/todo/middleware.py).
+  timezone:"X-Timezone",
 });
 export type AuthKind = "password" | "biometric" | "logout";
 export type Observation = Readonly<{version:1;authenticated:boolean;binding:string}>;
@@ -32,6 +34,17 @@ export function utf8Bytes(value:string):number {
 }
 
 export function validBinding(value:unknown):value is string {return typeof value==="string"&&BINDING.test(value);}
+
+// The backend ignores a value that is not an IANA name or is longer than 64 characters, so only such a name is sent:
+// it starts with a letter (a UTC offset such as "+01:00" never does) and holds no whitespace.
+const TIME_ZONE=/^[A-Za-z][A-Za-z0-9_+\-/]{0,63}$/;
+/** The device's IANA zone for the X-Timezone header, or null when it has none the backend would accept. */
+export function clientTimeZone():string|null {
+  try {
+    const zone:unknown=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof zone==="string"&&TIME_ZONE.test(zone)?zone:null;
+  } catch {return null;}
+}
 
 /** Classify auth by the configured origin, exact method and exact pathname. */
 export function classifyAuth(value:string,method:string,origin:string):AuthKind|null {

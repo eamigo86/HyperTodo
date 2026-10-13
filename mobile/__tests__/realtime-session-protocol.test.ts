@@ -1,7 +1,7 @@
 declare const __dirname:string;
 const fs=jest.requireActual<{readFileSync:(name:string,encoding:"utf8")=>string}>("fs");
 const path=jest.requireActual<{join:(...parts:string[])=>string}>("path");
-import {classifyAuth, parseObservation, parseAuthBody, utf8Bytes, SESSION_HEADERS} from "../src/realtime/session-protocol";
+import {classifyAuth, clientTimeZone, parseObservation, parseAuthBody, utf8Bytes, SESSION_HEADERS} from "../src/realtime/session-protocol";
 
 const A="hvs1."+"A".repeat(43);
 const token="t".repeat(43);
@@ -69,4 +69,30 @@ it("enforces the auth limit in UTF-8 bytes rather than Content-Length or code un
  expect(parseAuthBody("password",200,"password-ok",login+" ".repeat(padding)).kind).toBe("success");
  expect(()=>parseAuthBody("password",200,"password-ok",login+" ".repeat(padding-1)+"é")).toThrow();
  expect(()=>parseAuthBody("password",200,"password-ok",login+"\ud800")).toThrow();
+});
+
+// The backend runs a request in the IANA zone named by X-Timezone and ignores anything else, so the client
+// sends only a value the backend contract accepts: a name that starts with a letter, no whitespace, at most 64 characters.
+function withZone<T>(zone:unknown,run:()=>T):T {
+ const spy=jest.spyOn(Intl,"DateTimeFormat").mockImplementation(()=>({resolvedOptions:()=>({timeZone:zone})}) as unknown as Intl.DateTimeFormat);
+ try{return run();}finally{spy.mockRestore();}
+}
+
+it("names the time zone header and reads the device zone from Intl",()=>{
+ expect(SESSION_HEADERS.timezone).toBe("X-Timezone");
+ for(const zone of ["Europe/Madrid","America/Argentina/Buenos_Aires","America/Port-au-Prince","Etc/GMT+5","EST5EDT","UTC","Europe/"+"a".repeat(57)])expect(withZone(zone,clientTimeZone)).toBe(zone);
+});
+
+it.each([undefined,null,42,"","Europe/Mad rid"," Europe/Madrid","Europe/Madrid\n","Europe/Madrid\u00e9","+01:00","-05:00","GMT+05:30","Europe/"+"a".repeat(58)])("sends no time zone for the device value %j",value=>{
+ expect(withZone(value,clientTimeZone)).toBeNull();
+});
+
+it("sends no time zone when Intl cannot answer",()=>{
+ const spy=jest.spyOn(Intl,"DateTimeFormat").mockImplementation(()=>{throw new RangeError("no zone");});
+ try{expect(clientTimeZone()).toBeNull();}finally{spy.mockRestore();}
+});
+
+it("reads a real zone from the runtime when Intl is not mocked",()=>{
+ const zone=clientTimeZone();
+ expect(zone===null||/^[A-Za-z][A-Za-z0-9_+\-/]{0,63}$/.test(zone)).toBe(true);
 });

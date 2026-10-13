@@ -65,6 +65,38 @@ it("checks response ownership before body or theme, preserving request metadata"
  expect(wrong.text).not.toHaveBeenCalled();expect(theme).not.toHaveBeenCalled();
 });
 
+// The backend runs each /hv/ request in the zone named by X-Timezone (backend/todo/middleware.py), so the supervisor, which
+// prepares every request the app sends, states the device zone itself and never relays one a caller supplied.
+function deviceZone(zone:unknown){return jest.spyOn(Intl,"DateTimeFormat").mockImplementation(()=>({resolvedOptions:()=>({timeZone:zone})}) as unknown as Intl.DateTimeFormat);}
+
+it("sends the device time zone on the observation, ordinary and authentication requests",async()=>{
+ const spy=deviceZone("Europe/Madrid");
+ try{
+  const {supervisor,transport}=fixture();await supervisor.bootstrap();await supervisor.request("/hv/tasks/");
+  await expect(supervisor.authenticate("/hv/login/",{method:"POST",body:"username=a&password=b"})).resolves.toMatchObject({kind:"transition"});
+  const urls=transport.mock.calls.map(([url])=>new URL(url).pathname);
+  expect(urls).toEqual(expect.arrayContaining(["/hv/session-state/","/hv/tasks/","/hv/login/"]));
+  for(const [,init] of transport.mock.calls)expect(new Headers(init.headers).get("X-Timezone")).toBe("Europe/Madrid");
+ }finally{spy.mockRestore();}
+});
+
+it("replaces a caller-supplied time zone with the device zone",async()=>{
+ const spy=deviceZone("Europe/Madrid");
+ try{
+  const {supervisor,transport}=fixture();await supervisor.bootstrap();await supervisor.request("/hv/tasks/",{headers:{"X-Timezone":"Asia/Tokyo"}});
+  expect(new Headers(transport.mock.calls[1][1].headers).get("X-Timezone")).toBe("Europe/Madrid");
+ }finally{spy.mockRestore();}
+});
+
+it.each([undefined,"","Europe/Mad rid","+01:00","Europe/"+"a".repeat(58)])("sends no time zone, not even a caller-supplied one, when the device reports %j",async(value)=>{
+ const spy=deviceZone(value);
+ try{
+  const {supervisor,transport}=fixture();await supervisor.bootstrap();await supervisor.request("/hv/tasks/",{headers:{"X-Timezone":"Asia/Tokyo"}});
+  expect(transport).toHaveBeenCalledTimes(2);
+  for(const [,init] of transport.mock.calls)expect(new Headers(init.headers).has("X-Timezone")).toBe(false);
+ }finally{spy.mockRestore();}
+});
+
 it.each(["redirected","foreign-url"])("rejects %s responses before body or effects",async(kind)=>{
  const {supervisor,transport,theme}=fixture();await supervisor.bootstrap();const bad={...response("private"),...(kind==="redirected"?{redirected:true}:{url:"https://foreign.test/hv/"})} as Response;transport.mockResolvedValueOnce(bad);
  await expect(supervisor.request("/hv/tasks/")).rejects.toThrow();expect(bad.text).not.toHaveBeenCalled();expect(theme).not.toHaveBeenCalled();

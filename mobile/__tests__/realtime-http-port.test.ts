@@ -35,3 +35,15 @@ it("publishes theme only through the current supervisor and preserves the auth w
  await supervisor.bootstrap();const result=await supervisor.request(BASE+"tasks/",{headers:{"X-CSRFToken":"kept"}});expect(result.bodyUsed).toBe(false);expect(getThemeName()).toBe("dark");
  const init=raw.mock.calls[1][1] as RequestInit;expect(new Headers(init.headers).get(H.contract)).toBe("realtime-v1");expect(new Headers(init.headers).get(H.expected)).toBe(A);expect(new Headers(init.headers).get("X-CSRFToken")).toBe("kept");
 });
+
+it("carries the device time zone through the real supervisor and port to the fetch implementation",async()=>{
+ const spy=jest.spyOn(Intl,"DateTimeFormat").mockImplementation(()=>({resolvedOptions:()=>({timeZone:"Europe/Madrid"})}) as unknown as Intl.DateTimeFormat);
+ try{
+  const ordinary=response("<view/>",{[H.binding]:A});
+  const raw=jest.fn(async(input:RequestInfo|URL,_init?:RequestInit)=>(typeof input==="string"?input:input instanceof URL?input.toString():input.url).endsWith("session-state/")?response(JSON.stringify({version:1,authenticated:true,binding:A}),{[H.binding]:A}):ordinary);
+  const http=createHyperviewHttpPort(BASE,raw,"v");const supervisor=createSessionSupervisor({origin:"https://app.test",transport:http,storage:{enqueue:async()=>{}},stopStream:()=>{},onIdentity:()=>{},onTheme:publishTheme});
+  await supervisor.bootstrap();await supervisor.request(BASE+"tasks/");
+  expect(raw).toHaveBeenCalledTimes(2);
+  for(const [,init] of raw.mock.calls)expect(new Headers(init?.headers).get("X-Timezone")).toBe("Europe/Madrid");
+ }finally{spy.mockRestore();}
+});

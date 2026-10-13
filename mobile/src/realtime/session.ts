@@ -1,5 +1,5 @@
 import {createSessionEffects,type EffectResult,type StorageQueue} from "./session-effects";
-import {classifyAuth,parseAuthBody,parseObservation,validBinding,utf8Bytes,SESSION_HEADERS as H,type AuthBody,type AuthKind,type Observation} from "./session-protocol";
+import {classifyAuth,clientTimeZone,parseAuthBody,parseObservation,validBinding,utf8Bytes,SESSION_HEADERS as H,type AuthBody,type AuthKind,type Observation} from "./session-protocol";
 import {CHANGE_HEADERS} from './stream-protocol';
 
 export type SessionClock={schedule(callback:()=>void,ms:number):()=>void;sleep(ms:number):Promise<void>};
@@ -66,6 +66,8 @@ export function createSessionSupervisor(ports:SessionPorts) {
     const headers=new Headers(init.headers);headers.set(H.contract,"realtime-v1");
     headers.set(CHANGE_HEADERS.features,'changes-v2');
     if(expected)headers.set(H.expected,expected);else headers.delete(H.expected);
+    // Read per request: the device zone can change while the app stays loaded. A caller never states it.
+    const zone=clientTimeZone();if(zone)headers.set(H.timezone,zone);else headers.delete(H.timezone);
     if(!headers.has("Origin"))headers.set("Origin",origin);
     if(!headers.has("Accept"))headers.set("Accept","application/vnd.hyperview+xml");
     headers.set("Cache-Control","no-store");

@@ -36,6 +36,15 @@ Parser tests use controlled HTTP and native ports, not native network proof.
   A removed source or old generation cannot read credentials, update XML, submit
   into another account or display a late snackbar. Settings clears require the
   gate's private successful-response provenance, not an arbitrary empty token.
+- Every request the supervisor prepares carries `X-Timezone: <IANA name>`, read
+  from `Intl.DateTimeFormat().resolvedOptions().timeZone` each time: the session
+  observation, ordinary HXML, the password, biometric and logout POSTs and the
+  neutral recovery requests. The backend runs the request in that zone (see
+  [Client time zone](../../backend/docs/installed-adoption.md#client-time-zone)).
+  The supervisor owns the header, so a caller-supplied value is replaced. A zone
+  that is empty, longer than 64 characters, contains whitespace or is a UTC offset
+  instead of a name is not sent and the server zone applies. The event stream does
+  not send it.
 
 ## Explicit neutral Sign in
 
