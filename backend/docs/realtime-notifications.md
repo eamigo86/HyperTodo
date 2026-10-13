@@ -23,8 +23,13 @@ The removed top-level `HYPERTODO_REALTIME`, including `None`, raises an explicit
 migration error: remove it and use only `HYPERVIEW["REALTIME"]`. Enabled transport
 still requires database sessions as an app policy, not a generic package rule.
 
-The private adapter lazily constructs `RedisBroker` and calls its public
-`publish_after_commit(envelope, topics, using=...)` with the captured alias.
+The private adapter lazily constructs one `RedisBroker` per immutable configuration,
+shared with the stream endpoint, and calls its public
+`publish_after_commit(envelope, topics, using=...)` with the captured alias. The
+adapter's own `transaction.on_commit` hook stays in front of the package's: the whole
+delivery path (broker lookup, topic and payload validation, the swallow-and-log
+wrapper) then never runs for a transaction that rolls back, and by the time it does
+run the commit is done, so the package's deferral takes effect at once.
 No Redis import or connection is needed during startup. Delivery failures use
 closed diagnostic codes, never credentials, owner IDs or payloads; committed
 business writes remain committed, without automatic publication retry. The

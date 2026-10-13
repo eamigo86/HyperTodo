@@ -387,6 +387,90 @@ def test_real_publisher_calls_public_broker_not_a_success_stub(settings, monkeyp
     ]
 
 
+def test_one_broker_serves_every_publish_and_every_stream_of_a_configuration(
+    settings,
+):
+    from todo.realtime_config import get_broker, get_realtime_config
+    from todo.realtime_views import _broker
+
+    settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": CONFIG.copy()}
+    config = get_realtime_config()
+
+    assert _broker(config) is _broker(config) is get_broker(config)
+
+    # An equal configuration read again is still the same one.
+    assert get_broker(get_realtime_config()) is get_broker(config)
+
+
+def test_the_broker_is_constructed_once_not_per_publish_and_per_stream(
+    settings, monkeypatch
+):
+    from dj_hyperview.realtime import RedisBroker
+
+    from todo.realtime_config import get_realtime_config
+    from todo.realtime_notifications import Notification, _publish
+    from todo.realtime_views import _broker
+
+    # A namespace nothing else uses, so no earlier test has cached its broker.
+    settings.HYPERVIEW = {
+        **settings.HYPERVIEW,
+        "REALTIME": {**CONFIG, "NAMESPACE": "built-once"},
+    }
+    built = []
+    real_init = RedisBroker.__init__
+
+    def counting_init(broker, url, namespace):
+        built.append(namespace)
+        real_init(broker, url, namespace)
+
+    monkeypatch.setattr(RedisBroker, "__init__", counting_init)
+    monkeypatch.setattr(RedisBroker, "publish_after_commit", lambda *a, **k: None)
+    config = get_realtime_config()
+
+    for _ in range(3):
+        _publish(config, Notification("default", ("topic",), ("tasks",)))
+        _broker(config)
+
+    assert built == ["built-once"]
+
+
+def test_a_different_configuration_gets_its_own_broker(settings):
+    from todo.realtime_config import get_broker, get_realtime_config
+
+    settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": CONFIG.copy()}
+    first = get_broker(get_realtime_config())
+    settings.HYPERVIEW = {
+        **settings.HYPERVIEW,
+        "REALTIME": {**CONFIG, "NAMESPACE": "another-unit-test"},
+    }
+    second = get_broker(get_realtime_config())
+
+    assert second is not first
+    assert second._config.namespace == "another-unit-test"
+
+
+def test_publishing_reuses_the_cached_broker(settings, monkeypatch):
+    from dj_hyperview.realtime import RedisBroker
+
+    from todo.realtime_config import get_broker, get_realtime_config
+    from todo.realtime_notifications import Notification, _publish
+
+    settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": CONFIG.copy()}
+    config = get_realtime_config()
+    used = []
+    monkeypatch.setattr(
+        RedisBroker,
+        "publish_after_commit",
+        lambda broker, event, topics, *, using: used.append(broker),
+    )
+
+    for _ in range(3):
+        _publish(config, Notification("default", ("topic",), ("tasks",)))
+
+    assert len(used) == 3
+    assert all(broker is get_broker(config) for broker in used)
+
+
 @pytest.mark.parametrize(
     "value",
     [

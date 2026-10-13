@@ -21,7 +21,9 @@ from tests.test_realtime_stream import (
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-async def asgi_exchange(request, *, before_send=None, disconnect_after_body=True):
+async def asgi_exchange(
+    request, *, before_send=None, disconnect_after_body=True, script_name=""
+):
     queue = asyncio.Queue()
     sent = []
     queue.put_nowait({"type": "http.request", "body": b"", "more_body": False})
@@ -39,10 +41,10 @@ async def asgi_exchange(request, *, before_send=None, disconnect_after_body=True
         "http_version": "1.1",
         "method": request.method,
         "scheme": "http",
-        "path": "/realtime/events/",
-        "raw_path": b"/realtime/events/",
+        "path": f"{script_name}/realtime/events/",
+        "raw_path": f"{script_name}/realtime/events/".encode(),
         "query_string": request.META.get("QUERY_STRING", "").encode(),
-        "root_path": "",
+        "root_path": script_name,
         "server": ("testserver", 80),
         "client": ("127.0.0.1", 41000),
         "headers": headers,
@@ -83,6 +85,38 @@ def test_real_asgi_initial_resync_then_disconnect_closes_subscription(
         assert sub.closed == 1 and admissions.total == 0
 
     async_to_sync(run)()
+
+
+def test_the_stream_runs_under_a_script_name_without_presentation_headers(
+    authenticated, monkeypatch
+):
+    from todo import realtime_views
+    from todo.realtime_stream import admissions
+
+    async def run():
+        sub = Subscription(RESYNC)
+        monkeypatch.setattr(realtime_views, "_broker", lambda config: Broker(sub))
+        sent = await asgi_exchange(authenticated[2], script_name="/app")
+        assert sent[0]["status"] == 200
+        headers = {key.lower(): value for key, value in sent[0]["headers"]}
+        assert headers[b"content-type"].startswith(b"text/event-stream")
+        # The route is still recognised behind the prefix, so the presentation
+        # middleware stands aside exactly as it does at the root.
+        assert b"x-hypertodo-theme" not in headers
+        assert sub.closed == 1 and admissions.total == 0
+
+    async_to_sync(run)()
+
+
+def test_a_non_get_method_is_rejected_before_csrf_under_a_script_name(authenticated):
+    request = authenticated[2]
+    request.method = "POST"
+
+    sent = async_to_sync(asgi_exchange)(request, script_name="/app")
+
+    assert sent[0]["status"] == 405
+    headers = {key.lower(): value for key, value in sent[0]["headers"]}
+    assert headers[b"allow"] == b"GET"
 
 
 @pytest.mark.parametrize(
@@ -172,11 +206,13 @@ def test_no_headers_before_broker_ack_and_fresh_auth_check(authenticated, monkey
                     session_key=authenticated[2]._test_session_key
                 ).delete()
             finally:
-                # This test actor owns this thread's temporary SQLite connection.
-                # Django intentionally keeps in-memory test connections open;
-                # close the SQLite handle before the actor thread is discarded.
+                # Django intentionally keeps in-memory test connections open, and
+                # this actor thread comes from the default executor, which the
+                # identity checks share: close the SQLite handle, and tell Django's
+                # wrapper so the next job on this thread opens a fresh one.
                 if connection.connection is not None:
                     connection.connection.close()
+                    connection.connection = None
 
         await sync_to_async(
             revoke_from_independent_connection, thread_sensitive=False
@@ -242,7 +278,7 @@ def test_method_guard_does_not_match_other_routes(authenticated, path):
     from todo.realtime_middleware import RealtimeMethodMiddleware
 
     request = authenticated[2]
-    request.path = path
+    request.path = request.path_info = path
     request.method = "POST"
     seen = []
 

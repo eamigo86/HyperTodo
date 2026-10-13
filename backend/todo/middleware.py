@@ -7,6 +7,7 @@ from django.http import HttpRequest, HttpResponse
 from django.utils import translation
 
 from .context_processors import theme
+from .realtime_middleware import is_stream_request
 from .recovery import is_recovery
 
 # App-specific on purpose. Hyperview owns the X-Hyperview-* namespace for its own
@@ -42,7 +43,7 @@ class ProfileLanguageMiddleware:
         Returns:
             The downstream response.
         """
-        if request.path == "/realtime/events/":
+        if is_stream_request(request):
             return self.get_response(request)
         if is_recovery(request):
             request.LANGUAGE_CODE = settings.LANGUAGE_CODE
@@ -103,6 +104,6 @@ class ThemeHeaderMiddleware:
             The downstream response, now naming its own palette.
         """
         response = self.get_response(request)
-        if request.path != "/realtime/events/" and not is_recovery(request):
+        if not is_stream_request(request) and not is_recovery(request):
             response.headers[THEME_HEADER] = theme(request)["theme_name"]
         return response

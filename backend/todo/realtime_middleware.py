@@ -4,8 +4,31 @@ from collections.abc import Awaitable, Callable
 
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.urls import get_script_prefix, reverse
 
 from .realtime_config import get_realtime_config
+
+# The name config/urls.py gives the route; the path itself is written only there.
+STREAM_URL_NAME = "realtime-events"
+
+
+def is_stream_request(request: HttpRequest) -> bool:
+    """Tell whether a request is for the SSE route, wherever the site is mounted.
+
+    The route is found by its URL name. reverse() answers with the script prefix in
+    front (SCRIPT_NAME, or FORCE_SCRIPT_NAME), while path_info is the path below
+    it, so the prefix comes off before the two are compared. Comparing request.path
+    with a literal only matched a site served from the root.
+
+    Args:
+        request: Incoming request.
+
+    Returns:
+        True for the exact stream route, whatever the method.
+    """
+    return request.path_info == "/" + reverse(STREAM_URL_NAME).removeprefix(
+        get_script_prefix()
+    )
 
 
 class RealtimeMethodMiddleware:
@@ -29,7 +52,7 @@ class RealtimeMethodMiddleware:
             markcoroutinefunction(self)
 
     def _reject(self, request: HttpRequest) -> HttpResponse | None:
-        if request.path != "/realtime/events/" or request.method == "GET":
+        if request.method == "GET" or not is_stream_request(request):
             return None
         enabled = get_realtime_config() is not None
         response = JsonResponse(

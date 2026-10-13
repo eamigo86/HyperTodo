@@ -13,7 +13,7 @@ from .realtime_changes import (
     current_mutation,
     supports_changes,
 )
-from .realtime_config import RealtimeConfig, get_realtime_config
+from .realtime_config import RealtimeConfig, get_broker, get_realtime_config
 
 logger = logging.getLogger(__name__)
 _RESOURCE_ORDER = ("tasks", "categories", "ui")
@@ -80,9 +80,7 @@ class Notification:
 
 
 def _publish(config: RealtimeConfig, intent: Notification) -> None:
-    from dj_hyperview.realtime import RedisBroker
-
-    RedisBroker(config.redis_url, namespace=config.namespace).publish_after_commit(
+    get_broker(config).publish_after_commit(
         {"event": "invalidate", "data": intent.payload},
         intent.topics,
         using=intent.using,
@@ -140,6 +138,10 @@ def notify_after_commit(
         mutation_id=current_mutation(),
         entities=precision,
     )
+    # Not redundant with the package's own deferral: this hook keeps the whole delivery
+    # path (broker lookup, topic and payload validation, the swallow-and-log above) from
+    # running at all for a transaction that rolls back. By the time it runs the commit
+    # is done, so the package's on_commit takes effect at once.
     transaction.on_commit(lambda: _deliver(config, intent), using=using)
 
 

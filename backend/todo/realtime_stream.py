@@ -185,13 +185,19 @@ class OwnedStream:
             await self.aclose()
             raise StopAsyncIteration
         try:
-            self._read = asyncio.create_task(anext(self.subscription))
-            try:
-                value = await asyncio.wait_for(
-                    self._read, min(remaining, self.heartbeat)
-                )
-                event = _event(value, changes_v2=self.changes_v2)
-            except TimeoutError:
+            # One read stays pending across heartbeats. Cancelling it on every timeout
+            # (asyncio.wait_for) threw away an item it had already taken from the
+            # queue whenever the timer fired in the same loop iteration. Waiting on it
+            # leaves it running, and its result is only read once it is done.
+            if self._read is None:
+                self._read = asyncio.create_task(anext(self.subscription))
+            done, _ = await asyncio.wait(
+                {self._read}, timeout=min(remaining, self.heartbeat)
+            )
+            if done:
+                read, self._read = self._read, None
+                event = _event(read.result(), changes_v2=self.changes_v2)
+            else:
                 event = None
             if asyncio.get_running_loop().time() >= self.deadline:
                 await self.aclose()
@@ -219,7 +225,9 @@ class OwnedStream:
 
     async def _finish(self) -> None:
         try:
-            if self._read is not None and not self._read.done():
+            if self._read is not None:
+                # A no-op when the read already finished; gathering it then marks a
+                # failure it was holding as retrieved.
                 self._read.cancel()
                 await asyncio.gather(self._read, return_exceptions=True)
             await asyncio.wait_for(self.subscription.aclose(), BROKER_TIMEOUT)

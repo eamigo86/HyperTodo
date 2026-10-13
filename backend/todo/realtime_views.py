@@ -9,7 +9,7 @@ from django.utils.cache import patch_vary_headers
 
 from .realtime_auth import RealtimeDenied, authorize
 from .realtime_changes import mark_changes_response, negotiated
-from .realtime_config import RealtimeConfig
+from .realtime_config import RealtimeConfig, get_broker
 from .realtime_stream import Broker, open_stream
 from .session_contract import (
     CLIENT_CONTRACT_HEADER,
@@ -21,9 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def _broker(config: RealtimeConfig) -> Broker:
-    from dj_hyperview.realtime import RedisBroker
-
-    return RedisBroker(config.redis_url, namespace=config.namespace)
+    return get_broker(config)
 
 
 def _failure(status: int) -> JsonResponse:

@@ -1,9 +1,38 @@
 """Shared pytest fixtures for HyperTodo."""
 
+import threading
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.utils import translation
+
+
+@pytest.fixture(autouse=True, scope="session")
+def worker_threads_close_their_own_sqlite_connections():
+    """Let a worker thread close its connection to the in-memory test database.
+
+    Django ignores close() on an in-memory SQLite database, because closing its last
+    connection destroys it. The test database is a shared-cache one that the main
+    thread's connection keeps alive, so a worker thread may close its own. The
+    realtime stream checks identity on the executor's threads and hands each
+    connection back, and without this every thread that ends leaves an unclosed
+    database behind for the garbage collector to warn about.
+    """
+    from django.db.backends.base.base import BaseDatabaseWrapper
+    from django.db.backends.sqlite3.base import DatabaseWrapper
+
+    original = DatabaseWrapper.close
+
+    def close(self):
+        if threading.current_thread() is threading.main_thread():
+            original(self)
+        else:
+            BaseDatabaseWrapper.close(self)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(DatabaseWrapper, "close", close)
+        yield
 
 
 @pytest.fixture(autouse=True)

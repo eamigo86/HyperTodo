@@ -61,7 +61,9 @@ binding, theme metadata or private response content. The exact-path method
 middleware rejects unsupported methods before CSRF; it never authenticates,
 reads cookies, executes business work or marks a view CSRF-exempt. All ordinary
 routes and GET session/auth/CSRF processing retain Django's existing behavior.
-Presentation middleware skips only this exact non-HXML path.
+Presentation middleware skips only this exact non-HXML path. Both middleware find the
+route by its URL name (`realtime-events`) and compare it with `request.path_info`, so
+a `SCRIPT_NAME` or `FORCE_SCRIPT_NAME` prefix does not hide it.
 
 Successful responses use `text/event-stream`, no-store/no-transform and the exact
 captured `X-HyperTodo-Session-Binding`. Before subscribing, and again after all
@@ -73,16 +75,33 @@ is not duplicated by the controller.
 
 - A new SessionStore and Django `get_user` evaluation precede every frame and
   15-second heartbeat. Cached request user/session objects are never revalidation.
-  Built-in active-user and authentication-hash checks remain authoritative;
-  Django may flush/rotate an invalid/fallback session for security.
+  Built-in active-user and authentication-hash checks remain authoritative. The
+  session is read-only for this check: a stream response has no cookie to deliver, so
+  Django's key rotation (when only a `SECRET_KEY_FALLBACKS` secret verifies the auth
+  hash) and its flush of a failed session stay in memory. Nothing is rotated or
+  deleted, the binding keeps naming the key the client holds, and the next ordinary
+  request performs both with a response that can carry the cookie.
+- The check runs on the shared worker pool (`sync_to_async` with
+  `thread_sensitive=False`) and closes its database connection afterwards. A
+  thread-sensitive call would pin one OS thread and one connection to every open
+  stream for its whole life, because ASGIHandler gives each request an executor of
+  its own. With `CONN_MAX_AGE=0` (the default) every check opens and closes a
+  connection; a positive `CONN_MAX_AGE` lets a pool thread keep it between checks.
+  Either way the connections are bounded by the pool, not by the number of streams.
 - The captured binding, user primary key and database alias must all still match.
   Midstream loss emits only `auth-required` and closes; it never adopts a new user.
   Database/broker failure closes without private diagnostics.
 - Limits are 256 total and four per `(database alias, principal)` per worker,
   a 60-second connection lifetime, and two seconds for broker operations/close.
   Lifetime and closed state are checked again after awaited auth before output.
+- One subscription read stays pending across heartbeats and its result is consumed
+  only once it is done, so a hint that arrives as a heartbeat expires is delivered
+  and never discarded with a cancelled read.
 - The broker's 32-item queue overflows conservatively to resync. Redis PubSub has
   no replay guarantee and is not isolated by Redis DB number: namespace is required.
+- One `RedisBroker` is built per immutable configuration and shared by every publish
+  and every stream. It only holds the validated settings; each publish and each
+  subscription opens and closes its own Redis connection.
 - Before response construction succeeds, the app retains subscription/capacity
   ownership. Afterwards the public response receives the idempotent close callback;
   even never-iterated, cancelled or failed responses release the slot. The package

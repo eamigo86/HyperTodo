@@ -2,14 +2,19 @@
 
 import asyncio
 import copy
+import gc
+import threading
 from dataclasses import FrozenInstanceError
 from datetime import timedelta
 
 import pytest
-from asgiref.sync import async_to_sync
+from asgiref.sync import ThreadSensitiveContext, async_to_sync
+from django.contrib.sessions.backends.db import SessionStore
 from django.contrib.sessions.models import Session
 from django.core.exceptions import ImproperlyConfigured
+from django.http import HttpRequest
 from django.test import RequestFactory
+from django.test.utils import override_script_prefix
 from django.utils import timezone
 
 from tests.test_session_contract import _confirm
@@ -93,6 +98,130 @@ def test_real_django_session_revocation(authenticated, revocation):
         session["_auth_user_backend"] = "unknown.Backend"
         session.save()
     assert fresh_identity(key) is None
+
+
+def test_a_session_only_a_fallback_secret_verifies_is_not_rotated_or_deleted(
+    authenticated, settings
+):
+    from todo.realtime_auth import fresh_identity
+    from todo.session_contract import session_binding
+
+    client, user, _, _ = authenticated
+    key = client.session.session_key
+    # The secret rotated after this session was issued, so only the fallback still
+    # verifies its auth hash. Django answers that with cycle_key(), which deletes the
+    # row the client holds; an event stream has no response cookie to hand over the
+    # replacement, so the user would be logged out without a word.
+    settings.SECRET_KEY_FALLBACKS = [settings.SECRET_KEY]
+    settings.SECRET_KEY = "rotated-" + settings.SECRET_KEY
+    before = set(Session.objects.values_list("session_key", flat=True))
+
+    identity = fresh_identity(key)
+
+    assert identity is not None and identity.user_id == str(user.pk)
+    assert set(Session.objects.values_list("session_key", flat=True)) == before
+    held = HttpRequest()
+    held.session = SessionStore(session_key=key)
+    held.user = user
+    assert identity.binding == session_binding(held)
+
+
+def test_a_session_whose_auth_hash_fails_is_refused_but_left_for_the_next_request(
+    authenticated,
+):
+    from todo.realtime_auth import fresh_identity
+
+    client, user, _, _ = authenticated
+    key = client.session.session_key
+    user.set_password("changed-fixture-only")
+    user.save(update_fields=["password"])
+
+    assert fresh_identity(key) is None
+
+    # Django's get_user flushes such a session; here that must stay in memory, so the
+    # stream never writes. The next ordinary request clears the row with its response.
+    assert Session.objects.filter(session_key=key).exists()
+
+
+def test_each_identity_check_runs_off_the_callers_thread_and_closes_its_connection(
+    authenticated, monkeypatch
+):
+    from todo import realtime_auth
+
+    ran, closed = [], []
+    real = realtime_auth.fresh_identity
+    real_close = realtime_auth.close_old_connections
+
+    def spy(session_key):
+        ran.append(threading.get_ident())
+        return real(session_key)
+
+    def closing():
+        closed.append(1)
+        real_close()
+
+    monkeypatch.setattr(realtime_auth, "fresh_identity", spy)
+    monkeypatch.setattr(realtime_auth, "close_old_connections", closing)
+
+    identity = async_to_sync(realtime_auth.fresh_identity_async)(
+        authenticated[0].session.session_key
+    )
+
+    assert identity is not None
+    assert len(ran) == 1 and ran[0] != threading.get_ident()
+    assert closed == [1]
+
+
+def test_a_failing_identity_check_still_closes_its_connection(monkeypatch):
+    from todo import realtime_auth
+
+    closed = []
+
+    def broken(session_key):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(realtime_auth, "fresh_identity", broken)
+    monkeypatch.setattr(
+        realtime_auth, "close_old_connections", lambda: closed.append(1)
+    )
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        async_to_sync(realtime_auth.fresh_identity_async)("any-session-key")
+
+    assert closed == [1]
+
+
+def test_open_streams_share_the_worker_pool_instead_of_pinning_a_thread_each(
+    authenticated, monkeypatch
+):
+    from todo import realtime_auth
+
+    key = authenticated[0].session.session_key
+    threads = set()
+    real = SessionStore._get_session_from_db
+
+    def spy(self):
+        threads.add(threading.get_ident())
+        return real(self)
+
+    monkeypatch.setattr(SessionStore, "_get_session_from_db", spy)
+
+    async def one_stream():
+        # ASGIHandler gives every request a thread-sensitive context of its own, and
+        # thread-sensitive work then runs on a thread that context keeps for good.
+        async with ThreadSensitiveContext():
+            for _ in range(2):
+                assert await realtime_auth.fresh_identity_async(key) is not None
+
+    async def run():
+        await asyncio.gather(*(one_stream() for _ in range(40)))
+
+    # No async_to_sync here: a sync caller above would run everything on its own thread
+    # and hide the per-request executors a real ASGI server creates.
+    asyncio.run(run())
+
+    # The default executor never grows past 32 threads, and 40 streams were open.
+    assert len(threads) < 40
 
 
 @pytest.mark.parametrize(
@@ -224,6 +353,43 @@ class Broker:
         return self.subscription
 
 
+class SteppedLoop(asyncio.SelectorEventLoop):
+    """An event loop whose clock jumps a whole second per iteration and never waits.
+
+    Every timer due within that second fires at the start of the next iteration, in
+    the same batch as the callbacks that are already waiting. That is the
+    interleaving of "a hint arrives just as the heartbeat expires", reproduced
+    without racing the real clock.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._ticks = 0
+        select = self._selector.select
+
+        def step(timeout=None):
+            self._ticks += 1
+            return select(0)
+
+        self._selector.select = step
+
+    def time(self):
+        return float(self._ticks)
+
+
+def run_stepped(coroutine):
+    with asyncio.Runner(loop_factory=SteppedLoop) as runner:
+        return runner.run(coroutine)
+
+
+def standalone_access():
+    """Authority for tests that never touch Django: no config, session or database."""
+    from todo.realtime_auth import Access, Identity
+
+    identity = Identity("default", "1", "hvs1." + "x" * 43)
+    return Access(None, identity, "session-key")
+
+
 def test_stream_rechecks_before_initial_resync_and_every_frame(authenticated):
     from todo.realtime_stream import Admissions, open_stream
 
@@ -305,6 +471,138 @@ def test_heartbeat_requires_fresh_auth_and_lifetime_closes(authenticated):
         assert sub.closed == 1 and pool.total == 0
 
     async_to_sync(run)()
+
+
+def test_a_hint_taken_as_the_heartbeat_expires_is_delivered_not_dropped():
+    from todo.realtime_stream import Admissions, open_stream
+
+    access = standalone_access()
+
+    async def run():
+        async def fresh(key):
+            return access.identity
+
+        pool = Admissions()
+        sub = Subscription(HINT)
+        stream = await open_stream(
+            access,
+            Broker(sub),
+            admissions=pool,
+            fresh=fresh,
+            heartbeat=0.5,
+            lifetime=3600,
+        )
+        # The read task takes HINT on its first step, in the same loop iteration whose
+        # batch also holds the heartbeat timer. Cancelling the read at that point used
+        # to throw away an item it had already removed from the queue.
+        assert await anext(stream) == HINT
+        assert await anext(stream) is None
+        await stream.aclose()
+        assert sub.closed == 1 and pool.total == 0
+
+    run_stepped(run())
+
+
+class CountingSubscription(Subscription):
+    def __init__(self, *items):
+        super().__init__(*items)
+        self.reads = 0
+        self.cancelled = 0
+
+    async def __anext__(self):
+        self.reads += 1
+        try:
+            return await super().__anext__()
+        except asyncio.CancelledError:
+            self.cancelled += 1
+            raise
+
+
+def test_one_read_stays_pending_across_heartbeats():
+    from todo.realtime_stream import Admissions, open_stream
+
+    access = standalone_access()
+
+    async def run():
+        async def fresh(key):
+            return access.identity
+
+        sub = CountingSubscription()
+        stream = await open_stream(
+            access,
+            Broker(sub),
+            admissions=Admissions(),
+            fresh=fresh,
+            heartbeat=0.5,
+            lifetime=3600,
+        )
+        for _ in range(3):
+            assert await anext(stream) is None
+        sub.items.put_nowait(HINT)
+        assert await anext(stream) == HINT
+        # Three heartbeats and the hint were all served by the first read.
+        assert sub.reads == 1 and sub.cancelled == 0
+        await stream.aclose()
+
+    run_stepped(run())
+
+
+def test_closing_cancels_the_read_a_heartbeat_left_pending():
+    from todo.realtime_stream import Admissions, open_stream
+
+    access = standalone_access()
+
+    async def run():
+        async def fresh(key):
+            return access.identity
+
+        pool = Admissions()
+        sub = CountingSubscription()
+        stream = await open_stream(
+            access, Broker(sub), admissions=pool, fresh=fresh, heartbeat=0.5
+        )
+        assert await anext(stream) is None
+        assert sub.cancelled == 0  # still waiting for the next hint
+        await stream.aclose()
+        assert sub.cancelled == 1 and sub.closed == 1 and pool.total == 0
+
+    run_stepped(run())
+
+
+def test_a_read_that_failed_while_a_heartbeat_was_pending_is_not_left_unretrieved():
+    from todo.realtime_stream import Admissions, open_stream
+
+    access = standalone_access()
+    unretrieved = []
+
+    async def run():
+        asyncio.get_running_loop().set_exception_handler(
+            lambda loop, context: unretrieved.append(context["message"])
+        )
+
+        class Failing(Subscription):
+            def __init__(self):
+                super().__init__()
+                self.outcome = asyncio.get_running_loop().create_future()
+
+            async def __anext__(self):
+                return await self.outcome
+
+        async def fresh(key):
+            return access.identity
+
+        sub = Failing()
+        stream = await open_stream(
+            access, Broker(sub), admissions=Admissions(), fresh=fresh, heartbeat=0.5
+        )
+        assert await anext(stream) is None
+        sub.outcome.set_exception(RuntimeError("the broker dropped the connection"))
+        await asyncio.sleep(0)
+        await stream.aclose()
+
+    run_stepped(run())
+    gc.collect()
+    assert unretrieved == []
 
 
 def test_caps_are_per_principal_across_bindings_and_release_without_iteration(
@@ -492,9 +790,10 @@ def test_real_database_revocation_between_stream_frames(authenticated):
     async_to_sync(run)()
 
 
+@pytest.mark.parametrize("script_name", ["", "/app"])
 @pytest.mark.parametrize("status", [200, 401, 403])
 def test_exact_stream_path_bypasses_presentation_only(
-    user, status, django_assert_num_queries
+    user, status, script_name, django_assert_num_queries
 ):
     from django.http import HttpResponse
 
@@ -503,7 +802,7 @@ def test_exact_stream_path_bypasses_presentation_only(
 
     Profile.objects.create(user=user, theme="dark", language="es")
     user._state.fields_cache.pop("profile", None)
-    request = RequestFactory().get("/realtime/events/")
+    request = RequestFactory().get("/realtime/events/", SCRIPT_NAME=script_name)
     request.user = user
 
     def downstream(incoming):
@@ -518,7 +817,9 @@ def test_exact_stream_path_bypasses_presentation_only(
     assert "X-HyperTodo-Theme" not in response
 
 
-@pytest.mark.parametrize("path", ["/realtime/events/extra", "/hv/"])
+@pytest.mark.parametrize(
+    "path", ["/realtime/events/extra", "/hv/", "/app/realtime/events/"]
+)
 def test_other_routes_keep_presentation_middleware(user, path):
     from django.http import HttpResponse
 
@@ -533,6 +834,59 @@ def test_other_routes_keep_presentation_middleware(user, path):
     )(request)
     assert response["X-HyperTodo-Theme"] == "dark"
     assert request.LANGUAGE_CODE == "es"
+
+
+@pytest.mark.parametrize("script_name", ["", "/app", "/a/b"])
+def test_the_stream_route_is_recognised_wherever_the_site_is_mounted(script_name):
+    from todo.realtime_middleware import is_stream_request
+
+    request = RequestFactory().get("/realtime/events/", SCRIPT_NAME=script_name)
+    assert request.path == script_name + "/realtime/events/"
+    assert is_stream_request(request)
+    # The URL a handler would reverse carries the same prefix it set for the request.
+    with override_script_prefix(script_name + "/"):
+        assert is_stream_request(request)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/realtime/events",
+        "/realtime/events/extra",
+        "/hv/realtime/events/",
+        "/app/realtime/events/",
+        "/",
+    ],
+)
+def test_no_other_route_is_taken_for_the_stream(path):
+    from todo.realtime_middleware import is_stream_request
+
+    assert not is_stream_request(RequestFactory().get(path))
+
+
+@pytest.mark.parametrize("script_name", ["", "/app"])
+@pytest.mark.parametrize("enabled,status", [(True, 405), (False, 404)])
+def test_the_method_guard_finds_the_stream_whatever_the_script_name(
+    settings, script_name, enabled, status
+):
+    from django.http import HttpResponse
+
+    from todo.realtime_middleware import RealtimeMethodMiddleware
+
+    settings.HYPERVIEW = {
+        **settings.HYPERVIEW,
+        "REALTIME": CONFIG.copy() if enabled else None,
+    }
+    request = RequestFactory().post("/realtime/events/", SCRIPT_NAME=script_name)
+    seen = []
+
+    def next_handler(incoming):
+        seen.append(incoming)
+        return HttpResponse(status=418)
+
+    response = RealtimeMethodMiddleware(next_handler)(request)
+
+    assert response.status_code == status and seen == []
 
 
 def test_lifetime_expiry_while_fresh_auth_waits_never_emits_frame(authenticated):

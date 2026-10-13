@@ -8,7 +8,7 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib.auth import get_user
 from django.contrib.sessions.backends.db import SessionStore
-from django.db import router
+from django.db import close_old_connections, router
 from django.http import HttpRequest
 from django.utils.crypto import constant_time_compare
 
@@ -54,8 +54,37 @@ class Access:
     session_key: str = field(repr=False)
 
 
+def _read_only_session(session_key: str | None) -> SessionStore:
+    """Open a database session whose security rotations stay out of storage.
+
+    Django's get_user rotates the key when only a SECRET_KEY_FALLBACKS secret still
+    verifies the stored auth hash, and flushes a session whose hash no longer
+    verifies. Both rewrite the row, which is right for an ordinary request because
+    its response can set the new cookie. An event stream cannot: the rotation would
+    delete the session the client still holds and log the user out without a word.
+    The next ordinary request performs both with a response that can carry the cookie.
+
+    The two methods are replaced on the instance and not in a subclass because Django
+    derives the signing salt of the session data from the class name, so a subclass
+    could not read the rows the ordinary store wrote.
+
+    Args:
+        session_key: Captured cookie key.
+
+    Returns:
+        A session that loads like any other and never writes on get_user's behalf.
+    """
+    session = SessionStore(session_key=session_key)
+    session.cycle_key = lambda: None  # Keep the key and the row.
+    session.flush = session.clear  # Forget the data in memory only.
+    return session
+
+
 def fresh_identity(session_key: str | None) -> Identity | None:
     """Load a new session and apply Django's user/active/auth-hash validation.
+
+    The session is read-only, so this never writes: it neither rotates a key that
+    only a fallback secret verifies nor deletes a session that failed validation.
 
     Args:
         session_key: Captured cookie key; never a cached request session.
@@ -64,7 +93,7 @@ def fresh_identity(session_key: str | None) -> Identity | None:
         Actual database identity or None after expiry, revocation or logout.
     """
     request = HttpRequest()
-    request.session = SessionStore(session_key=session_key)
+    request.session = _read_only_session(session_key)
     request.user = get_user(request)
     user = request.user
     if not user.is_authenticated or not user.is_active:
@@ -72,7 +101,33 @@ def fresh_identity(session_key: str | None) -> Identity | None:
     return Identity(user._state.db, str(user.pk), session_binding(request))
 
 
-fresh_identity_async = sync_to_async(fresh_identity, thread_sensitive=True)
+def _fresh_identity_on_a_worker(session_key: str | None) -> Identity | None:
+    """Resolve the identity on a pool thread, then give back its connection.
+
+    Nothing signals request_finished for a worker thread, so without this the
+    connection that thread opened would outlive the check. Django then closes it
+    unless CONN_MAX_AGE keeps it, in which case the next check on that thread reuses
+    it, and open connections are bounded by the pool, not by the number of streams.
+
+    Args:
+        session_key: Captured cookie key.
+
+    Returns:
+        Actual database identity or None.
+    """
+    try:
+        return fresh_identity(session_key)
+    finally:
+        close_old_connections()
+
+
+# Not thread-sensitive: ASGIHandler gives every request an executor of its own for
+# thread-sensitive work, so each open stream pinned one OS thread and one database
+# connection for its whole life (32 streams measured +32 threads and +32
+# connections). Worker threads of the shared pool serve a check and are free again.
+fresh_identity_async = sync_to_async(
+    _fresh_identity_on_a_worker, thread_sensitive=False
+)
 
 
 def same_identity(expected: Identity, actual: Identity | None) -> bool:
