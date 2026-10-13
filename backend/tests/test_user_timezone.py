@@ -358,6 +358,33 @@ def test_an_all_day_deadline_round_trips_through_the_clients_zone(user):
     assert schedule_of(assert_hxml(edit)) == ("2026-07-15", "")
 
 
+def test_a_title_only_edit_from_another_zone_does_not_move_the_deadline(user):
+    # Created for the 10th in New York, the deadline is 03:59:59 UTC on the 11th, and
+    # Madrid shows the 11th for it. Posting that date back used to rebuild the end of
+    # the Madrid day: the same task, 18 hours later, after nothing but a new title.
+    client, task = create_all_day(user, "2026-06-10", "America/New_York")
+    stored = task.due_at
+    url = reverse("todo:task-edit", args=(task.pk,))
+    headers = {TIMEZONE_HEADER: MADRID}
+    shown = schedule_of(assert_hxml(client.get(url, headers=headers)))
+
+    response = client.post(
+        url,
+        {
+            "title": "Pay rent now",
+            "due_date": shown[0],
+            "due_time": shown[1],
+            "csrfmiddlewaretoken": token_from(client.get(url, headers=headers)),
+        },
+        headers=headers,
+    )
+
+    assert_hxml(response)
+    task.refresh_from_db()
+    assert task.title == "Pay rent now"
+    assert (task.due_at, task.due_all_day) == (stored, True)
+
+
 def test_a_date_only_deadline_is_still_open_until_the_clients_day_ends(user):
     # It is 23:30 in Madrid on the 15th: the task due that day is due today and not
     # overdue yet, because its deadline is the last instant of the Madrid day.

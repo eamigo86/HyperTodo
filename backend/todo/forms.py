@@ -240,15 +240,27 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
         # unsaved instance must know its owner or every create with a category fails.
         self.instance.user = user
         self.fields["category"].queryset = Category.objects.filter(user=user)
-        if not self.is_bound and self.instance.pk and self.instance.due_at:
-            local_due = timezone.localtime(self.instance.due_at)
-            self.initial.setdefault("due_date", local_due.date())
-            # An all-day deadline is stored as the last instant of its day. Showing
-            # that as 23:59 would put a time in a field the person never filled in.
-            if not self.instance.due_all_day:
-                self.initial.setdefault(
-                    "due_time", local_due.time().replace(second=0, microsecond=0)
-                )
+        if not self.is_bound and (shown := self._shown_schedule()):
+            self.initial.setdefault("due_date", shown[0])
+            if shown[1] is not None:
+                self.initial.setdefault("due_time", shown[1])
+
+    def _shown_schedule(self) -> tuple[date, time | None] | None:
+        """Return the date and time this form shows for the stored deadline.
+
+        Read in the zone that is active now. An all-day deadline is stored as the last
+        instant of its day, and showing that as 23:59 would put a time in a field the
+        person never filled in, so its time is None.
+
+        Returns:
+            The (date, time) pair, or None when the task has no deadline.
+        """
+        if not (self.instance.pk and self.instance.due_at):
+            return None
+        local_due = timezone.localtime(self.instance.due_at)
+        if self.instance.due_all_day:
+            return local_due.date(), None
+        return local_due.date(), local_due.time().replace(second=0, microsecond=0)
 
     def clean_due_date(self) -> date | None:
         """Keep the deadline inside the years the app can store and convert.
@@ -276,7 +288,9 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
 
         A date with no time is a deadline for the whole day, stored as the last
         instant of that local day so the task is not overdue while the day is still
-        going. A time of 00:00 typed on purpose is a time like any other.
+        going. A time of 00:00 typed on purpose is a time like any other. When an
+        existing task is saved with the very schedule the form showed for it, its stored
+        deadline is kept as it is.
 
         Returns:
             Cleaned form data with a timezone-aware due_at value and the due_all_day
@@ -289,6 +303,14 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
         # under the date, and not also that it is missing.
         if due_time and not due_date and "due_date" not in self.errors:
             self.add_error("due_time", _("A due date is required when a time is set."))
+        if due_date and self._shown_schedule() == (due_date, due_time):
+            # The person posted back what the form showed. Rebuilding the instant from
+            # it would move the deadline: the date was read in the active zone, which
+            # need not be the zone it was chosen in, and a wall-clock time inside a
+            # repeated hour names the wrong one of its two instants.
+            cleaned["due_at"] = self.instance.due_at
+            cleaned["due_all_day"] = self.instance.due_all_day
+            return cleaned
         cleaned["due_all_day"] = bool(due_date) and due_time is None
         cleaned["due_at"] = (
             timezone.make_aware(

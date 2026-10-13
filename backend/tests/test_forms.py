@@ -1,6 +1,7 @@
 """Tests for TODO input validation."""
 
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.utils import timezone
@@ -150,3 +151,139 @@ def test_an_all_day_task_is_edited_with_an_empty_time(user):
 
     assert form.initial["due_date"].isoformat() == "2026-09-06"
     assert form.initial.get("due_time") is None
+
+
+# --- editing a deadline from another zone ---------------------------------------
+
+NEW_YORK = ZoneInfo("America/New_York")
+MADRID = ZoneInfo("Europe/Madrid")
+SANTIAGO = ZoneInfo("America/Santiago")
+
+
+def posted_back(task, user, **changes):
+    """Return what a client posts after the edit form showed this task, changed."""
+    shown = TaskForm(instance=task, user=user).initial
+    due_time = shown.get("due_time")
+    return {
+        "title": task.title,
+        "due_date": shown["due_date"].isoformat(),
+        "due_time": "" if due_time is None else due_time.strftime("%H:%M"),
+        **changes,
+    }
+
+
+def edited_in(zone, task, user, **changes):
+    """Edit the task as it is shown in another zone and return the valid form."""
+    with timezone.override(zone):
+        form = TaskForm(posted_back(task, user, **changes), instance=task, user=user)
+        assert form.is_valid(), form.errors
+    return form
+
+
+# Stored while someone in New York, or Santiago, chose it; edited from elsewhere.
+NY_ALL_DAY = datetime(2026, 6, 11, 3, 59, 59, 999999, tzinfo=UTC)
+SANTIAGO_SECOND_2330 = datetime(2026, 4, 5, 3, 30, tzinfo=UTC)
+SANTIAGO_SECOND_END = datetime(2026, 4, 5, 3, 59, 59, 999999, tzinfo=UTC)
+MADRID_WITH_SECONDS = datetime(2026, 9, 6, 7, 30, 45, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("stored", "all_day", "zone"),
+    [
+        (NY_ALL_DAY, True, MADRID),
+        (NY_ALL_DAY, True, NEW_YORK),
+        (SANTIAGO_SECOND_END, True, SANTIAGO),
+        (SANTIAGO_SECOND_END, True, MADRID),
+        # 23:30 happens twice in Santiago that night; the second one is stored.
+        (SANTIAGO_SECOND_2330, False, SANTIAGO),
+        (datetime(2026, 9, 6, 13, 30, tzinfo=UTC), False, MADRID),
+        # A time with seconds is shown to the minute and must not lose them.
+        (MADRID_WITH_SECONDS, False, MADRID),
+    ],
+    ids=[
+        "all-day-new-york-seen-from-madrid",
+        "all-day-new-york-at-home",
+        "all-day-santiago-at-home",
+        "all-day-santiago-seen-from-madrid",
+        "timed-in-the-repeated-hour",
+        "timed-seen-from-madrid",
+        "timed-with-seconds",
+    ],
+)
+def test_a_title_only_edit_keeps_the_stored_deadline_exactly(
+    user, stored, all_day, zone
+):
+    task = Task.objects.create(
+        user=user, title="Pay rent", due_at=stored, due_all_day=all_day
+    )
+
+    form = edited_in(zone, task, user, title="Pay rent now")
+
+    assert form.cleaned_data["due_at"] == stored
+    assert form.cleaned_data["due_all_day"] is all_day
+
+
+def test_a_new_date_on_an_all_day_task_ends_that_day_in_the_active_zone(user):
+    task = Task.objects.create(
+        user=user, title="Pay rent", due_at=NY_ALL_DAY, due_all_day=True
+    )
+
+    # Madrid shows the 11th for this deadline; picking the 12th must move it.
+    form = edited_in(MADRID, task, user, due_date="2026-06-12")
+
+    assert form.cleaned_data["due_all_day"] is True
+    assert form.cleaned_data["due_at"] == datetime(
+        2026, 6, 12, 21, 59, 59, 999999, tzinfo=UTC
+    )
+
+
+def test_a_time_added_to_an_all_day_task_makes_it_a_timed_one(user):
+    task = Task.objects.create(
+        user=user, title="Pay rent", due_at=NY_ALL_DAY, due_all_day=True
+    )
+
+    form = edited_in(MADRID, task, user, due_time="09:00")
+
+    assert form.cleaned_data["due_all_day"] is False
+    assert form.cleaned_data["due_at"] == datetime(2026, 6, 11, 7, 0, tzinfo=UTC)
+
+
+def test_only_the_time_changed_moves_a_timed_deadline(user):
+    task = Task.objects.create(
+        user=user,
+        title="Call",
+        due_at=datetime(2026, 9, 6, 13, 30, tzinfo=UTC),
+        due_all_day=False,
+    )
+
+    form = edited_in(MADRID, task, user, due_time="16:45")
+
+    assert form.cleaned_data["due_all_day"] is False
+    assert form.cleaned_data["due_at"] == datetime(2026, 9, 6, 14, 45, tzinfo=UTC)
+
+
+def test_clearing_the_time_of_a_timed_task_makes_it_an_all_day_one(user):
+    task = Task.objects.create(
+        user=user,
+        title="Call",
+        due_at=datetime(2026, 9, 6, 13, 30, tzinfo=UTC),
+        due_all_day=False,
+    )
+
+    form = edited_in(MADRID, task, user, due_time="")
+
+    assert form.cleaned_data["due_all_day"] is True
+    assert form.cleaned_data["due_at"] == datetime(
+        2026, 9, 6, 21, 59, 59, 999999, tzinfo=UTC
+    )
+
+
+def test_clearing_the_date_removes_the_deadline(user):
+    task = Task.objects.create(
+        user=user, title="Pay rent", due_at=NY_ALL_DAY, due_all_day=True
+    )
+
+    form = edited_in(MADRID, task, user, due_date="")
+
+    assert form.cleaned_data["due_at"] is None
+    assert form.cleaned_data["due_all_day"] is False
