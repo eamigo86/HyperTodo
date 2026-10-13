@@ -1,6 +1,7 @@
 """Forms for authentication and TODO mutations."""
 
 import binascii
+import logging
 from base64 import b64decode
 from datetime import date, datetime, time
 from io import BytesIO
@@ -15,6 +16,8 @@ from PIL import Image, ImageOps
 
 from .models import Category, Task
 from .validators import scrub_xml, xml_safe_text
+
+logger = logging.getLogger(__name__)
 
 # The whole payload rides in a form FIELD, and django/http/multipartparser.py:243-250
 # counts non-file field bytes against DATA_UPLOAD_MAX_MEMORY_SIZE (2.5MB), raising a
@@ -43,35 +46,52 @@ DUPLICATE_CATEGORY = _("A category with this name already exists.")
 # fits a database datetime column: 9999-12-31 raised OverflowError and answered a 500.
 FIRST_DUE_YEAR = 2000
 LAST_DUE_YEAR = 2100
+# A refused form hands the submission back, and a bound form returns it RAW.
+# dj-hyperview refuses a document over 1 MB, so a megabyte posted into any echoed field
+# turned the refusal into a 500. A field is echoed up to its own max_length; the ones
+# that state none (a date, a time, a choice) up to this many characters, far more than
+# any of them needs.
+MAX_ECHO_CHARS = 64
+# Django's copy for a bad choice quotes the submitted value, so error text is bounded.
+MAX_ERROR_CHARS = 300
 
 
 class XmlSafeBoundField(forms.BoundField):
-    """Render a field's submission and error copy as text XML 1.0 can carry.
+    """Render a field's submission and error copy as bounded text XML 1.0 can carry.
 
     The validators refuse forbidden characters, but a refused form is re-rendered
     with the raw submission (and a choice error quotes it), and dj-hyperview rejects
-    the whole document when a single such character reaches it.
+    the whole document when a single such character reaches it, or when the document
+    outgrows its size cap.
     """
 
     def value(self) -> object:
-        """Return the value to render, with forbidden characters replaced.
+        """Return the value to render, bounded and with forbidden characters replaced.
+
+        Only a submission is bounded. An initial value comes from storage, where the
+        field's own validation already held it to its limit.
 
         Returns:
             The bound submission or initial value, made XML-safe when it is text.
         """
         value = super().value()
-        return scrub_xml(value) if isinstance(value, str) else value
+        if not isinstance(value, str):
+            return value
+        if self.form.is_bound:
+            value = value[: getattr(self.field, "max_length", None) or MAX_ECHO_CHARS]
+        return scrub_xml(value)
 
     @property
     def errors(self) -> ErrorList:
-        """Return the error messages to render, made XML-safe.
+        """Return the error messages to render, bounded and made XML-safe.
 
         Returns:
             The field's errors with forbidden characters replaced.
         """
         errors = super().errors
         return self.form.error_class(
-            [scrub_xml(message) for message in errors], renderer=self.form.renderer
+            [scrub_xml(message[:MAX_ERROR_CHARS]) for message in errors],
+            renderer=self.form.renderer,
         )
 
 
@@ -323,6 +343,11 @@ class AvatarForm(forms.Form):
             # Exception, not an OSError, so without its own arm it escapes
             # form.is_valid() and the endpoint answers 500 instead of a refusal.
             raise forms.ValidationError(TOO_LARGE) from error
+        except MemoryError, RecursionError:
+            # These say something about the server, not about the file: the decode or
+            # the re-encode ran out of memory or stack. Calling that "not an image"
+            # would hide it from everyone, so it surfaces as the server error it is.
+            raise
         except Exception as error:
             # Pillow has no single error for a damaged file, and a list of the types
             # seen so far only ever lags behind the next one. UnidentifiedImageError
@@ -335,6 +360,16 @@ class AvatarForm(forms.Form):
             # cannot parse. This form is the trust boundary for these bytes, so
             # whatever the decode or the re-encode raises means one thing to the
             # person who picked the file.
+            #
+            # The same net also catches a bug in our own re-encode, which the person
+            # would only ever see as a photo that is "not an image". The warning keeps
+            # that visible. It names the failure and carries its traceback, and none of
+            # the upload: the payload and the decoded bytes never reach the log.
+            logger.warning(
+                "The avatar upload was refused: %s while decoding it.",
+                type(error).__name__,
+                exc_info=True,
+            )
             raise forms.ValidationError(NOT_AN_IMAGE) from error
 
 

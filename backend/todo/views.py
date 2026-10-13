@@ -1,5 +1,6 @@
 """Server-driven Hyperview endpoints for the TODO application."""
 
+import logging
 import re
 from collections.abc import Callable
 from functools import wraps
@@ -70,6 +71,8 @@ from .throttle import (
     release_biometric_attempts,
     release_password_attempts,
 )
+
+logger = logging.getLogger(__name__)
 
 # Where config/urls.py mounts the Hyperview API. The rest of what the project serves,
 # the Django admin first among it, is read by people in a browser, not by the client.
@@ -1434,6 +1437,14 @@ def _hxml_failure(
         if not getattr(response, "is_rendered", True):
             response.render()
     except Exception:
+        # Declining is right, doing it in silence is not: without this a broken error
+        # template shows up only as an HTML page where the client expects HXML. Django
+        # still logs the failure that sent us here, so this says why it went unanswered.
+        logger.warning(
+            "The HXML %s screen could not be built; Django's own page is used.",
+            status,
+            exc_info=True,
+        )
         return None
     return response
 

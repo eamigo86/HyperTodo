@@ -4,6 +4,7 @@ A 5xx or an HTML page is a response the client cannot parse (HvDoc throws on bot
 so each of these has to come back as a refusal in the shape the action can load.
 """
 
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -36,6 +37,40 @@ def field_error(root):
     node = root.find(".//hv:text[@style='field-error']", NS)
     assert node is not None
     return node.text
+
+
+FIELD_TAGS = {"text-field", "select-single", "picker-field", "date-field"}
+
+
+def errors_by_field(root):
+    """Map every field of a refused form panel to the error copy shown under it.
+
+    The panel puts a field's error straight after the field, so an error belongs to
+    the nearest named field before it. One that comes before any field is a
+    form-level error and is filed under None. Unlike field_error, this fails when
+    the right copy sits under the wrong field.
+    """
+    found = {}
+    current = None
+    for node in root.iter():
+        tag = node.tag.rsplit("}", 1)[-1]
+        if tag in FIELD_TAGS:
+            current = node.attrib["name"]
+        elif tag == "text" and node.attrib.get("style") == "field-error":
+            assert current not in found, f"two errors under {current}"
+            found[current] = node.text
+    return found
+
+
+def invalid_fields(root):
+    """Return the names of the fields a refused form panel marks in red."""
+    return {
+        node.attrib["name"]
+        for node in root.iter()
+        if node.tag.rsplit("}", 1)[-1] in FIELD_TAGS
+        and "field-invalid"
+        in (node.attrib.get("style", "") + node.attrib.get("field-style", ""))
+    }
 
 
 # --- a parallel write gets in between a form's check and the write ---------------
@@ -83,7 +118,11 @@ def test_a_duplicate_category_created_in_parallel_is_a_422_and_not_a_500(
     )
 
     root = assert_hxml(response, status=422)
-    assert field_error(root) == "A category with this name already exists."
+    # On the name, which is what the person typed, and on nothing else.
+    assert errors_by_field(root) == {
+        "name": "A category with this name already exists."
+    }
+    assert invalid_fields(root) == {"name"}
     assert Category.objects.filter(user=user).count() == 1
 
 
@@ -111,7 +150,10 @@ def test_a_rename_that_collides_in_parallel_is_a_422_and_not_a_500(
     )
 
     root = assert_hxml(response, status=422)
-    assert field_error(root) == "A category with this name already exists."
+    assert errors_by_field(root) == {
+        "name": "A category with this name already exists."
+    }
+    assert invalid_fields(root) == {"name"}
     home.refresh_from_db()
     assert home.name == "Home"
 
@@ -138,8 +180,140 @@ def test_a_category_deleted_in_parallel_is_a_422_on_the_task_form(
     )
 
     root = assert_hxml(response, status=422)
-    assert field_error(root).startswith("Select a valid choice.")
+    # The category is what vanished, so the category is what is refused: not the title
+    # that was fine, and not the form as a whole.
+    assert list(errors_by_field(root)) == ["category"]
+    assert errors_by_field(root)["category"].startswith("Select a valid choice.")
+    assert invalid_fields(root) == {"category"}
     assert not Task.objects.filter(title="Ship").exists()
+
+
+# --- a refused form echoes a bounded submission ---------------------------------
+
+# Over dj-hyperview's 1 MB document cap and under Django's 2.5 MB request cap, so it
+# reaches the form and then the template.
+OVERSIZE = 1_500_000
+DATE_AND_TIME = {"due_date": "2026-09-07", "due_time": "09:30"}
+
+# (route, other posted fields, field that carries the oversized text, node to inspect,
+# longest value the panel may hand back). Fields that state a max_length are echoed up
+# to it, the rest up to a few dozen characters, which is more than a date, a time or an
+# id ever needs.
+OVERSIZED_ECHOES = [
+    ("/hv/tasks/new/", {"title": ""}, "due_date", "date-field", 64),
+    (
+        "/hv/tasks/new/",
+        {"title": "Plan", "due_date": "2026-09-07"},
+        "due_time",
+        "text-field",
+        64,
+    ),
+    ("/hv/tasks/new/", {}, "title", "text-field", 160),
+    ("/hv/tasks/new/", {"title": "Plan"}, "notes", "text-field", 10_000),
+    ("/hv/tasks/new/", {"title": "Plan"}, "category", "picker-field", 64),
+    ("/hv/categories/new/", {"color": "mint"}, "name", "text-field", 80),
+    ("/hv/settings/", {}, "first_name", "text-field", 150),
+    ("/hv/settings/", {}, "last_name", "text-field", 150),
+    ("/hv/settings/", {}, "email", "text-field", 254),
+    ("/hv/login/", {"password": "x"}, "username", "text-field", 150),
+]
+
+
+@pytest.mark.parametrize(
+    ("route", "posted", "field", "tag", "limit"),
+    OVERSIZED_ECHOES,
+    ids=[
+        f"{route.strip('/').split('/')[-1]}-{field}"
+        for route, _, field, _, _ in OVERSIZED_ECHOES
+    ],
+)
+def test_a_refused_form_never_echoes_more_than_the_field_can_hold(
+    user, route, posted, field, tag, limit
+):
+    # The panel hands back what was posted so nobody retypes it, and a bound form
+    # returns the RAW submission. A 1.5 MB one took the whole document over the cap
+    # and the refusal became a 500 the client cannot read.
+    client = Client()
+    client.force_login(user)
+
+    response = client.post(route, {**posted, field: "x" * OVERSIZE})
+
+    root = assert_hxml(response, status=422)
+    node = root.find(f".//hv:{tag}[@name='{field}']", NS)
+    assert node is not None
+    assert len(node.attrib["value"]) <= limit
+
+
+def test_a_refused_form_keeps_a_long_submission_that_still_fits_the_field(user):
+    # The bound is the field's own limit, so a title only a little too long comes back
+    # whole, up to that limit, and the person can see where it must be cut.
+    client = Client()
+    client.force_login(user)
+
+    response = client.post("/hv/tasks/new/", {"title": "t" * 200})
+
+    root = assert_hxml(response, status=422)
+    assert root.find(".//hv:text-field[@name='title']", NS).attrib["value"] == "t" * 160
+    assert "at most 160 characters" in field_error(root)
+
+
+def test_a_notes_field_just_over_its_limit_is_echoed_up_to_the_limit(user):
+    client = Client()
+    client.force_login(user)
+
+    response = client.post("/hv/tasks/new/", {"title": "Plan", "notes": "n" * 10_001})
+
+    root = assert_hxml(response, status=422)
+    notes = root.find(".//hv:text-field[@name='notes']", NS)
+    assert notes.attrib["value"] == "n" * 10_000
+
+
+def test_a_refused_choice_does_not_quote_an_oversized_value_back(user):
+    # Django's own copy for a bad choice quotes the value, and the form scrubs and
+    # echoes that copy, so the error text alone could outgrow the document.
+    client = Client()
+    client.force_login(user)
+
+    response = client.post(
+        "/hv/categories/new/", {"name": "Work", "color": "c" * OVERSIZE}
+    )
+
+    root = assert_hxml(response, status=422)
+    assert len(field_error(root)) < 500
+    assert field_error(root).startswith("Select a valid choice.")
+
+
+def test_an_edit_that_is_refused_keeps_the_stored_text_whole(user):
+    # Only a submission is bounded. Text that is already stored, up to the field's own
+    # limit, is what the edit form was opened with and goes back unchanged.
+    task = Task.objects.create(user=user, title="T" * 160, notes="N" * 10_000)
+    client = Client()
+    client.force_login(user)
+
+    response = client.post(
+        f"/hv/tasks/{task.pk}/edit/",
+        {"title": "T" * 160, "notes": "N" * 10_000, "due_date": "nonsense"},
+    )
+
+    root = assert_hxml(response, status=422)
+    assert root.find(".//hv:text-field[@name='title']", NS).attrib["value"] == "T" * 160
+    assert (
+        root.find(".//hv:text-field[@name='notes']", NS).attrib["value"] == "N" * 10_000
+    )
+
+
+def test_stored_text_over_the_limit_is_shown_whole_when_the_edit_form_opens(user):
+    # A row written before the limit existed is not cut by the form: truncating what
+    # is stored would lose text on the next save without a word.
+    task = Task.objects.create(user=user, title="Old", notes="N" * 12_000)
+    client = Client()
+    client.force_login(user)
+
+    root = assert_hxml(client.get(f"/hv/tasks/{task.pk}/edit/"))
+
+    assert (
+        root.find(".//hv:text-field[@name='notes']", NS).attrib["value"] == "N" * 12_000
+    )
 
 
 # --- dates the database cannot hold ---------------------------------------------
@@ -204,7 +378,10 @@ def test_the_overflowing_date_from_the_audit_answers_422_and_not_500(user):
     )
 
     root = assert_hxml(response, status=422)
-    assert field_error(root) == "Choose a due date between 2000 and 2100."
+    assert errors_by_field(root) == {
+        "due_date": "Choose a due date between 2000 and 2100."
+    }
+    assert invalid_fields(root) == {"due_date"}
     assert not Task.objects.exists()
 
 
@@ -364,3 +541,78 @@ def test_a_failing_hxml_error_falls_back_to_djangos_page(monkeypatch, broken):
     assert isinstance(failed, HttpResponse) and failed.status_code == 500
     assert not_found.headers["Content-Type"].startswith("text/html")
     assert failed.headers["Content-Type"].startswith("text/html")
+
+
+@pytest.mark.parametrize("broken", ["construct", "render"])
+@pytest.mark.parametrize(
+    ("handler", "status"), [("not_found", 404), ("server_error", 500)]
+)
+def test_a_failing_hxml_error_says_so_in_the_log(
+    monkeypatch, caplog, broken, handler, status
+):
+    # Falling back is right; doing it in silence is not. A broken error template would
+    # otherwise show up only as HTML where the client expects HXML.
+    def boom(*args, **kwargs):
+        raise RuntimeError("the error screen is broken too")
+
+    if broken == "construct":
+        monkeypatch.setattr(views, "_error_response", boom)
+    else:
+        monkeypatch.setattr(
+            views,
+            "_error_response",
+            lambda *a, **k: SimpleNamespace(is_rendered=False, render=boom),
+        )
+    request = RequestFactory().get("/hv/anything/")
+    call = views.not_found if handler == "not_found" else views.server_error
+    arguments = (request, Exception()) if handler == "not_found" else (request,)
+
+    with caplog.at_level(logging.WARNING, logger="todo.views"):
+        response = call(*arguments)
+
+    assert response.status_code == status
+    [record] = [r for r in caplog.records if r.name == "todo.views"]
+    assert record.levelno == logging.WARNING
+    assert record.exc_info[0] is RuntimeError
+    assert str(status) in record.getMessage()
+
+
+def test_an_hxml_error_that_works_leaves_no_warning(user, monkeypatch, caplog):
+    def broken(*args, **kwargs):
+        raise RuntimeError("database on fire")
+
+    monkeypatch.setattr(views, "dashboard_summary", broken)
+    client = Client(raise_request_exception=False)
+    client.force_login(user)
+
+    with caplog.at_level(logging.WARNING):
+        client.get("/hv/dashboard/")
+
+    assert [r for r in caplog.records if r.name == "todo.views"] == []
+
+
+def test_both_failures_are_logged_when_the_error_screen_breaks_on_a_real_500(
+    user, monkeypatch, caplog
+):
+    def broken(*args, **kwargs):
+        raise RuntimeError("database on fire")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("the error screen is broken too")
+
+    monkeypatch.setattr(views, "dashboard_summary", broken)
+    monkeypatch.setattr(views, "_error_response", boom)
+    client = Client(raise_request_exception=False)
+    client.force_login(user)
+
+    with caplog.at_level(logging.WARNING):
+        response = client.get("/hv/dashboard/")
+
+    assert response.status_code == 500
+    assert response.headers["Content-Type"].startswith("text/html")
+    # Django still logs the request that failed...
+    original = [r for r in caplog.records if r.name == "django.request" and r.exc_info]
+    assert [str(r.exc_info[1]) for r in original] == ["database on fire"]
+    # ...and now also why that was not answered in HXML.
+    [fallback] = [r for r in caplog.records if r.name == "todo.views"]
+    assert str(fallback.exc_info[1]) == "the error screen is broken too"

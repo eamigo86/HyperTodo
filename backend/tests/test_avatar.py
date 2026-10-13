@@ -6,6 +6,7 @@ describe and nothing has to be trusted from a file nobody can read in a diff.
 """
 
 import ast
+import logging
 import os
 import random
 import re
@@ -427,6 +428,64 @@ def test_a_file_that_breaks_pillow_in_any_other_way_is_not_an_image(make, raised
         ImageOps.exif_transpose(Image.open(BytesIO(raw)))
 
     assert rejection(raw) == NOT_AN_IMAGE
+
+
+@pytest.mark.parametrize("failure", [MemoryError, RecursionError])
+def test_running_out_of_memory_or_stack_is_not_called_a_bad_image(monkeypatch, failure):
+    # These say something about the server and not about the file, and the catch-all
+    # used to turn them into "That file is not an image." with nothing in the log.
+    def exhausted(source):
+        raise failure
+
+    monkeypatch.setattr(forms, "_normalised_avatar", exhausted)
+
+    with pytest.raises(failure):
+        submit(jpeg()).is_valid()
+
+
+@DECODE_FAILURES
+def test_a_file_that_breaks_pillow_leaves_a_warning_with_the_traceback(
+    make, raised, caplog
+):
+    raw = make()
+
+    with caplog.at_level(logging.WARNING, logger="todo.forms"):
+        assert rejection(raw) == NOT_AN_IMAGE
+
+    [record] = [r for r in caplog.records if r.name == "todo.forms"]
+    assert record.levelno == logging.WARNING
+    assert record.exc_info is not None and record.exc_info[0] is raised
+    # The warning says what failed, and none of the upload goes into the log.
+    logged = logging.Formatter().format(record)
+    payload = b64encode(raw).decode()
+    assert payload[:48] not in logged and len(logged) < 4000
+
+
+def test_a_programming_error_in_the_decode_path_is_logged_and_still_refused(
+    monkeypatch, caplog
+):
+    def broken(source):
+        raise AttributeError("the re-encode has a bug")
+
+    monkeypatch.setattr(forms, "_normalised_avatar", broken)
+
+    with caplog.at_level(logging.WARNING, logger="todo.forms"):
+        assert rejection(jpeg()) == NOT_AN_IMAGE
+
+    [record] = [r for r in caplog.records if r.name == "todo.forms"]
+    assert record.exc_info[0] is AttributeError
+    assert "the re-encode has a bug" in logging.Formatter().format(record)
+
+
+def test_a_refusal_the_form_chose_itself_is_not_logged_as_a_failure(caplog):
+    bmp = BytesIO()
+    Image.new("RGB", (8, 8)).save(bmp, "BMP")
+
+    with caplog.at_level(logging.WARNING, logger="todo.forms"):
+        assert rejection(bmp.getvalue()) == NOT_AN_IMAGE
+        assert rejection(_with_declared_size(png((1, 1)), 4096, 4096)) == TOO_LARGE
+
+    assert [r for r in caplog.records if r.name == "todo.forms"] == []
 
 
 def test_an_exotic_decoder_is_never_reached():
