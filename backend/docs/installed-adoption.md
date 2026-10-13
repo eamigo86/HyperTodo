@@ -64,9 +64,9 @@ Auth, database sessions, CSRF, cache and schema extensions remain in effect. Tes
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `DJANGO_DEBUG` | `1` | `0` turns DEBUG off and marks the session and CSRF cookies `Secure`. Startup then refuses the public development secret key. |
-| `DJANGO_SECRET_KEY` | public development key | Required when `DJANGO_DEBUG=0`, also for `manage.py` commands and `make backend-seed DJANGO_DEBUG=0`. |
-| `DJANGO_SECURE_PROXY_SSL_HEADER` | unset | META name of the header a TLS-terminating proxy sets, for example `HTTP_X_FORWARDED_PROTO`; a value of `https` then counts as a secure request. Set it only behind a proxy that overwrites that header. |
+| `DJANGO_DEBUG` | `1` | Only the value `1` keeps DEBUG on. Any other value (`0`, `false`, an empty value, a typo) turns DEBUG off and marks the session and CSRF cookies `Secure`. Startup then refuses the public development secret key. |
+| `DJANGO_SECRET_KEY` | public development key | Required when DEBUG is off (`DJANGO_DEBUG` set to anything but `1`), also for `manage.py` commands and `make backend-seed DJANGO_DEBUG=0`. An empty value counts as unset. |
+| `DJANGO_SECURE_PROXY_SSL_HEADER` | unset | Header a TLS-terminating proxy sets, written as the header (`X-Forwarded-Proto`) or as its META key (`HTTP_X_FORWARDED_PROTO`); a header name is converted to the META key, which is what Django compares. A value of `https` then counts as a secure request. Set it only behind a proxy that overwrites that header. |
 | `HYPERTODO_REALTIME_NAMESPACE` | `hypertodo-development` | Redis PubSub namespace shared by every writer and stream worker of one deployment. |
 | `HYPERTODO_SOURCE_PROBE` | follows `DJANGO_DEBUG` | `1` routes `/hv/source-probe/`, the anonymous source-precedence acceptance screen; `0` never does. Unset, it is routed in development only. The backend tests turn it on in their own settings. |
 

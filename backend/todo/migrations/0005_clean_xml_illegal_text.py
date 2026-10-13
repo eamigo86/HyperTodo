@@ -18,19 +18,28 @@ COLUMNS = (
 # Category.name is unique per user ignoring case, and the suffix below has to fit
 # the column, so the base is cut before " (n)" is appended.
 CATEGORY_BASE = 70
+# Rows are read this many at a time, so a large table is never held whole in memory
+# (200000 tasks with 2 KB notes peaked at 636 MB when read in one go).
+CHUNK = 500
 
 
 def _dirty_rows(manager, columns):
     """Yield (pk, replacements) for every row holding a forbidden character."""
-    # ponytail: every row is read once; chunk by pk if these tables ever get large.
-    for row in manager.only("pk", *columns):
-        changes = {
-            column: scrub_xml(text)
-            for column in columns
-            if XML_ILLEGAL.search(text := getattr(row, column))
-        }
-        if changes:
-            yield row.pk, changes
+    rows = manager.only("pk", *columns).order_by("pk")
+    chunk = list(rows[:CHUNK])
+    while chunk:
+        for row in chunk:
+            changes = {
+                column: scrub_xml(text)
+                for column in columns
+                if XML_ILLEGAL.search(text := getattr(row, column))
+            }
+            if changes:
+                yield row.pk, changes
+        # Keyset paging rather than OFFSET: the caller rewrites rows between chunks,
+        # and each chunk is fully read before it is yielded, so no cursor stays open
+        # on the table being updated.
+        chunk = list(rows.filter(pk__gt=chunk[-1].pk)[:CHUNK])
 
 
 def _clean_categories(manager):

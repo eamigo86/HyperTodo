@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from dj_hyperview.schema import get_hyperview_catalog
 from django.conf import settings
 from django.core.cache import cache
@@ -126,6 +127,23 @@ def test_leaving_debug_requires_a_private_secret_key():
     assert "ImproperlyConfigured" in result.stderr
 
 
+def test_an_empty_secret_key_counts_as_unset():
+    # DJANGO_SECRET_KEY= in an env file used to slip past the guard below and fail
+    # later inside Django with a less helpful message.
+    result = load_settings(DJANGO_DEBUG="0", DJANGO_SECRET_KEY="")
+
+    assert result.returncode != 0
+    assert "Set DJANGO_SECRET_KEY when DJANGO_DEBUG=0" in result.stderr
+    assert resolved(DJANGO_SECRET_KEY="")["debug"] is True
+
+
+def test_any_debug_value_other_than_one_turns_debug_off():
+    for value in ("0", "false", "", "yes"):
+        assert (
+            resolved(DJANGO_DEBUG=value, DJANGO_SECRET_KEY=STRONG_KEY)["debug"] is False
+        )
+
+
 def test_the_public_key_stays_acceptable_in_debug_only():
     assert resolved(DJANGO_SECRET_KEY="development-only-secret-key")["debug"] is True
     result = load_settings(
@@ -155,6 +173,27 @@ def test_the_proxy_ssl_header_is_opt_in():
     state = resolved(DJANGO_SECURE_PROXY_SSL_HEADER="HTTP_X_FORWARDED_PROTO")
 
     assert state["proxy"] == ["HTTP_X_FORWARDED_PROTO", "https"]
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        "X-Forwarded-Proto",
+        "x-forwarded-proto",
+        " X-Forwarded-Proto ",
+        "http_x_forwarded_proto",
+    ],
+)
+def test_the_proxy_ssl_header_may_be_written_as_the_http_header_name(written):
+    # Django reads the META key, so "X-Forwarded-Proto" on its own matched nothing and
+    # left the setting silently inert.
+    state = resolved(DJANGO_SECURE_PROXY_SSL_HEADER=written)
+
+    assert state["proxy"] == ["HTTP_X_FORWARDED_PROTO", "https"]
+
+
+def test_a_blank_proxy_ssl_header_stays_unset():
+    assert resolved(DJANGO_SECURE_PROXY_SSL_HEADER=" ")["proxy"] is None
 
 
 def test_the_source_probe_follows_debug_unless_the_environment_says_otherwise():

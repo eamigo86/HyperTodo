@@ -14,7 +14,9 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 
 from tests.test_hxml_views import NS, assert_hxml
 from todo.forms import CategoryForm, ProfileForm, TaskForm
@@ -320,3 +322,96 @@ def test_the_data_migration_can_run_twice(user):
     _run_cleaning()
 
     assert Task.objects.get().title == f"Buy{FFFD}milk"
+
+
+def test_the_data_migration_reads_each_table_in_primary_key_chunks(user, monkeypatch):
+    migration = importlib.import_module("todo.migrations.0005_clean_xml_illegal_text")
+    monkeypatch.setattr(migration, "CHUNK", 2)
+    poisoned = {0, 1, 2, 5, 6}
+    tasks = [
+        Task.objects.create(
+            user=user, title=f"Task {n}\x01" if n in poisoned else f"Task {n}"
+        )
+        for n in range(7)
+    ]
+
+    with CaptureQueriesContext(connection) as captured:
+        _run_cleaning()
+
+    # Rows on both sides of every chunk boundary are healed...
+    assert [Task.objects.get(pk=task.pk).title for task in tasks] == [
+        f"Task {n}{FFFD}" if n in poisoned else f"Task {n}" for n in range(7)
+    ]
+    # ...and no read ever asks for more than one chunk of them.
+    reads = [
+        query["sql"]
+        for query in captured
+        if query["sql"].startswith("SELECT") and 'FROM "todo_task"' in query["sql"]
+    ]
+    assert len(reads) > 1
+    assert all("LIMIT 2" in sql for sql in reads)
+
+
+# --- Django admin -----------------------------------------------------------
+
+
+@pytest.fixture
+def admin_session(client):
+    root = get_user_model().objects.create_superuser(
+        "root", "root@example.com", "correct-horse"
+    )
+    client.force_login(root)
+    return client
+
+
+def _change_user(client, target, **fields):
+    joined = timezone.localtime(target.date_joined)
+    data = {
+        "username": target.username,
+        "first_name": target.first_name,
+        "last_name": target.last_name,
+        "email": target.email,
+        "is_active": "on",
+        "date_joined_0": joined.strftime("%Y-%m-%d"),
+        "date_joined_1": joined.strftime("%H:%M:%S"),
+        **fields,
+    }
+    return client.post(reverse("admin:auth_user_change", args=(target.pk,)), data)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("first_name", "Ada\x01"),
+        ("last_name", "\U0000fffeLovelace"),
+        # Django accepts control characters inside a quoted local part.
+        ("email", '"a\x0b"@example.com'),
+    ],
+)
+def test_the_admin_user_form_refuses_what_a_document_cannot_carry(
+    admin_session, user, field, value
+):
+    response = _change_user(admin_session, user, **{field: value})
+
+    assert response.status_code == 200
+    assert MESSAGE in response.content.decode()
+    user.refresh_from_db()
+    assert getattr(user, field) == ""
+
+
+def test_the_admin_user_form_still_saves_ordinary_text(admin_session, user):
+    response = _change_user(
+        admin_session,
+        user,
+        first_name="Ada",
+        last_name="Lovelace",
+        email="ada@example.com",
+    )
+
+    assert response.status_code == 302
+    user.refresh_from_db()
+    assert (user.first_name, user.last_name, user.email) == (
+        "Ada",
+        "Lovelace",
+        "ada@example.com",
+    )

@@ -1,13 +1,23 @@
 """Django admin registrations for HyperTodo."""
 
+from django import forms
 from django.contrib import admin
 from django.contrib.admin.forms import AdminAuthenticationForm
+from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from django.db.models import Field
+from django.http import HttpRequest
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.debug import sensitive_variables
 
 from .models import BiometricCredential, Category, Profile, Task
 from .throttle import claim_password_attempt, release_password_attempts
+from .validators import xml_safe_text
+
+# The fields of auth.User that end up inside Hyperview documents. The app's own forms
+# validate them, but auth.User is not ours to put validators on.
+XML_TEXT_FIELDS = frozenset({"first_name", "last_name", "email"})
 
 
 class ThrottledAdminAuthenticationForm(AdminAuthenticationForm):
@@ -44,6 +54,37 @@ class ThrottledAdminAuthenticationForm(AdminAuthenticationForm):
 
 
 admin.site.login_form = ThrottledAdminAuthenticationForm
+
+
+class XmlSafeUserAdmin(UserAdmin):
+    """User admin that refuses names and emails a Hyperview document cannot carry.
+
+    Without it the Admin could write a control character into a name that the app's
+    own forms would have refused, and every screen showing that name would then fail
+    to render.
+    """
+
+    def formfield_for_dbfield(
+        self, db_field: Field, request: HttpRequest | None, **kwargs: object
+    ) -> forms.Field | None:
+        """Add the XML-safety check to the personal-data fields.
+
+        Args:
+            db_field: Model field the form field is built for.
+            request: Current admin request.
+            **kwargs: Options passed through to the form field constructor.
+
+        Returns:
+            The form field, or None for a model field the form does not offer.
+        """
+        field = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if field is not None and db_field.name in XML_TEXT_FIELDS:
+            field.validators.append(xml_safe_text)
+        return field
+
+
+admin.site.unregister(User)
+admin.site.register(User, XmlSafeUserAdmin)
 
 
 @admin.register(Category)

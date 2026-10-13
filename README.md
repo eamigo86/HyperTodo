@@ -52,11 +52,11 @@ its Python client does not start one. Run commands from the repository root.
 [installed-package and safe startup guide](backend/docs/installed-adoption.md)
 for credentials, existing DB overrides and deployment details.
 
-**Seeded accounts:** while `DJANGO_DEBUG` is on, `make backend-seed` creates the
-superuser `admin` / `admin123` and the user `demo` / `demo123`, unless
-`HYPERTODO_ADMIN_PASSWORD` / `HYPERTODO_DEMO_PASSWORD` are set. Set both before
-binding beyond loopback (`backend-run-device`, or `backend-run-sse` with `LAN_IP`);
-`backend-run` and `backend-run-redis` listen on loopback only.
+**Seeded accounts:** while `DJANGO_DEBUG` is `1` (the default; any other value turns
+DEBUG off), `make backend-seed` creates the superuser `admin` / `admin123` and the user
+`demo` / `demo123`, unless `HYPERTODO_ADMIN_PASSWORD` / `HYPERTODO_DEMO_PASSWORD` are
+set. Set both before binding beyond loopback (`backend-run-device`, or `backend-run-sse`
+with `LAN_IP`); `backend-run` and `backend-run-redis` listen on loopback only.
 
 | Command | Use |
 | --- | --- |

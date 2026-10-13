@@ -12,7 +12,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Public on purpose: the development flow and the test suite need a working key with
 # no setup. That is also why DEBUG may not be switched off while it is in use.
 _PUBLIC_SECRET_KEY = "development-only-secret-key"
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", _PUBLIC_SECRET_KEY)
+# `or`, not a get default: DJANGO_SECRET_KEY= in an env file is set but empty, and must
+# count as unset so the guard below still catches it.
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or _PUBLIC_SECRET_KEY
+# Only the exact value "1" keeps DEBUG on: "0", "false", an empty value or a typo all
+# turn it off.
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 if not DEBUG and SECRET_KEY == _PUBLIC_SECRET_KEY:
     raise ImproperlyConfigured("Set DJANGO_SECRET_KEY when DJANGO_DEBUG=0")
@@ -117,10 +121,16 @@ CSRF_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_SAMESITE = "Lax"
 # Development talks plain http:// to a simulator or a LAN phone; anything else is HTTPS.
 SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = not DEBUG
-# Opt-in for a TLS-terminating reverse proxy: the META name of the header it sets
-# (for example HTTP_X_FORWARDED_PROTO). Only behind a proxy that also strips any
-# client-supplied copy, otherwise a client could claim HTTPS for itself.
-if _proxy_ssl_header := os.environ.get("DJANGO_SECURE_PROXY_SSL_HEADER"):
+# Opt-in for a TLS-terminating reverse proxy: the header it sets, written either as the
+# header (X-Forwarded-Proto) or as its META key (HTTP_X_FORWARDED_PROTO). Only behind a
+# proxy that also strips any client-supplied copy, otherwise a client could claim HTTPS
+# for itself.
+if _proxy_ssl_header := os.environ.get("DJANGO_SECURE_PROXY_SSL_HEADER", "").strip():
+    # Django compares the META key, so a bare header name would never match anything and
+    # the setting would be inert without a word.
+    _proxy_ssl_header = _proxy_ssl_header.upper().replace("-", "_")
+    if not _proxy_ssl_header.startswith("HTTP_"):
+        _proxy_ssl_header = f"HTTP_{_proxy_ssl_header}"
     SECURE_PROXY_SSL_HEADER = (_proxy_ssl_header, "https")
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/15")
