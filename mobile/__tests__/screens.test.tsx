@@ -1,6 +1,7 @@
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { ActivityIndicator, StyleSheet, AppState } from "react-native";
+import Constants from "expo-constants";
 
 import App, { ErrorScreen, LoadingScreen } from "../App";
 import ElementErrorBanner from "../src/components/ElementErrorBanner";
@@ -9,6 +10,10 @@ import { FAILURE_COPY } from "../src/feedback/failure";
 import { hyperviewLogger, reportHyperviewError } from "../src/feedback/logging";
 import { publishTheme } from "../src/theme";
 
+// jest-expo leaves Constants.expoConfig empty, and the default App refuses to guess a
+// server, so hand it the URL a real build bakes in. This is expo-constants' own seam
+// for the raw manifest; the missing trailing slash exercises the runtime normalizing.
+(Constants as unknown as { __rawManifest_TEST: unknown }).__rawManifest_TEST = { extra: { apiUrl: "https://app.test/hv" } };
 jest.mock("expo-secure-store", () => ({ getItem: () => null, setItem: () => undefined }));
 jest.mock("expo-splash-screen", () => ({ preventAutoHideAsync: jest.fn(), hideAsync: jest.fn() }));
 // Capture the props instead of discarding them: dropping a behavior or the
@@ -68,6 +73,11 @@ describe("owned shell screens", () => {
     expect(mockHyperviewProps.refreshControl).toBe(OfflineRefreshControl);
     expect(mockHyperviewProps.logger).toBe(hyperviewLogger);
     expect(mockHyperviewProps.onError).toBe(reportHyperviewError);
+  });
+
+  it("points hyperview at the entrypoint baked into the app config", async () => {
+    render(<App />);
+    await waitFor(() => expect(mockHyperviewProps.entrypointUrl).toBe("https://app.test/hv/"));
   });
 
   it("renders the branded loading state", () => {

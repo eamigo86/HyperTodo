@@ -10,7 +10,9 @@ export function createOwnedNativePorts(readCredential:()=>Promise<string|null>,p
     hasHardware:()=>LocalAuthentication.hasHardwareAsync(),
     isEnrolled:()=>LocalAuthentication.isEnrolledAsync(),
     supportedTypes:()=>LocalAuthentication.supportedAuthenticationTypesAsync(),
-    unlock:promptMessage=>LocalAuthentication.authenticateAsync({cancelLabel:"Use password",disableDeviceFallback:true,promptMessage}),
+    // "strong" is Android Class 3 only. The library default admits Class 2 (e.g. camera face unlock),
+    // and this prompt releases a long-lived bearer credential. Ignored on iOS.
+    unlock:promptMessage=>LocalAuthentication.authenticateAsync({cancelLabel:"Use password",disableDeviceFallback:true,biometricsSecurityLevel:"strong",promptMessage}),
     pick:async()=>{
       const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:["images"],allowsEditing:true,aspect:[1,1],quality:1,exif:false});
       return result.canceled?{canceled:true}:{canceled:false,uri:result.assets[0]?.uri};

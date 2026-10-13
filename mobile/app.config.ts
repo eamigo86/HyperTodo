@@ -9,21 +9,29 @@ const LOCAL_API_URL = "http://127.0.0.1:8000/hv/";
 // join. Anything routable still owes https, opt-in or not.
 // IPv6 patterns require the bracket the WHATWG URL parser always adds, so a public
 // hostname beginning "fc" or "fe80" cannot slip through.
+// IPv4 patterns match the WHOLE dotted quad. A bare prefix such as /^10\./ also
+// accepts the public name 10.example.com, which would send the password in cleartext
+// to a stranger. The URL parser already rejects octets above 255 and rewrites
+// shorthand like 10.1 to 10.0.0.1, so \d{1,3} per octet is exact here.
 const PRIVATE_HOST = new RegExp(
   [
     "^localhost$",
     "\\.local$", // mDNS, e.g. macbook.local
-    "^127\\.", // loopback
-    "^10\\.", // RFC 1918, includes the Android emulator's 10.0.2.2
-    "^192\\.168\\.", // RFC 1918
-    "^172\\.(1[6-9]|2[0-9]|3[01])\\.", // RFC 1918, 172.16/12 only
-    "^169\\.254\\.", // link-local
+    "^127(\\.\\d{1,3}){3}$", // loopback
+    "^10(\\.\\d{1,3}){3}$", // RFC 1918, includes the Android emulator's 10.0.2.2
+    "^192\\.168(\\.\\d{1,3}){2}$", // RFC 1918
+    "^172\\.(1[6-9]|2[0-9]|3[01])(\\.\\d{1,3}){2}$", // RFC 1918, 172.16/12 only
+    "^169\\.254(\\.\\d{1,3}){2}$", // link-local
     "^\\[::1\\]$", // IPv6 loopback
     "^\\[f[cd][0-9a-f]*:", // IPv6 unique-local, fc00::/7
     "^\\[fe80:", // IPv6 link-local
   ].join("|"),
   "i",
 );
+// The runtime hard-codes root-level "/hv/..." request paths (session.ts,
+// session-protocol.ts, event-stream.ts), so the API URL cannot live under any other
+// prefix.
+const API_PATH = "/hv/";
 // Expo's own CLI reads EAS_BUILD with getenv.boolish
 // (@expo/cli/build/src/utils/env.js), so "1" is as true as "true". A stricter
 // compare here would just fail open on a value the ecosystem accepts.
@@ -58,7 +66,7 @@ export function resolveApiUrl(env: Record<string, string | undefined> = process.
         `EXPO_PUBLIC_ALLOW_LOCAL_API=1 to use ${LOCAL_API_URL} (see mobile/.env.example).`
     );
   }
-  const { protocol, hostname } = new URL(apiUrl);
+  const { protocol, hostname, pathname } = new URL(apiUrl);
   if (protocol !== "https:" && !(allowLocal && PRIVATE_HOST.test(hostname))) {
     throw new Error(
       `EXPO_PUBLIC_API_URL must use https (got "${apiUrl}"). ` +
@@ -67,6 +75,14 @@ export function resolveApiUrl(env: Record<string, string | undefined> = process.
         "or a private LAN address such as 192.168.x.x, 10.x.x.x or 172.16-31.x.x), " +
         "only with EXPO_PUBLIC_ALLOW_LOCAL_API=1, and never on an EAS build profile " +
         "other than development."
+    );
+  }
+  // Compared with a trailing slash, which the runtime adds anyway (src/config.ts).
+  if ((pathname.endsWith("/") ? pathname : `${pathname}/`) !== API_PATH) {
+    throw new Error(
+      `EXPO_PUBLIC_API_URL must point at the "${API_PATH}" path of the server (got "${apiUrl}"). ` +
+        "The app requests root-level /hv/ paths, so a URL under another prefix, or the " +
+        "bare origin, would build and then load nothing."
     );
   }
   return apiUrl;

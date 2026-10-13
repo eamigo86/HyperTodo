@@ -173,7 +173,11 @@ function AppFrame({ session, hyperviewProps }: {
 }
 
 const DefaultApp = createSessionApp({
-  entrypointUrl: getApiUrl(),
+  // Read when this app first renders, not when the module loads: the isolated native
+  // fixture imports createSessionApp from here with its own origin and never renders
+  // this one, so it must not need the production extra.apiUrl. A build without one
+  // still fails on first render with getApiUrl's error.
+  get entrypointUrl() { return getApiUrl(); },
   http: (input, init) => fetch(input, init),
   credentials: sessionCredentials,
   native: createOwnedNativePorts(sessionCredentials.read, Platform.OS === "ios" ? "ios" : "android"),

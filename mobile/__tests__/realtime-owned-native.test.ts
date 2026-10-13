@@ -13,7 +13,7 @@ it("uses only the supplied credential namespace/read port, never the legacy stor
 it("preserves the public biometric prompt contract as separate checked awaits",async()=>{
  const native=createOwnedNativePorts(async()=>null,"ios");auth.hasHardwareAsync.mockResolvedValue(true);auth.isEnrolledAsync.mockResolvedValue(true);auth.supportedAuthenticationTypesAsync.mockResolvedValue([2]);auth.authenticateAsync.mockResolvedValue({success:true});
  await native.hasHardware();await native.isEnrolled();await native.supportedTypes();await native.unlock("Owned prompt");
- expect(auth.authenticateAsync).toHaveBeenCalledWith({cancelLabel:"Use password",disableDeviceFallback:true,promptMessage:"Owned prompt"});expect(auth.hasHardwareAsync).toHaveBeenCalledTimes(1);expect(auth.isEnrolledAsync).toHaveBeenCalledTimes(1);
+ expect(auth.authenticateAsync).toHaveBeenCalledWith({cancelLabel:"Use password",disableDeviceFallback:true,biometricsSecurityLevel:"strong",promptMessage:"Owned prompt"});expect(auth.hasHardwareAsync).toHaveBeenCalledTimes(1);expect(auth.isEnrolledAsync).toHaveBeenCalledTimes(1);
 });
 it("keeps picker crop/privacy and JPEG resize in three separately guarded native stages",async()=>{
  const native=createOwnedNativePorts(async()=>null,"android");picker.launchImageLibraryAsync.mockResolvedValue({canceled:false,assets:[{uri:"file://test"}]} as ImagePicker.ImagePickerResult);

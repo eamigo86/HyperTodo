@@ -19,7 +19,14 @@ this same file. So localhost and cleartext are an explicit developer opt-in inst
   gitignored, so it never reaches an EAS upload.
 - A non-`https` URL is accepted only for loopback, `.local`, private IPv4, or local IPv6 hosts, only with that
   opt-in, and **never** on an EAS profile other than `development` — pasting the `.env.example` URL
-  into the EAS `production` environment throws rather than shipping cleartext.
+  into the EAS `production` environment throws rather than shipping cleartext. IPv4 hosts must be full
+  dotted-quad literals: a public name that merely starts with `10.` or `192.168.` (such as
+  `10.example.com`) is a public host and still owes `https`.
+- The URL's path must be exactly `/hv/` (a missing trailing slash is added at runtime). The app requests
+  root-level `/hv/...` paths, so `https://api.example.com/api/hv/` or the bare origin throws at build time
+  instead of producing an app that loads nothing.
+- The runtime has no fallback either: `src/config.ts` throws when the baked-in `extra.apiUrl` is missing
+  instead of defaulting to `127.0.0.1`.
 - `EAS_BUILD` is read boolish (`1` counts as `true`), the way Expo's own CLI reads it.
 - Android cleartext (`usesCleartextTraffic`) and iOS `NSAppTransportSecurity.NSAllowsLocalNetworking`
   are both derived from that one URL's scheme. There is no second switch to forget.

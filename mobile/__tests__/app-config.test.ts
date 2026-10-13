@@ -98,6 +98,11 @@ describe("app.config API URL guard", () => {
     ["a link-local address", "http://169.254.7.7:8000/hv/"],
     ["an mDNS name", "http://macbook.local:8000/hv/"],
     ["an IPv6 unique-local address", "http://[fd00::1]:8000/hv/"],
+    ["localhost", "http://localhost:8000/hv/"],
+    ["IPv4 loopback", "http://127.0.0.1:8000/hv/"],
+    ["the Android emulator host alias", "http://10.0.2.2:8000/hv/"],
+    ["IPv6 loopback", "http://[::1]:8000/hv/"],
+    ["an IPv6 link-local address", "http://[fe80::1]:8000/hv/"],
   ])("accepts %s over cleartext for an opted-in developer", (_label, url) => {
     expect(resolve({ ...DEV, EXPO_PUBLIC_API_URL: url }).extra!.apiUrl).toBe(url);
   });
@@ -108,6 +113,12 @@ describe("app.config API URL guard", () => {
     ["just above 172.16/12", "http://172.32.0.1:8000/hv/"],
     ["a public address", "http://8.8.8.8:8000/hv/"],
     ["a public hostname", "http://api.example.com/hv/"],
+    // Prefix matching treated these as private; each one is an ordinary public name.
+    ["a public name starting with 10.", "http://10.example.com/hv/"],
+    ["a public name starting with a loopback quad", "http://127.0.0.1.attacker.example/hv/"],
+    ["a public name starting with a LAN quad", "http://192.168.1.1.evil.example/hv/"],
+    ["a public name starting with a 172.16/12 pair", "http://172.16.evil.example/hv/"],
+    ["a public name starting with a link-local pair", "http://169.254.attacker.example/hv/"],
   ])("still refuses %s over cleartext", (_label, url) => {
     expect(() => resolve({ ...DEV, EXPO_PUBLIC_API_URL: url })).toThrow(/must use https/);
   });
@@ -137,6 +148,33 @@ describe("app.config API URL guard", () => {
   it("accepts a remote https API URL", () => {
     expect(resolve({ ...NO_EAS, EXPO_PUBLIC_API_URL: "https://api.example.com/hv/" }).extra!.apiUrl).toBe(
       "https://api.example.com/hv/",
+    );
+  });
+
+  // The runtime hard-codes root-level "/hv/..." request paths (session.ts,
+  // session-protocol.ts, event-stream.ts), so a URL under any other path would pass
+  // the build and then load nothing.
+  it.each([
+    ["a nested prefix", "https://api.example.com/api/hv/"],
+    ["the bare origin with a slash", "https://api.example.com/"],
+    ["the bare origin", "https://api.example.com"],
+    ["a deeper path", "https://api.example.com/hv/tasks/"],
+    ["a different case", "https://api.example.com/HV/"],
+    ["a doubled slash", "https://api.example.com/hv//"],
+    ["an unrelated path", "https://api.example.com/v1/"],
+  ])("refuses %s as the API URL path", (_label, url) => {
+    expect(() => resolve({ ...NO_EAS, EXPO_PUBLIC_API_URL: url })).toThrow(/must point at the "\/hv\/" path/);
+  });
+
+  it("applies the path rule to an opted-in developer URL as well", () => {
+    expect(() =>
+      resolve({ ...DEV, EXPO_PUBLIC_API_URL: "http://192.168.4.43:8000/api/" }),
+    ).toThrow(/must point at the "\/hv\/" path/);
+  });
+
+  it("accepts the /hv path without its trailing slash, which the runtime normalizes", () => {
+    expect(resolve({ ...NO_EAS, EXPO_PUBLIC_API_URL: "https://api.example.com/hv" }).extra!.apiUrl).toBe(
+      "https://api.example.com/hv",
     );
   });
 });

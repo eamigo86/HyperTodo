@@ -37,6 +37,9 @@ const BiometricUnlockBehavior: HvBehavior = {
         // copy on screen promises "Unlock with biometrics". The password form is the
         // fallback, and `cancelLabel` points at it.
         disableDeviceFallback: true,
+        // Android Class 3 only: the library default ("weak") also admits Class 2
+        // biometrics such as a camera face unlock. Ignored on iOS.
+        biometricsSecurityLevel: "strong",
         promptMessage: element.getAttribute("prompt") ?? "Sign in to HyperTodo",
       });
       if (!result.success) {

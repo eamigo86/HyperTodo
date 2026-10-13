@@ -512,6 +512,19 @@ describe("biometric-unlock", () => {
     );
   });
 
+  it("accepts only Class 3 biometrics, never a camera-based face unlock", async () => {
+    // expo-local-authentication defaults to "weak" on Android, which admits Class 2
+    // biometrics, and this prompt releases a long-lived bearer credential.
+    mockAuth.authenticateAsync.mockResolvedValue({ success: true });
+    mockStore.getItemAsync.mockResolvedValue("issued-token");
+
+    await runUnlock(panel());
+
+    expect(mockAuth.authenticateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ biometricsSecurityLevel: "strong" }),
+    );
+  });
+
   it("passes the prompt copy authored in the HXML", async () => {
     mockAuth.authenticateAsync.mockResolvedValue({ success: true });
     mockStore.getItemAsync.mockResolvedValue("issued-token");
