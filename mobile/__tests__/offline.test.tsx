@@ -12,7 +12,7 @@ import {
   subscribeToNetworkFailures,
 } from "../src/feedback/failure";
 import { hyperviewLogger, reportHyperviewError } from "../src/feedback/logging";
-import { publishTheme } from "../src/theme";
+import { defaultThemeStore } from "../src/theme";
 
 // Importing the hyperview barrel drags in react-native-webview, whose TurboModule is not
 // available under jest. Only that native leaf is stubbed -- the Parser under test is real.
@@ -224,13 +224,13 @@ describe("OfflineRefreshControl", () => {
     expect(control().props.colors).toEqual(["#278CFF"]);
     expect(control().props.progressBackgroundColor).toBe("#FFFFFF");
 
-    act(() => publishTheme("dark"));
+    act(() => defaultThemeStore.publish("dark"));
 
     expect(control().props.tintColor).toBe("#9DA3B6");
     expect(control().props.colors).toEqual(["#7FB6FF"]);
     expect(control().props.progressBackgroundColor).toBe("#1A1D26");
 
-    act(() => publishTheme("light"));
+    act(() => defaultThemeStore.publish("light"));
   });
 });
 
@@ -327,7 +327,7 @@ describe("hyperview logging", () => {
 });
 
 describe("the fragment error banner follows the palette the server named", () => {
-  afterEach(() => act(() => publishTheme("light")));
+  afterEach(() => act(() => defaultThemeStore.publish("light")));
 
   const flat = (node: { props: Record<string, unknown> }) =>
     StyleSheet.flatten(node.props.style as never) as Record<string, string>;
@@ -351,7 +351,7 @@ describe("the fragment error banner follows the palette the server named", () =>
     expect(flat(screen.getByRole("button", { name: "Try again" })).backgroundColor).toBe("#278CFF");
     expect(flat(screen.getByText("Dismiss")).color).toBe("#161A35");
 
-    act(() => publishTheme("dark"));
+    act(() => defaultThemeStore.publish("dark"));
 
     expect(flat(screen.getByTestId("element-error-card")).backgroundColor).toBe("#1A1D26");
     // Dark's scrim is pure black, so the card still reads as lifted off a canvas

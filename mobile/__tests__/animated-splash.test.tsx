@@ -29,7 +29,7 @@ jest.mock("lottie-react-native", () => {
 });
 
 import AnimatedSplash from "../src/components/AnimatedSplash";
-import { publishTheme } from "../src/theme";
+import { defaultThemeStore } from "../src/theme";
 
 function renderSplash() {
   return render(
@@ -127,7 +127,7 @@ describe("AnimatedSplash", () => {
 // That is the whole reason the theme store seeds itself synchronously from the
 // keystore instead of waiting for the entrypoint fetch.
 describe("the splash overlay follows the stored palette", () => {
-  afterEach(() => act(() => publishTheme("light")));
+  afterEach(() => act(() => defaultThemeStore.publish("light")));
 
   it("paints the canvas and picks a status bar that is visible on it", () => {
     const screen = renderSplash();
@@ -136,7 +136,7 @@ describe("the splash overlay follows the stored palette", () => {
       .toBe("#F7F8FC");
     expect(screen.getByTestId("status-bar").props.barStyle).toBe("dark");
 
-    act(() => publishTheme("dark"));
+    act(() => defaultThemeStore.publish("dark"));
 
     expect(StyleSheet.flatten(screen.getByTestId("animated-splash").props.style).backgroundColor)
       .toBe("#0F1118");

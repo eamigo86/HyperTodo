@@ -26,7 +26,7 @@ from todo.middleware import THEME_HEADER
 
 MOBILE = Path(__file__).resolve().parents[2] / "mobile"
 CLIENT_TOKENS = MOBILE / "src/theme.ts"
-CLIENT_FETCH = MOBILE / "src/network.ts"
+CLIENT_SESSION = MOBILE / "src/realtime/session.ts"
 TABLE = re.compile(r"^  (\w+): \{$\n(.*?)^  \},$", re.MULTILINE | re.DOTALL)
 ENTRY = re.compile(r'^    (\w+): "(#[0-9A-Fa-f]{6})",$', re.MULTILINE)
 # Every line that LOOKS like an entry, whatever its value. ENTRY used to demand
@@ -87,15 +87,18 @@ def test_every_colour_the_shell_paints_is_the_token_this_repo_owns():
 
 
 @pytest.mark.skipif(
-    not CLIENT_FETCH.exists(), reason="mobile tree is not checked out here"
+    not CLIENT_SESSION.exists(), reason="mobile tree is not checked out here"
 )
 def test_the_client_reads_the_header_this_repo_actually_sends():
     # The two halves name the header independently -- there is no shared constant
     # across a Python and a TypeScript build -- so a rename on either side would
     # otherwise leave both suites green and the shell permanently light.
+    # The session supervisor is the only reader: it publishes the header of a response
+    # it has confirmed belongs to the current session.
     declared = re.search(
-        r'const THEME_HEADER = "([\w-]+)";', CLIENT_FETCH.read_text(encoding="utf-8")
+        r'onTheme\(response\.headers\.get\("([\w-]+)"\)\)',
+        CLIENT_SESSION.read_text(encoding="utf-8"),
     )
 
-    assert declared, f"{CLIENT_FETCH.name} no longer names a theme header"
+    assert declared, f"{CLIENT_SESSION.name} no longer reads a theme header"
     assert declared.group(1) == THEME_HEADER

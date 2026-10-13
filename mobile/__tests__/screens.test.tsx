@@ -8,7 +8,7 @@ import ElementErrorBanner from "../src/components/ElementErrorBanner";
 import OfflineRefreshControl from "../src/components/OfflineRefreshControl";
 import { FAILURE_COPY } from "../src/feedback/failure";
 import { hyperviewLogger, reportHyperviewError } from "../src/feedback/logging";
-import { publishTheme } from "../src/theme";
+import { defaultThemeStore } from "../src/theme";
 
 // jest-expo leaves Constants.expoConfig empty, and the default App refuses to guess a
 // server, so hand it the URL a real build bakes in. This is expo-constants' own seam
@@ -121,8 +121,8 @@ describe("owned shell screens", () => {
 // surfaces were light-palette hex literals, so a dark-mode account got a #F7F8FC
 // home-indicator strip under a #0F1118 bottom navigation bar.
 describe("the shell follows the palette the server named", () => {
-  beforeEach(() => act(() => publishTheme("light")));
-  afterEach(() => act(() => publishTheme("light")));
+  beforeEach(() => act(() => defaultThemeStore.publish("light")));
+  afterEach(() => act(() => defaultThemeStore.publish("light")));
 
   const flat = (node: { props: Record<string, unknown> }) =>
     StyleSheet.flatten(node.props.style as never) as Record<string, string>;
@@ -135,7 +135,7 @@ describe("the shell follows the palette the server named", () => {
     expect(bg(screen.getByTestId("top-inset", { includeHiddenElements: true }))).toBe("#278CFF");
     expect(bg(screen.getByLabelText("HyperTodo safe area", { includeHiddenElements: true }))).toBe("#F7F8FC");
 
-    act(() => publishTheme("dark"));
+    act(() => defaultThemeStore.publish("dark"));
 
     // #0F1118 is theme.canvas, which is exactly what every screen's
     // `bottom-navigation-style` rule declares. That equality IS the fix.
@@ -151,7 +151,7 @@ describe("the shell follows the palette the server named", () => {
     await waitFor(()=>expect(mockHyperviewProps.behaviors).toBeDefined());
     const before = { ...mockHyperviewProps };
 
-    act(() => publishTheme("dark"));
+    act(() => defaultThemeStore.publish("dark"));
 
     (["behaviors", "components", "formatDate", "fetch"] as const).forEach((prop) =>
       expect(mockHyperviewProps[prop]).toBe(before[prop]),
@@ -165,7 +165,7 @@ describe("the shell follows the palette the server named", () => {
     expect(ink(screen.getByText("HyperTodo"))).toBe("#161A35");
     expect(screen.UNSAFE_getByType(ActivityIndicator).props.color).toBe("#278CFF");
 
-    act(() => publishTheme("dark"));
+    act(() => defaultThemeStore.publish("dark"));
 
     expect(bg(screen.getByLabelText("Loading HyperTodo"))).toBe("#0F1118");
     expect(ink(screen.getByText("HyperTodo"))).toBe("#F3F5FB");
@@ -182,7 +182,7 @@ describe("the shell follows the palette the server named", () => {
     expect(ink(screen.getByText(FAILURE_COPY.server.body))).toBe("#6D728A");
     expect(bg(screen.getByRole("button", { name: "Try again" }))).toBe("#278CFF");
 
-    act(() => publishTheme("dark"));
+    act(() => defaultThemeStore.publish("dark"));
 
     expect(bg(screen.getByTestId("error-card"))).toBe("#1A1D26");
     expect(ink(screen.getByText(FAILURE_COPY.server.title))).toBe("#F3F5FB");
@@ -198,7 +198,7 @@ describe("the shell follows the palette the server named", () => {
     const check = screen.getByText("✓");
 
     expect(ink(check)).toBe("#161A35");
-    act(() => publishTheme("dark"));
+    act(() => defaultThemeStore.publish("dark"));
     expect(ink(check)).toBe("#161A35");
   });
 });

@@ -16,7 +16,7 @@ jest.mock("react-native/Libraries/Utilities/useWindowDimensions", () => ({
 }));
 
 import AnimatedSideMenu from "../src/components/AnimatedSideMenu";
-import { publishTheme } from "../src/theme";
+import { defaultThemeStore } from "../src/theme";
 
 function elementWith(attributes: Record<string, string>): Element {
   return {
@@ -319,7 +319,7 @@ describe("AnimatedSideMenu as a modal overlay", () => {
 // The drawer's own chrome is the one part of the menu the server cannot style:
 // the scrim and the close disc are drawn by this component, not by HXML.
 describe("the drawer chrome follows the palette the server named", () => {
-  afterEach(() => act(() => publishTheme("light")));
+  afterEach(() => act(() => defaultThemeStore.publish("light")));
 
   const flat = (node: { props: Record<string, unknown> }) =>
     StyleSheet.flatten(node.props.style as never) as Record<string, string>;
@@ -331,7 +331,7 @@ describe("the drawer chrome follows the palette the server named", () => {
     expect(flat(screen.getByRole("button", { name: "Close menu" })).backgroundColor).toBe("#EEF2FC");
     expect(flat(screen.getByText("×")).color).toBe("#4C526B");
 
-    act(() => publishTheme("dark"));
+    act(() => defaultThemeStore.publish("dark"));
 
     // Pure black at 0.22 opacity: #161A35 barely dims a canvas that is already
     // nearly black, so the panel would float with nothing behind it.

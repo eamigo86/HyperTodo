@@ -7,7 +7,7 @@ import { Alert, AppState, StyleSheet } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import { createSessionApp } from "../App";
-import { createThemeStore, getThemeName, THEME_TOKENS } from "../src/theme";
+import { createThemeStore, defaultThemeStore, THEME_TOKENS } from "../src/theme";
 import { createAppSession, AppSessionSurface } from "../src/realtime/app-session";
 import { SESSION_HEADERS as H } from "../src/realtime/session-protocol";
 jest.mock("expo-splash-screen", () => ({
@@ -344,7 +344,7 @@ it("gives the shield's Retry and Sign in actions button semantics, theme colors 
       await f.session.foreground();
     });
     expect(ui.getByLabelText('Session protection')).toBeTruthy();
-    const tokens = THEME_TOKENS[getThemeName()];
+    const tokens = THEME_TOKENS[defaultThemeStore.getSnapshot()];
     for (const [label, background, ink] of [
       ['Retry session confirmation', tokens.brand, tokens.on_brand],
       ['Sign in', tokens.chip, tokens.ink],

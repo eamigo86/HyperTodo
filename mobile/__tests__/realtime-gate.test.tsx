@@ -9,7 +9,7 @@ import { createStackNavigator } from "@react-navigation/stack";
 
 import { createRealtimeGate } from "../src/realtime/gate";
 import * as operation from "../src/realtime/operation";
-import { createHyperviewFetch } from "../src/network";
+import { createHyperviewHttpPort } from "../src/network";
 
 // Native WebView is irrelevant to this fixture. Hyperview, its parser, component
 // registry, navigation and DOM updates are REAL, not mocked by this suite.
@@ -820,7 +820,7 @@ it("rejects a reserved GET field before SDK dispatch without stranding the next 
 it("carries immutable current-Root provenance through real network composition without leaking it to transport", async () => {
   const gate=createRealtimeGate();
   const transport=jest.fn(async (_url:RequestInfo|URL,init?:RequestInit):Promise<Response> => response(document(new Headers(init?.headers).get("X-HyperTodo-Request-ID")!)));
-  const composed=createHyperviewFetch(BASE,gate.wrapFetch(transport),"fixture");
+  const composed=createHyperviewHttpPort(BASE,gate.wrapFetch(transport),"fixture");
   let captured:RequestInit|undefined;
   const publicFetch=(input:RequestInfo|URL,init?:RequestInit) => {captured=init;return composed(input,init);};
   const screen=mount(gate,publicFetch);

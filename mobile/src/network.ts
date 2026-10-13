@@ -1,12 +1,10 @@
 import { getAppVersion } from "./config";
-import { publishTheme } from "./theme";
 
-// The server names the palette it painted each response with. This wrapper is the
-// single fetch the hyperview Parser is built from -- for documents (hv-doc.tsx:77)
-// and for fragments (hyperview.tsx:56) -- and `this.fetch` in
-// services/dom/parser.ts is the library's only call site, so reading it here
-// catches every response with no per-screen wiring.
-const THEME_HEADER = "X-HyperTodo-Theme";
+// The only HTTP port the App hands to the session supervisor. It prepares each
+// request (absolute URL, Hyperview Accept, Origin, App version) and forwards it
+// untouched. It never reads a response body and never publishes the theme header:
+// the supervisor does both only after it has confirmed the response belongs to the
+// current session (realtime/session.ts).
 
 export type FetchImplementation = (
   input: RequestInfo | URL,
@@ -41,22 +39,5 @@ export function createHyperviewHttpPort(
     const target=new URL(url);
     if(target.origin!==base.origin||target.username||target.password||!["http:","https:"].includes(target.protocol))throw new Error("unsupported-http-origin");
     return implementation(url,{...prepared,redirect:"error"});
-  };
-}
-
-/** Legacy wrapper retains its existing theme and cross-origin behavior. */
-export function createHyperviewFetch(
-  baseUrl:string,
-  implementation:FetchImplementation=fetch,
-  appVersion:string=getAppVersion(),
-):FetchImplementation {
-  const base=new URL(baseUrl);
-  return (input,init={})=>{
-    const [url,prepared]=prepareRequest(base,input,init,appVersion);
-    return implementation(url,prepared).then(response=>{
-      // Headers only. The public Parser consumes the body later.
-      publishTheme(response.headers?.get(THEME_HEADER));
-      return response;
-    });
   };
 }

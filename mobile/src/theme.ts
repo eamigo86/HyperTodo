@@ -116,12 +116,6 @@ export function ThemeProvider({
     value: store
   }, children);
 }
-export function getThemeName(): ThemeName {
-  return defaultThemeStore.getSnapshot();
-}
-export function publishTheme(name: string | null | undefined): void {
-  defaultThemeStore.publish(name);
-}
 /** Existing shell components automatically use their containing App's store. */
 export function useThemeName(): ThemeName {
   const store = useContext(ThemeContext) ?? defaultThemeStore;

@@ -42,12 +42,12 @@ describe("theme store", () => {
   });
 
   it("starts light when the device has never been told otherwise", () => {
-    expect(loadTheme().getThemeName()).toBe("light");
+    expect(loadTheme().defaultThemeStore.getSnapshot()).toBe("light");
   });
 
   it("starts on the palette the last response left behind", () => {
     mockGetItem.mockReturnValue("dark");
-    expect(loadTheme().getThemeName()).toBe("dark");
+    expect(loadTheme().defaultThemeStore.getSnapshot()).toBe("dark");
   });
 
   it("still starts, light, when the keystore read throws", () => {
@@ -56,32 +56,32 @@ describe("theme store", () => {
     mockGetItem.mockImplementation(() => {
       throw new Error("keychain unavailable");
     });
-    expect(loadTheme().getThemeName()).toBe("light");
+    expect(loadTheme().defaultThemeStore.getSnapshot()).toBe("light");
   });
 
   it("ignores a stored value that is not a palette we ship", () => {
     mockGetItem.mockReturnValue("chartreuse");
-    expect(loadTheme().getThemeName()).toBe("light");
+    expect(loadTheme().defaultThemeStore.getSnapshot()).toBe("light");
   });
 
   it("takes a palette from the server and remembers it for the next cold start", () => {
     const theme = loadTheme();
-    theme.publishTheme("dark");
-    expect(theme.getThemeName()).toBe("dark");
+    theme.defaultThemeStore.publish("dark");
+    expect(theme.defaultThemeStore.getSnapshot()).toBe("dark");
     expect(mockSetItem).toHaveBeenCalledWith("hypertodo.theme", "dark");
   });
 
   it("keeps the current palette when the header is missing or nonsense", () => {
     const theme = loadTheme();
-    theme.publishTheme("dark");
+    theme.defaultThemeStore.publish("dark");
     mockSetItem.mockClear();
 
-    theme.publishTheme(null);
-    theme.publishTheme(undefined);
-    theme.publishTheme("");
-    theme.publishTheme("chartreuse");
+    theme.defaultThemeStore.publish(null);
+    theme.defaultThemeStore.publish(undefined);
+    theme.defaultThemeStore.publish("");
+    theme.defaultThemeStore.publish("chartreuse");
 
-    expect(theme.getThemeName()).toBe("dark");
+    expect(theme.defaultThemeStore.getSnapshot()).toBe("dark");
     expect(mockSetItem).not.toHaveBeenCalled();
   });
 
@@ -90,13 +90,13 @@ describe("theme store", () => {
       throw new Error("keychain full");
     });
     const theme = loadTheme();
-    expect(() => theme.publishTheme("dark")).not.toThrow();
-    expect(theme.getThemeName()).toBe("dark");
+    expect(() => theme.defaultThemeStore.publish("dark")).not.toThrow();
+    expect(theme.defaultThemeStore.getSnapshot()).toBe("dark");
   });
 
   it("re-renders subscribers when the palette changes and never for routine traffic", () => {
     const theme = sharedTheme;
-    theme.publishTheme("light");
+    theme.defaultThemeStore.publish("light");
     const renders = jest.fn();
 
     function Probe(): React.JSX.Element {
@@ -109,18 +109,18 @@ describe("theme store", () => {
     expect(screen.getByText("#F7F8FC")).toBeTruthy();
     const initial = renders.mock.calls.length;
 
-    act(() => theme.publishTheme("dark"));
+    act(() => theme.defaultThemeStore.publish("dark"));
     expect(screen.getByText("#0F1118")).toBeTruthy();
 
     // Every fragment response carries the header. Re-publishing the palette the
     // app is already showing must not wake a single component.
     const settled = renders.mock.calls.length;
-    act(() => theme.publishTheme("dark"));
+    act(() => theme.defaultThemeStore.publish("dark"));
     expect(renders.mock.calls.length).toBe(settled);
     expect(settled).toBeGreaterThan(initial);
 
     screen.unmount();
-    expect(() => act(() => theme.publishTheme("light"))).not.toThrow();
+    expect(() => act(() => theme.defaultThemeStore.publish("light"))).not.toThrow();
   });
 });
 
