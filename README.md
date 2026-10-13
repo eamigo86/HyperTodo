@@ -52,6 +52,12 @@ its Python client does not start one. Run commands from the repository root.
 [installed-package and safe startup guide](backend/docs/installed-adoption.md)
 for credentials, existing DB overrides and deployment details.
 
+**Seeded accounts:** while `DJANGO_DEBUG` is on, `make backend-seed` creates the
+superuser `admin` / `admin123` and the user `demo` / `demo123`, unless
+`HYPERTODO_ADMIN_PASSWORD` / `HYPERTODO_DEMO_PASSWORD` are set. Set both before
+binding beyond loopback (`backend-run-device`, or `backend-run-sse` with `LAN_IP`);
+`backend-run` and `backend-run-redis` listen on loopback only.
+
 | Command | Use |
 | --- | --- |
 | `make help` | List every available target. |
@@ -59,8 +65,8 @@ for credentials, existing DB overrides and deployment details.
 | `make backend-migrate`, `make backend-seed` | Initialize a new disposable demo DB, not an upgrade shortcut. |
 | `LAN_IP=192.168.1.20 make backend-run-sse` | Start the same DB-first ASGI/SSE app, bound to the supplied LAN address. |
 | `LAN_IP=192.168.1.20 make mobile-start-go` | Start the matching Expo Go QR workflow with explicit local-HTTP permission. |
-| `make backend-run`, `make backend-run-redis` | Start ASGI/SSE with local-memory or Redis cache, respectively. |
-| `LAN_IP=192.168.1.20 make backend-run-device` | Start the same ASGI/SSE app with Redis cache and device host/CSRF settings. |
+| `make backend-run`, `make backend-run-redis` | Start ASGI/SSE on loopback only, without or with the Redis template cache, respectively. |
+| `LAN_IP=192.168.1.20 make backend-run-device` | Start the same ASGI/SSE app on all interfaces with Redis cache and device host/CSRF settings. |
 | `make mobile-start`, `make mobile-start-device` | Development-client workflows, **not Expo Go**; device target requires `LAN_IP`. |
 | `make lan-ip` | Print a candidate computer address; verify reachability from the phone. |
 

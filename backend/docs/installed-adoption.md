@@ -17,7 +17,7 @@ make backend-migrate
 make backend-seed
 ```
 
-The development seed creates `admin` / `admin123` and `demo` / `demo123`, with separate owned tasks/categories. It can reset demo fields, so these credentials and commands belong only to trusted local development without real data. Use `HYPERTODO_ADMIN_PASSWORD` / `HYPERTODO_DEMO_PASSWORD` for chosen local passwords.
+The development seed creates `admin` / `admin123` and `demo` / `demo123`, with separate owned tasks/categories. It can reset demo fields, so these credentials and commands belong only to trusted local development without real data. Use `HYPERTODO_ADMIN_PASSWORD` / `HYPERTODO_DEMO_PASSWORD` for chosen local passwords, and set both before binding beyond loopback.
 
 ### Existing database
 
@@ -39,7 +39,7 @@ Every backend launcher selects Uvicorn/ASGI and the same `config.settings`, neve
 LAN_IP=192.168.1.20 make mobile-start-go
 ```
 
-Scan the QR and sign in. This uses `--go` plus explicit local HTTP opt-in; the release HTTPS guard is unchanged. No native build is needed. Keep the phone and computer on a trusted reachable network, permit development ports only as needed, and stop both terminals with Ctrl+C. Without `LAN_IP`, `backend-run-sse` binds loopback only. `mobile-start`/`mobile-start-device` use a development client, not Expo Go. `backend-run` and `backend-run-redis` bind all interfaces; `backend-run-device` also requires `LAN_IP` and sets device host/CSRF allowances. All four backend commands support SSE; only cache and bind policy differ.
+Scan the QR and sign in. This uses `--go` plus explicit local HTTP opt-in; the release HTTPS guard is unchanged. No native build is needed. Keep the phone and computer on a trusted reachable network, permit development ports only as needed, and stop both terminals with Ctrl+C. Without `LAN_IP`, `backend-run-sse` binds loopback only. `mobile-start`/`mobile-start-device` use a development client, not Expo Go. `backend-run` and `backend-run-redis` bind loopback only, which also serves the iOS simulator and, as `10.0.2.2`, the Android emulator; only `backend-run-device` binds all interfaces, requires `LAN_IP` and sets device host/CSRF allowances. All four backend commands support SSE; only cache and bind policy differ.
 
 ## Configuration boundaries
 
@@ -56,7 +56,7 @@ HYPERVIEW["REALTIME"] = {
 
 `REDIS_URL` comes from the environment and defaults to `redis://127.0.0.1:6379/15`; Make forwards its `REDIS_URL` variable to every launcher. All writers, including Admin and management commands, must use the same endpoint and namespace as stream workers. Give each separate deployment its own `HYPERTODO_REALTIME_NAMESPACE`: Redis PubSub is not isolated by database number. Do not mix old/new package workers on one namespace.
 
-Realtime does not turn on template caching. `backend-run` and `backend-run-sse` use local-memory cache by default; `backend-run-redis` and `backend-run-device` enable Redis cache. Redis must already be available for notifications even with local-memory caching. If Redis is unavailable, committed database changes are not rolled back and notifications are not guaranteed; a later successful HTTP refresh still reads the effective template. No launcher provides replay.
+Realtime does not turn on template caching. `backend-run` and `backend-run-sse` leave the dj-hyperview template cache off; `backend-run-redis` and `backend-run-device` enable the Redis template cache. Redis must already be available for notifications even without it. If Redis is unavailable, committed database changes are not rolled back and notifications are not guaranteed; a later successful HTTP refresh still reads the effective template. No launcher provides replay.
 
 Auth, database sessions, CSRF, cache and schema extensions remain in effect. Test-only settings isolate database/cache and disable transport unless a test explicitly enables it; they are not application profiles. Only DEBUG enables the development Admin/static handler; production assets belong to the web server/CDN.
 

@@ -10,6 +10,8 @@ REDIS_URL ?= redis://127.0.0.1:6379/15
 REDIS_TEST_URL ?= redis://127.0.0.1:6379/14
 DJANGO_DEBUG ?= 1
 EXPO_PUBLIC_API_URL ?= http://127.0.0.1:8000/hv/
+# $(if) splits its arguments at every comma, so a literal one is spelled through this.
+comma := ,
 
 # One application/settings and ASGI launcher; targets only choose cache/bind policy.
 define run_backend
@@ -59,13 +61,13 @@ backend-seed: ## Create idempotent admin and user demo data.
 		HYPERTODO_DEMO_PASSWORD="$(HYPERTODO_DEMO_PASSWORD)" \
 		uv run python manage.py seed_demo
 
-backend-run: ## Start ASGI/SSE with the default local-memory cache; Redis must exist.
-	@cd "$(BACKEND_DIR)" && $(call run_backend,0.0.0.0)
+backend-run: ## Start ASGI/SSE on loopback without the template cache; Redis must exist.
+	@cd "$(BACKEND_DIR)" && $(call run_backend,127.0.0.1)
 
-backend-run-redis: ## Start ASGI/SSE with the existing Redis development cache.
-	@cd "$(BACKEND_DIR)" && ENABLE_REDIS_CACHE=1 $(call run_backend,0.0.0.0)
+backend-run-redis: ## Start ASGI/SSE on loopback with the Redis template cache.
+	@cd "$(BACKEND_DIR)" && ENABLE_REDIS_CACHE=1 $(call run_backend,127.0.0.1)
 
-backend-run-device: ## Start Redis-backed ASGI/SSE for a device; requires LAN_IP.
+backend-run-device: ## Start Redis-backed ASGI/SSE on all interfaces for a device; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
 	@cd "$(BACKEND_DIR)" && \
 		ENABLE_REDIS_CACHE=1 \
@@ -75,8 +77,8 @@ backend-run-device: ## Start Redis-backed ASGI/SSE for a device; requires LAN_IP
 
 backend-run-sse: ## Start the same ASGI/SSE app on loopback or optional LAN_IP.
 	@cd "$(BACKEND_DIR)" && \
-		DJANGO_ALLOWED_HOSTS="127.0.0.1,localhost,$(if $(LAN_IP),$(LAN_IP),127.0.0.1)" \
-		CSRF_TRUSTED_ORIGINS="http://127.0.0.1:8000,http://$(if $(LAN_IP),$(LAN_IP),127.0.0.1):8000" \
+		DJANGO_ALLOWED_HOSTS="127.0.0.1,localhost,10.0.2.2$(if $(LAN_IP),$(comma)$(LAN_IP))" \
+		CSRF_TRUSTED_ORIGINS="http://127.0.0.1:8000,http://10.0.2.2:8000$(if $(LAN_IP),$(comma)http://$(LAN_IP):8000)" \
 		$(call run_backend,$(if $(LAN_IP),$(LAN_IP),127.0.0.1))
 
 backend-test: ## Run backend tests with branch-aware coverage enforcement.

@@ -8,7 +8,7 @@ from dj_hyperview.contrib.database.models import HyperviewTemplate
 from dj_hyperview.contrib.database.services import publish_template
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand, CommandParser
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.utils import timezone
 
 from todo.models import Category, Task
@@ -36,7 +36,7 @@ class Command(BaseCommand):
             **options: Parsed command options.
 
         Raises:
-            ValueError: If explicit passwords are absent outside debug mode.
+            CommandError: If explicit passwords are absent outside debug mode.
         """
         admin_password = os.environ.get("HYPERTODO_ADMIN_PASSWORD")
         demo_password = os.environ.get("HYPERTODO_DEMO_PASSWORD")
@@ -44,7 +44,7 @@ class Command(BaseCommand):
             admin_password = admin_password or "admin123"
             demo_password = demo_password or "demo123"
         if not admin_password or not demo_password:
-            raise ValueError(
+            raise CommandError(
                 "Set both HyperTodo password environment variables outside debug mode."
             )
         now = timezone.now()

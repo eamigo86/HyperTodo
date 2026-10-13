@@ -30,8 +30,8 @@ SOURCES = [
 @pytest.mark.parametrize(
     ("target", "cache", "host", "lan_ip"),
     [
-        ("backend-run", False, "0.0.0.0", ""),
-        ("backend-run-redis", True, "0.0.0.0", ""),
+        ("backend-run", False, "127.0.0.1", ""),
+        ("backend-run-redis", True, "127.0.0.1", ""),
         ("backend-run-device", True, "0.0.0.0", "192.168.1.20"),
         ("backend-run-sse", False, "192.168.1.20", "192.168.1.20"),
         ("backend-run-sse", False, "127.0.0.1", ""),
@@ -112,12 +112,36 @@ def test_launchers_execute_one_settings_and_asgi_contract(
     if lan_ip:
         assert "192.168.1.20" in state["hosts"]
         assert "http://192.168.1.20:8000" in state["csrf"]
-    elif target == "backend-run-sse":
-        assert "127.0.0.1" in state["hosts"]
-        assert "http://127.0.0.1:8000" in state["csrf"]
-    else:
-        assert "10.0.2.2" in state["hosts"]
-        assert "http://10.0.2.2:8000" in state["csrf"]
+    if target != "backend-run-device":
+        # Every loopback launcher also serves the Android emulator, which reaches the
+        # host as 10.0.2.2; dropping it makes the emulator fail with DisallowedHost.
+        assert state["hosts"][:3] == ["127.0.0.1", "localhost", "10.0.2.2"]
+        assert state["csrf"][:2] == ["http://127.0.0.1:8000", "http://10.0.2.2:8000"]
+
+
+def test_only_the_device_launcher_may_bind_every_interface():
+    # The development seed can create admin/admin123 while DEBUG is on, so a bind to
+    # 0.0.0.0 exposes that account to the whole network. Only the launcher that a
+    # physical phone needs may do it.
+    makefile = (ROOT / "Makefile").read_text()
+    targets = {
+        name: block
+        for name, block in (
+            (chunk.split(":", 1)[0], chunk) for chunk in makefile.split("\n\n")
+        )
+        if name.startswith("backend-run")
+    }
+
+    assert set(targets) == {
+        "backend-run",
+        "backend-run-redis",
+        "backend-run-device",
+        "backend-run-sse",
+    }
+    assert {name for name, block in targets.items() if "0.0.0.0" in block} == {
+        "backend-run-device"
+    }
+    assert "local-memory" not in makefile
 
 
 def test_device_launcher_requires_lan_ip_before_starting_backend():

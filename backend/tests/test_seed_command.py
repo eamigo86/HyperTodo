@@ -4,7 +4,7 @@ import pytest
 from dj_hyperview.contrib.database.models import HyperviewTemplate
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.test import override_settings
 
 from todo.models import Category, Task
@@ -68,5 +68,5 @@ def test_seed_demo_requires_explicit_passwords_outside_debug(monkeypatch):
     monkeypatch.delenv("HYPERTODO_ADMIN_PASSWORD", raising=False)
     monkeypatch.delenv("HYPERTODO_DEMO_PASSWORD", raising=False)
 
-    with pytest.raises(ValueError, match="password environment variables"):
+    with pytest.raises(CommandError, match="password environment variables"):
         call_command("seed_demo")

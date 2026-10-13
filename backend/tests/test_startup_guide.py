@@ -41,6 +41,19 @@ def test_readme_is_a_short_landing_page_with_ordered_sections():
     assert "Realtime Gate 0" not in readme and "../evidence/" not in readme
 
 
+def test_readme_names_the_seeded_accounts_and_how_to_replace_their_passwords():
+    readme = (ROOT / "README.md").read_text()
+    for needle in (
+        "`admin` / `admin123`",
+        "`demo` / `demo123`",
+        "HYPERTODO_ADMIN_PASSWORD",
+        "HYPERTODO_DEMO_PASSWORD",
+        "loopback",
+    ):
+        assert needle in readme, needle
+    assert "local-memory" not in readme
+
+
 def test_fresh_setup_is_separate_from_existing_database_upgrade():
     guide = GUIDE.read_text()
     fresh = section(guide, "### New disposable database")
