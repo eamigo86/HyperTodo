@@ -203,6 +203,13 @@ def test_the_source_probe_follows_debug_unless_the_environment_says_otherwise():
     assert resolved(HYPERTODO_SOURCE_PROBE="0")["source_probe"] is False
 
 
+@pytest.mark.parametrize("value", ["true", "yes", ""])
+def test_only_the_exact_value_one_turns_the_source_probe_on(value):
+    # docs/installed-adoption.md states this. Unset, development routes the probe, so
+    # an operator who writes "true" and loses the route is the surprise worth pinning.
+    assert resolved(HYPERTODO_SOURCE_PROBE=value)["source_probe"] is False
+
+
 def routed(**env):
     result = load_settings(ROUTING, DJANGO_SETTINGS_MODULE="config.settings", **env)
     assert result.returncode == 0, result.stderr

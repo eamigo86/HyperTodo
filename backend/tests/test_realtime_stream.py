@@ -645,11 +645,44 @@ def test_a_trusted_origin_is_admitted_behind_a_tls_terminating_proxy(
         "https://api.example.com/path",
         "https://user@api.example.com",
         "null",
+        # Scheme and port are separate parts of the match: the trusted https origin is
+        # neither http on its port nor https on the http port.
+        "http://api.example.com:443",
+        "https://api.example.com:80",
+        # A serialized origin carries no query and no fragment.
+        "https://api.example.com?x",
+        "https://api.example.com#x",
+        # Nor is a bare scheme, or anything that is not http(s) at all.
+        "https://",
+        "ftp://api.example.com",
+        "wss://api.example.com",
     ],
 )
 def test_an_origin_nobody_trusts_is_still_refused_behind_a_proxy(
     behind_a_tls_proxy, origin
 ):
+    assert not admitted(behind_a_tls_proxy, origin)
+
+
+@pytest.mark.parametrize("hostless", ["https://", "http://", "https://:443"])
+def test_an_origin_without_a_hostname_is_never_admitted(
+    behind_a_tls_proxy, settings, hostless
+):
+    # urlsplit() reads "https://" as scheme https with host None, so the entry and
+    # the header both reduced to ("https", None, 443) and a hostless entry (a typo for
+    # a real one) admitted a hostless Origin. Neither of them names an origin.
+    settings.CSRF_TRUSTED_ORIGINS = [hostless]
+
+    assert not admitted(behind_a_tls_proxy, hostless)
+
+
+@pytest.mark.parametrize("scheme", ["ftp", "ws", "wss", "chrome-extension"])
+def test_a_trusted_entry_that_is_not_http_or_https_is_ignored(
+    behind_a_tls_proxy, settings, scheme
+):
+    origin = f"{scheme}://api.example.com"
+    settings.CSRF_TRUSTED_ORIGINS = [origin]
+
     assert not admitted(behind_a_tls_proxy, origin)
 
 

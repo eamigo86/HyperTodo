@@ -27,12 +27,13 @@ from xml.etree import ElementTree
 import pytest
 from django.conf import settings
 from django.test import Client
-from django.urls import reverse
+from django.urls import resolve, reverse
 from PIL import Image
 
 from tests.test_forms_ui import declared_ids
 from todo.models import Category, Task
 from todo.services import issue_biometric_token
+from todo.views import HYPERVIEW_PATH_PREFIX
 
 # Built in-process rather than committed: the avatar endpoint's happy path needs
 # real image bytes, and a binary fixture is a thing nobody can review in a diff.
@@ -573,6 +574,16 @@ def test_csrf_failure_outside_the_hyperview_routes_is_djangos_own_html_page():
     assert response.headers["Content-Type"].startswith("text/html")
     assert b"CSRF verification failed" in response.content
     assert b"hyperview.org" not in response.content
+
+
+def test_the_hyperview_path_prefix_is_where_the_urlconf_mounts_the_api():
+    # csrf_failure asks "is this a Hyperview route?" with a literal that repeats the
+    # include() in config/urls.py. Remount the API and the check would quietly hand
+    # every Hyperview CSRF failure the HTML page the client cannot parse; this is
+    # what keeps the two in step.
+    assert reverse("todo:root") == HYPERVIEW_PATH_PREFIX
+    assert reverse("todo:login").startswith(HYPERVIEW_PATH_PREFIX)
+    assert resolve(HYPERVIEW_PATH_PREFIX).view_name == "todo:root"
 
 
 # A transition fragment is always the response to `action="replace"` whose target is

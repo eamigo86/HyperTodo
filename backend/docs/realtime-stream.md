@@ -38,11 +38,14 @@ ordinary Hyperview documents/fragments.
 Exact route: **GET `/realtime/events/`**, with no query string. Require the actual
 Django session cookie plus `X-HyperTodo-Client-Contract: realtime-v1` and the
 previously confirmed `X-HyperTodo-Expected-Session`. The binding is not a bearer
-credential. Native requests may omit Origin; a supplied Origin must match the
-request's scheme/host/effective port, or exactly an entry of
-`CSRF_TRUSTED_ORIGINS` (no wildcard entries), with no path, credentials, query or
-fragment. The second rule is what lets a page served over HTTPS through a
-TLS-terminating proxy connect when Django sees plain HTTP.
+credential. Native requests may omit Origin; a supplied Origin must have the same
+scheme, host and effective port as the request, or as an entry of
+`CSRF_TRUSTED_ORIGINS` (no wildcard entries). It must carry a hostname and no path,
+credentials, query or fragment, and only `http` and `https` count. Case and default
+ports are normalized, so `https://API.example.com:443` matches the entry
+`https://api.example.com`, while `http://api.example.com:443` and
+`https://api.example.com:80` do not. The second rule is what lets a page served over
+HTTPS through a TLS-terminating proxy connect when Django sees plain HTTP.
 There are no redirects, CORS reflection or client-selected topics.
 
 | Condition before headers | Status |

@@ -93,7 +93,7 @@ def same_identity(expected: Identity, actual: Identity | None) -> bool:
     )
 
 
-def _origin_key(origin: str) -> tuple[str, str | None, int] | None:
+def _origin_key(origin: str) -> tuple[str, str, int] | None:
     """Reduce a serialized origin to the parts that identify it.
 
     Args:
@@ -101,8 +101,8 @@ def _origin_key(origin: str) -> tuple[str, str | None, int] | None:
 
     Returns:
         Scheme, host and effective port, or None when the text is not a bare
-        http(s) origin: userinfo (even empty), path, query, fragment or an
-        unparseable port all disqualify it.
+        http(s) origin: a missing hostname, userinfo (even empty), path, query,
+        fragment or an unparseable port all disqualify it.
     """
     try:
         parts = urlsplit(origin)
@@ -111,6 +111,9 @@ def _origin_key(origin: str) -> tuple[str, str | None, int] | None:
         return None
     if (
         parts.scheme not in {"http", "https"}
+        # "https://" parses to host None. Two such texts would be equal, so a hostless
+        # entry would admit a hostless Origin although neither names an origin.
+        or parts.hostname is None
         or parts.username is not None
         or parts.password is not None
         or parts.path
@@ -132,8 +135,9 @@ def _origin(request: HttpRequest) -> bool:
         return False
     # Behind a TLS-terminating proxy Django sees http for a page served over https,
     # so the request alone refuses the origin the browser really sends. The origins
-    # an operator trusts for CSRF are the ones to add. Exact matches only: a wildcard
-    # entry is Django's own syntax and is deliberately not honoured here.
+    # an operator trusts for CSRF are the ones to add. They are compared by scheme,
+    # host and effective port; a wildcard entry is Django's own syntax and is
+    # deliberately not honoured here.
     allowed = {_origin_key(f"{request.scheme}://{request.get_host()}")}
     allowed.update(
         _origin_key(entry)
