@@ -74,16 +74,23 @@ def restore_midnight_deadlines(apps, schema_editor):
     The flag goes with the end of the day: the forward migration only reads unflagged
     rows, so a row left flagged here would be skipped by the next run and stay at
     00:00. With it cleared, 0007, 0006 and 0007 again give the same rows.
+
+    A day whose clocks skip 00:00 (Africa/Cairo on a spring Friday) has no start to
+    go back to: 00:00 would read 01:00, and the forward migration, which only moves
+    rows at midnight, would never flag that row again. Such a row keeps its flag and
+    its end of day, which is exactly what a later forward run expects to find.
     """
     tasks = apps.get_model("todo", "Task")._default_manager.using(
         schema_editor.connection.alias
     )
     for chunk in _local_days(_convertible(tasks.filter(due_all_day=True))):
         for pk, day in chunk:
-            tasks.filter(pk=pk).update(
-                due_all_day=False,
-                due_at=timezone.make_aware(datetime.combine(day, time.min)),
-            )
+            start = timezone.make_aware(datetime.combine(day, time.min))
+            # Through UTC, as the database stores it: an aware value already in the
+            # local zone would read back as the 00:00 it was built with.
+            if timezone.localtime(start.astimezone(UTC)).time() != time.min:
+                continue
+            tasks.filter(pk=pk).update(due_all_day=False, due_at=start)
 
 
 class Migration(migrations.Migration):

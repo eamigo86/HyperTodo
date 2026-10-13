@@ -239,6 +239,43 @@ def test_reversing_the_migration_restores_the_start_of_the_day(user):
     assert no_deadline.due_all_day is True
 
 
+def test_reversing_keeps_the_flag_where_a_clock_change_swallows_midnight(
+    user, settings
+):
+    # Cairo goes from 00:00 straight to 01:00 on 2026-04-24, so that day has no start.
+    # Rebuilt at 00:00 the deadline reads 01:00, the forward migration (which only
+    # moves rows at midnight) never picks it up again, and the flag was lost for good.
+    settings.TIME_ZONE = "Africa/Cairo"
+    gap = Task.objects.create(
+        user=user,
+        title="Gap",
+        due_at=local(date(2026, 4, 24), time.max),
+        due_all_day=True,
+    )
+    ordinary = Task.objects.create(
+        user=user,
+        title="Ordinary",
+        due_at=local(date(2026, 4, 25), time.max),
+        due_all_day=True,
+    )
+
+    run_backwards()
+
+    gap.refresh_from_db()
+    ordinary.refresh_from_db()
+    assert (gap.due_all_day, wall_clock(gap.due_at)) == (
+        True,
+        datetime.combine(date(2026, 4, 24), time.max),
+    )
+    assert (ordinary.due_all_day, wall_clock(ordinary.due_at)) == (
+        False,
+        datetime.combine(date(2026, 4, 25), time.min),
+    )
+    run_forwards()
+    gap.refresh_from_db()
+    assert wall_clock(gap.due_at) == datetime.combine(date(2026, 4, 24), time.max)
+
+
 def test_running_forwards_again_after_reversing_gives_back_the_same_rows(user):
     # 0007 -> 0006 -> 0007 has to be exact, for the rows the migration moved and for
     # those the task form stored itself (the last instant of the day, already flagged).
