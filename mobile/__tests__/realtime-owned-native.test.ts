@@ -11,9 +11,9 @@ it("uses only the supplied credential namespace/read port, never the legacy stor
  const read=jest.fn(async()=>"synthetic-only");const native=createOwnedNativePorts(read,"ios");expect(await native.readToken()).toBe("synthetic-only");expect(read).toHaveBeenCalledTimes(1);
 });
 it("preserves the public biometric prompt contract as separate checked awaits",async()=>{
- const native=createOwnedNativePorts(async()=>null,"ios");auth.hasHardwareAsync.mockResolvedValue(true);auth.getEnrolledLevelAsync.mockResolvedValue(LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG);auth.supportedAuthenticationTypesAsync.mockResolvedValue([2]);auth.authenticateAsync.mockResolvedValue({success:true});
+ const native=createOwnedNativePorts(async()=>null,"ios");auth.hasHardwareAsync.mockResolvedValue(true);auth.isEnrolledAsync.mockResolvedValue(true);auth.supportedAuthenticationTypesAsync.mockResolvedValue([2]);auth.authenticateAsync.mockResolvedValue({success:true});
  await native.hasHardware();expect(await native.isEnrolled()).toBe(true);await native.supportedTypes();await native.unlock("Owned prompt");
- expect(auth.authenticateAsync).toHaveBeenCalledWith({cancelLabel:"Use password",disableDeviceFallback:true,biometricsSecurityLevel:"strong",promptMessage:"Owned prompt"});expect(auth.hasHardwareAsync).toHaveBeenCalledTimes(1);expect(auth.getEnrolledLevelAsync).toHaveBeenCalledTimes(1);
+ expect(auth.authenticateAsync).toHaveBeenCalledWith({cancelLabel:"Use password",disableDeviceFallback:true,biometricsSecurityLevel:"strong",promptMessage:"Owned prompt"});expect(auth.hasHardwareAsync).toHaveBeenCalledTimes(1);expect(auth.isEnrolledAsync).toHaveBeenCalledTimes(1);expect(auth.getEnrolledLevelAsync).not.toHaveBeenCalled();
 });
 // The unlock prompt demands strong biometrics (Android Class 3) and otherwise falls back to the password form, so an
 // enrolment offer for a device with only Class 2 (weak) biometrics would promise a sign-in the prompt then refuses.
@@ -26,6 +26,21 @@ it.each([
 ])("treats a device enrolled with %s as strongly enrolled: %s",async(_label,level,expected)=>{
  const native=createOwnedNativePorts(async()=>null,"android");auth.isEnrolledAsync.mockResolvedValue(true);auth.getEnrolledLevelAsync.mockResolvedValue(level);
  expect(await native.isEnrolled()).toBe(expected);expect(auth.isEnrolledAsync).not.toHaveBeenCalled();
+});
+// iOS has no weak biometrics to exclude, and while Face ID or Touch ID is locked out after failed attempts
+// getEnrolledLevelAsync answers SECRET although the biometry is still enrolled. Asking for the level there hid the
+// offer during a lockout, where it used to show and the tap explained that the password is needed.
+it.each([
+ ["enrolled",true,LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG],
+ ["enrolled but locked out, which the level reports as a PIN only",true,LocalAuthentication.SecurityLevel.SECRET],
+ ["not enrolled",false,LocalAuthentication.SecurityLevel.NONE],
+])("asks iOS only whether biometry is enrolled: %s",async(_label,enrolled,level)=>{
+ const native=createOwnedNativePorts(async()=>null,"ios");auth.isEnrolledAsync.mockResolvedValue(enrolled);auth.getEnrolledLevelAsync.mockResolvedValue(level);
+ expect(await native.isEnrolled()).toBe(enrolled);expect(auth.getEnrolledLevelAsync).not.toHaveBeenCalled();
+});
+it("lets an enrolment failure on iOS reach the probe too",async()=>{
+ const native=createOwnedNativePorts(async()=>null,"ios");auth.isEnrolledAsync.mockRejectedValue(new Error("unavailable"));
+ await expect(native.isEnrolled()).rejects.toThrow("unavailable");
 });
 it("lets an enrolment level failure reach the probe, which then offers nothing",async()=>{
  const native=createOwnedNativePorts(async()=>null,"android");auth.getEnrolledLevelAsync.mockRejectedValue(new Error("unavailable"));

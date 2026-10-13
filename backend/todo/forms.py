@@ -51,7 +51,8 @@ LAST_DUE_YEAR = 2100
 # dj-hyperview refuses a document over 1 MB, so a megabyte posted into any echoed field
 # turned the refusal into a 500. A field is echoed up to its own max_length; the ones
 # that state none (a date, a time, a choice) up to this many characters, far more than
-# any of them needs.
+# any of them needs. Either way one character more is kept, so a value over the limit
+# comes back over it.
 MAX_ECHO_CHARS = 64
 # Django's copy for a bad choice quotes the submitted value, so error text is bounded.
 MAX_ERROR_CHARS = 300
@@ -72,6 +73,12 @@ class XmlSafeBoundField(forms.BoundField):
         Only a submission is bounded. An initial value comes from storage, where the
         field's own validation already held it to its limit.
 
+        A field that strips is echoed stripped, because that is the text Django
+        validated: cutting the raw submission would drop valid text that sat behind
+        leading whitespace. The cut falls one character past the limit, so an
+        over-long value is echoed still over-long and a second Save refuses it again
+        instead of storing the cut text.
+
         Returns:
             The bound submission or initial value, made XML-safe when it is text.
         """
@@ -79,7 +86,10 @@ class XmlSafeBoundField(forms.BoundField):
         if not isinstance(value, str):
             return value
         if self.form.is_bound:
-            value = value[: getattr(self.field, "max_length", None) or MAX_ECHO_CHARS]
+            if getattr(self.field, "strip", False):
+                value = value.strip()
+            limit = getattr(self.field, "max_length", None) or MAX_ECHO_CHARS
+            value = value[: limit + 1]
         return scrub_xml(value)
 
     @property

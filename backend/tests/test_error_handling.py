@@ -196,9 +196,9 @@ OVERSIZE = 1_500_000
 DATE_AND_TIME = {"due_date": "2026-09-07", "due_time": "09:30"}
 
 # (route, other posted fields, field that carries the oversized text, node to inspect,
-# longest value the panel may hand back). Fields that state a max_length are echoed up
-# to it, the rest up to a few dozen characters, which is more than a date, a time or an
-# id ever needs.
+# the field's limit). Fields that state a max_length are echoed up to one character past
+# it, so an over-long value stays invalid, the rest up to a few dozen characters, which
+# is more than a date, a time or an id ever needs.
 OVERSIZED_ECHOES = [
     ("/hv/tasks/new/", {"title": ""}, "due_date", "date-field", 64),
     (
@@ -241,31 +241,65 @@ def test_a_refused_form_never_echoes_more_than_the_field_can_hold(
     root = assert_hxml(response, status=422)
     node = root.find(f".//hv:{tag}[@name='{field}']", NS)
     assert node is not None
-    assert len(node.attrib["value"]) <= limit
+    assert len(node.attrib["value"]) <= limit + 1
 
 
-def test_a_refused_form_keeps_a_long_submission_that_still_fits_the_field(user):
-    # The bound is the field's own limit, so a title only a little too long comes back
-    # whole, up to that limit, and the person can see where it must be cut.
+def test_a_refused_form_echoes_the_text_django_validated_not_the_raw_submission(user):
+    # Django validates the STRIPPED value, so a title of 80 spaces and 150 characters is
+    # valid. Cutting the raw text at the limit echoed 80 spaces and 80 characters, and
+    # posting that back stored the cut text without a word of warning.
+    client = Client()
+    client.force_login(user)
+
+    response = client.post(
+        "/hv/tasks/new/", {"title": " " * 80 + "t" * 150, "due_date": "nonsense"}
+    )
+
+    root = assert_hxml(response, status=422)
+    echoed = root.find(".//hv:text-field[@name='title']", NS).attrib["value"]
+    assert echoed == "t" * 150
+    assert_hxml(client.post("/hv/tasks/new/", {"title": echoed}), status=201)
+    assert Task.objects.get(user=user).title == "t" * 150
+
+
+def test_notes_that_only_fit_once_stripped_come_back_whole(user):
+    client = Client()
+    client.force_login(user)
+
+    response = client.post(
+        "/hv/tasks/new/", {"title": "", "notes": "\n" * 50 + "n" * 9_990}
+    )
+
+    root = assert_hxml(response, status=422)
+    notes = root.find(".//hv:text-field[@name='notes']", NS)
+    assert notes.attrib["value"] == "n" * 9_990
+
+
+def test_an_over_long_title_is_echoed_one_character_past_the_limit(user):
+    # Cut at exactly 160 the echo looks valid, and a second Save stores the cut text.
+    # One more character keeps it refused: the person has to trim it themselves.
     client = Client()
     client.force_login(user)
 
     response = client.post("/hv/tasks/new/", {"title": "t" * 200})
 
     root = assert_hxml(response, status=422)
-    assert root.find(".//hv:text-field[@name='title']", NS).attrib["value"] == "t" * 160
+    echoed = root.find(".//hv:text-field[@name='title']", NS).attrib["value"]
+    assert echoed == "t" * 161
     assert "at most 160 characters" in field_error(root)
+    assert_hxml(client.post("/hv/tasks/new/", {"title": echoed}), status=422)
+    assert not Task.objects.filter(user=user).exists()
 
 
-def test_a_notes_field_just_over_its_limit_is_echoed_up_to_the_limit(user):
+def test_a_notes_field_over_its_limit_is_echoed_one_character_past_it(user):
     client = Client()
     client.force_login(user)
 
-    response = client.post("/hv/tasks/new/", {"title": "Plan", "notes": "n" * 10_001})
+    response = client.post("/hv/tasks/new/", {"title": "Plan", "notes": "n" * 10_050})
 
     root = assert_hxml(response, status=422)
     notes = root.find(".//hv:text-field[@name='notes']", NS)
-    assert notes.attrib["value"] == "n" * 10_000
+    assert notes.attrib["value"] == "n" * 10_001
 
 
 def test_a_refused_choice_does_not_quote_an_oversized_value_back(user):
