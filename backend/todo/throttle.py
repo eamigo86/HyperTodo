@@ -5,8 +5,14 @@ work it guards, so a burst of parallel requests cannot all pass the same stale t
 A cache that cannot answer never blocks a sign-in: the limits are skipped and a
 warning says so, because refusing everybody while the cache is down would be a worse
 outage than the guessing the limits prevent.
+
+Clients are told apart by address, normalised so that one machine cannot spell itself
+into several: an IPv6 client is its whole /64 and an IPv4-mapped IPv6 address is the
+IPv4 address it wraps. A sign-in that succeeds gives its own address claim back, so
+the address budget counts failures and a NAT full of honest users cannot exhaust it.
 """
 
+import ipaddress
 import logging
 from hashlib import sha256
 
@@ -17,9 +23,9 @@ logger = logging.getLogger(__name__)
 
 LOGIN_ATTEMPT_LIMIT = 10
 LOGIN_ATTEMPT_WINDOW = 15 * 60
-# Across every username from one address, so rotating names cannot multiply the guess
-# rate. It also bounds the cache: once an address is over it, no further entry is
-# created for the names it makes up.
+# Failed attempts across every username from one address, so rotating names cannot
+# multiply the guess rate. It also bounds the cache: once an address is over it, no
+# further entry is created for the names it makes up.
 ADDRESS_ATTEMPT_LIMIT = 100
 BIOMETRIC_ATTEMPT_LIMIT = 10
 BIOMETRIC_ATTEMPT_WINDOW = 300
@@ -71,6 +77,29 @@ def forget_attempts(key: str) -> None:
         _cache_unavailable(type(error).__name__)
 
 
+def refund_attempt(key: str) -> None:
+    """Give back one attempt claimed in a bucket, never more than was claimed.
+
+    The count goes down by one, which is not a reset: every other attempt in the
+    window stays counted. A bucket whose window already ended has nothing to give
+    back, so it is left missing instead of being recreated below zero, which would
+    buy extra attempts.
+
+    Args:
+        key: Cache key of the bucket.
+    """
+    try:
+        # ponytail: if a new window opened since the claim, this takes back one attempt
+        # of that window instead, so a budget is off by one once per window at most;
+        # a compare-and-set would need a lock the cache API does not offer.
+        cache.decr(key)
+    except ValueError:
+        # The window ended and nothing opened another: nothing is left to give back.
+        pass
+    except Exception as error:  # each cache backend raises its own error types
+        _cache_unavailable(type(error).__name__)
+
+
 def _cache_unavailable(reason: str) -> int:
     """Log that the limits are off for this request and return the count to report.
 
@@ -84,8 +113,30 @@ def _cache_unavailable(reason: str) -> int:
 
 
 def _address(request: HttpRequest) -> str:
-    """Return the peer address of the request."""
-    return request.META.get("REMOTE_ADDR", "")
+    """Return the client the request counts against, one name per machine.
+
+    An IPv6 client is handed a whole /64, so keying on the raw address would let it
+    refill its budget by writing another one of 2**64 addresses; it is reduced to its
+    network instead. An IPv4 client reaching a dual-stack socket arrives as
+    ::ffff:a.b.c.d and is the same machine as a.b.c.d. A value that is not an address
+    at all, or none (uvicorn has no peer behind a unix socket), shares one fixed key,
+    which also keeps what a client can make up out of the cache keys.
+
+    Args:
+        request: Incoming request.
+
+    Returns:
+        The IPv4 address, the IPv6 /64 network, or "" when there is no usable address.
+    """
+    try:
+        address = ipaddress.ip_address(request.META.get("REMOTE_ADDR", ""))
+    except ValueError:
+        return ""
+    if address.version == 4:
+        return str(address)
+    if address.ipv4_mapped is not None:
+        return str(address.ipv4_mapped)
+    return str(ipaddress.ip_network((address, 64), strict=False))
 
 
 def _address_key(request: HttpRequest) -> str:
@@ -101,10 +152,10 @@ def _account_key(request: HttpRequest, username: str) -> str:
     anywhere. Names are lower-cased and hashed so the key stays bounded and holds no
     account name.
     """
-    # ponytail: behind a proxy REMOTE_ADDR is the proxy, so every client shares both
-    # buckets (nothing here parses X-Forwarded-For). Run uvicorn with --proxy-headers
-    # and --forwarded-allow-ips so REMOTE_ADDR is the real client; see
-    # docs/installed-adoption.md.
+    # ponytail: behind a proxy REMOTE_ADDR is the proxy, and behind a unix socket it is
+    # empty, so every client shares both buckets (nothing here parses X-Forwarded-For).
+    # Run uvicorn with --proxy-headers and --forwarded-allow-ips so REMOTE_ADDR is the
+    # real client; see docs/installed-adoption.md.
     digest = sha256(username.lower().encode()).hexdigest()
     return f"login-attempts:{_address(request)}:{digest}"
 
@@ -153,16 +204,21 @@ def claim_password_attempt(request: HttpRequest, username: str) -> bool:
 
 
 def release_password_attempts(request: HttpRequest, username: str) -> None:
-    """Forget the failed attempts against one account after it signed in.
+    """Settle the buckets of a sign-in that succeeded.
 
-    The address bucket stays: it spans every account name, so clearing it on a success
-    would let a guesser with an account of their own refill their budget at will.
+    The failed attempts against the account are forgotten. The address bucket gets
+    back the one claim this very sign-in made and nothing else: it spans every
+    account name, so clearing it would let a guesser with an account of their own
+    refill their budget at will, while keeping the claim would make a NAT full of
+    honest users lock itself out after 100 successes. What is left in it is exactly
+    the failures.
 
     Args:
         request: Incoming login request.
         username: Account name that just authenticated.
     """
     forget_attempts(_account_key(request, username))
+    refund_attempt(_address_key(request))
 
 
 def claim_biometric_attempt(request: HttpRequest) -> bool:

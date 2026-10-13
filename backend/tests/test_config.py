@@ -137,6 +137,37 @@ def test_an_empty_secret_key_counts_as_unset():
     assert resolved(DJANGO_SECRET_KEY="")["debug"] is True
 
 
+@pytest.mark.parametrize("blank", [" ", "   ", "\t", " \n "])
+def test_a_whitespace_only_secret_key_counts_as_unset(blank):
+    # "DJANGO_SECRET_KEY=   " is set and not empty, so it used to become the key itself
+    # and walk past the guard.
+    result = load_settings(DJANGO_DEBUG="0", DJANGO_SECRET_KEY=blank)
+
+    assert result.returncode != 0
+    assert "Set DJANGO_SECRET_KEY when DJANGO_DEBUG=0" in result.stderr
+    assert resolved(DJANGO_SECRET_KEY=blank)["debug"] is True
+
+
+def test_the_public_key_is_still_refused_when_whitespace_pads_it():
+    result = load_settings(
+        DJANGO_DEBUG="0", DJANGO_SECRET_KEY=" development-only-secret-key\n"
+    )
+
+    assert result.returncode != 0
+    assert "Set DJANGO_SECRET_KEY when DJANGO_DEBUG=0" in result.stderr
+
+
+def test_whitespace_around_a_secret_key_is_not_part_of_it():
+    result = load_settings(
+        "import config.settings as s; print(repr(s.SECRET_KEY))",
+        DJANGO_DEBUG="0",
+        DJANGO_SECRET_KEY=f" {STRONG_KEY}\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == repr(STRONG_KEY)
+
+
 def test_any_debug_value_other_than_one_turns_debug_off():
     for value in ("0", "false", "", "yes"):
         assert (

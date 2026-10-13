@@ -28,8 +28,10 @@ from todo.throttle import (
     ADDRESS_ATTEMPT_LIMIT,
     BIOMETRIC_ATTEMPT_LIMIT,
     LOGIN_ATTEMPT_LIMIT,
+    biometric_attempt_key,
     claim_password_attempt,
     register_attempt,
+    release_password_attempts,
 )
 
 pytestmark = pytest.mark.django_db
@@ -163,13 +165,48 @@ def test_an_address_over_budget_opens_no_further_account_bucket():
     assert spy.call_count == 1
 
 
-def test_a_success_never_refills_the_address_budget(client, user):
+def test_a_success_gives_back_its_own_address_claim_and_no_failure(client, user):
     for index in range(ADDRESS_ATTEMPT_LIMIT - 1):
         attempt(client, f"guesser{index}")
     assert attempt(client, password="correct-horse").status_code == 200
     client.logout()
 
+    # The success claimed the 100th attempt and returned it, so the address still has
+    # exactly one failure left: its 99 failures stay on the books.
+    assert attempt(client, "another").status_code == 422
     assert error_text(attempt(client, "another"), 429) == THROTTLED
+
+
+def test_sign_ins_that_succeed_never_exhaust_the_address_budget(client, user):
+    # Everybody behind one NAT shares an address, so counting its successes locked all
+    # of them out once the office had signed in 100 times in a quarter of an hour.
+    for _ in range(ADDRESS_ATTEMPT_LIMIT + 5):
+        assert attempt(client, password="correct-horse").status_code == 200
+        client.logout()
+
+
+def test_a_refund_after_the_window_ended_buys_no_extra_attempt():
+    request = RequestFactory().post("/hv/login/")
+    assert claim_password_attempt(request, "ada")
+    cache.clear()  # the window ended between the claim and the success
+
+    release_password_attempts(request, "ada")
+
+    for index in range(ADDRESS_ATTEMPT_LIMIT):
+        assert claim_password_attempt(request, f"guesser{index}")
+    assert not claim_password_attempt(request, "one-more")
+
+
+def test_a_refund_never_returns_more_than_one_claim():
+    request = RequestFactory().post("/hv/login/")
+    for index in range(ADDRESS_ATTEMPT_LIMIT - 1):
+        assert claim_password_attempt(request, f"guesser{index}")
+    assert claim_password_attempt(request, "ada")
+
+    release_password_attempts(request, "ada")
+
+    assert claim_password_attempt(request, "after-the-success")
+    assert not claim_password_attempt(request, "one-more")
 
 
 def test_a_success_clears_only_the_account_that_signed_in(client, user, other_user):
@@ -179,6 +216,99 @@ def test_a_success_clears_only_the_account_that_signed_in(client, user, other_us
     client.logout()
 
     assert attempt(client, "grace", password="correct-horse").status_code == 429
+
+
+# --- one client, many spellings of its address ------------------------------
+
+
+def post_from(address, path="/hv/login/", **data):
+    """Build a POST from exactly this peer address (None: no peer at all)."""
+    request = RequestFactory().post(path, data)
+    if address is None:
+        del request.META["REMOTE_ADDR"]
+    else:
+        request.META["REMOTE_ADDR"] = address
+    return request
+
+
+def spend_address_budget(address):
+    request = post_from(address)
+    for index in range(ADDRESS_ATTEMPT_LIMIT):
+        assert claim_password_attempt(request, f"guesser{index}")
+
+
+@pytest.mark.parametrize(
+    "spent,rotated",
+    [
+        # An IPv6 client owns its whole /64, so it can write 2**64 addresses.
+        ("2001:db8:1:2::1", "2001:db8:1:2:ffff:ffff:ffff:ffff"),
+        ("2001:db8:1:2::1", "2001:0DB8:1:2:0:0:0:2"),
+        # An IPv4 client reached through a dual-stack socket arrives mapped.
+        ("10.1.1.1", "::ffff:10.1.1.1"),
+        ("::ffff:10.1.1.1", "10.1.1.1"),
+        ("::ffff:10.1.1.1", "::ffff:0a01:0101"),
+    ],
+)
+def test_every_spelling_of_one_clients_address_draws_on_one_budget(spent, rotated):
+    spend_address_budget(spent)
+
+    assert not claim_password_attempt(post_from(rotated), "one-more")
+
+
+@pytest.mark.parametrize(
+    "spent,other",
+    [
+        ("2001:db8:1:2::1", "2001:db8:1:3::1"),
+        ("2001:db8:1:2::1", "2001:db8:2:2::1"),
+        ("10.1.1.1", "10.1.1.2"),
+        ("::ffff:10.1.1.1", "::ffff:10.1.1.2"),
+        ("10.1.1.1", "2001:db8:1:2::1"),
+    ],
+)
+def test_a_different_client_keeps_its_own_address_budget(spent, other):
+    spend_address_budget(spent)
+
+    assert claim_password_attempt(post_from(other), "one-more")
+
+
+def test_the_account_bucket_follows_the_same_normalisation():
+    first, second = post_from("2001:db8:1:2::1"), post_from("2001:db8:1:2::2")
+    for _ in range(LOGIN_ATTEMPT_LIMIT):
+        assert claim_password_attempt(first, "ada")
+
+    assert not claim_password_attempt(second, "ADA")
+    assert claim_password_attempt(post_from("2001:db8:1:3::1"), "ada")
+
+
+def test_the_biometric_bucket_follows_the_same_normalisation():
+    key = biometric_attempt_key(
+        post_from("2001:db8:1:2::1", "/hv/biometric/login/", biometric_token="x")
+    )
+
+    assert key == biometric_attempt_key(
+        post_from("2001:db8:1:2::2", "/hv/biometric/login/", biometric_token="x")
+    )
+    assert key != biometric_attempt_key(
+        post_from("2001:db8:1:3::1", "/hv/biometric/login/", biometric_token="x")
+    )
+
+
+@pytest.mark.parametrize(
+    "spent,other",
+    [
+        (None, ""),
+        ("", "not-an-address"),
+        ("not-an-address", "10.1.1.256"),
+        ("10.1.1.256", "2001:db8::1/64"),
+    ],
+)
+def test_an_address_that_does_not_parse_shares_one_fixed_bucket(spent, other):
+    # Behind a unix socket uvicorn has no peer address, so REMOTE_ADDR is missing or
+    # empty and every client lands here. Whatever else fails to parse must not mint a
+    # bucket of its own either, or a made-up value would refill the budget.
+    spend_address_budget(spent)
+
+    assert not claim_password_attempt(post_from(other), "one-more")
 
 
 # --- the Django Admin login draws on the same budget ------------------------
@@ -233,6 +363,14 @@ def test_an_admin_success_clears_the_account_counter(client, staff):
         assert not throttled(admin_attempt(client))
 
     assert throttled(admin_attempt(client))
+
+
+def test_an_admin_success_gives_back_its_address_claim_too(client, staff, monkeypatch):
+    monkeypatch.setattr("todo.throttle.ADDRESS_ATTEMPT_LIMIT", 3)
+
+    for _ in range(5):
+        assert admin_attempt(client, password="correct-horse").status_code == 302
+        client.logout()
 
 
 def test_an_incomplete_admin_submission_is_not_counted(client, staff):
@@ -353,6 +491,17 @@ def test_the_warning_for_a_dead_cache_carries_no_secret(
     assert "correct-horse" not in logged
     assert sha256(b"ada").hexdigest() not in logged
     assert "login-attempts" not in logged
+
+
+def test_a_refund_the_cache_cannot_take_is_skipped_with_a_warning(caplog):
+    request = post_from("10.1.1.1")
+
+    with patch.object(cache, "decr", side_effect=ConnectionError("redis is down")):
+        release_password_attempts(request, "ada")
+
+    records = throttle_warnings(caplog)
+    assert len(records) == 1
+    assert "10.1.1.1" not in logging.Formatter().format(records[0])
 
 
 def test_a_dead_cache_never_blocks_a_biometric_unlock(client, user, dead_cache):

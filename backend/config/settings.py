@@ -13,8 +13,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # no setup. That is also why DEBUG may not be switched off while it is in use.
 _PUBLIC_SECRET_KEY = "development-only-secret-key"
 # `or`, not a get default: DJANGO_SECRET_KEY= in an env file is set but empty, and must
-# count as unset so the guard below still catches it.
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or _PUBLIC_SECRET_KEY
+# count as unset so the guard below still catches it. Stripped first, so a value of
+# nothing but whitespace (or the public key padded with some) cannot walk past it
+# either, and a trailing newline from an env file is not part of the key.
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "").strip() or _PUBLIC_SECRET_KEY
 # Only the exact value "1" keeps DEBUG on: "0", "false", an empty value or a typo all
 # turn it off.
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
