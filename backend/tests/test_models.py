@@ -1,8 +1,9 @@
 """Tests for TODO persistence rules."""
 
 import importlib
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.apps import apps
@@ -12,6 +13,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
+from todo.forms import TaskForm
 from todo.models import Category, Task
 
 pytestmark = pytest.mark.django_db
@@ -459,3 +461,59 @@ def test_reversing_keeps_the_flag_where_the_start_would_fall_below_year_1(
     run_forwards()
     task.refresh_from_db()
     assert (task.due_all_day, task.due_at) == (True, end)
+
+
+# --- the end of a day when the clocks change -------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("zone", "day"),
+    [
+        ("America/Santiago", date(2026, 4, 4)),
+        ("Africa/Cairo", date(2026, 10, 29)),
+        ("Asia/Beirut", date(2026, 10, 24)),
+        ("America/Nuuk", date(2026, 10, 24)),
+        ("America/Nuuk", date(2026, 3, 28)),
+        ("America/Havana", date(2026, 11, 1)),
+        ("America/New_York", date(2026, 11, 1)),
+    ],
+    ids=[
+        "santiago",
+        "cairo",
+        "beirut",
+        "nuuk-repeats-23h",
+        "nuuk-skips-23h",
+        "havana",
+        "new-york",
+    ],
+)
+def test_the_migration_ends_a_clock_change_day_where_the_task_form_does(
+    user, settings, zone, day
+):
+    # Night of a repeated 23:xx hour (or a skipped one in Nuuk): the first reading of
+    # 23:59:59 is an hour early, and the one a skipped hour leaves is an hour late.
+    settings.TIME_ZONE = zone
+    task = Task.objects.create(user=user, title="Rent", due_at=local(day, time.min))
+    form = TaskForm(
+        {"title": "Rent", "due_date": day.isoformat(), "due_time": ""}, user=user
+    )
+    assert form.is_valid(), form.errors
+    # In UTC: Python will not call an instant in a repeated hour equal to the same
+    # instant read in another zone.
+    from_form = form.cleaned_data["due_at"].astimezone(UTC)
+    zone_info = ZoneInfo(zone)
+
+    run_forwards()
+    task.refresh_from_db()
+
+    assert task.due_all_day is True
+    assert task.due_at == from_form
+    # The last instant of the day: on it, and the next microsecond is on the next one.
+    assert task.due_at.astimezone(zone_info).date() == day
+    after = (task.due_at + timedelta(microseconds=1)).astimezone(zone_info)
+    assert after.date() == day + timedelta(days=1)
+    # Reversing and running forwards again gives the same instant.
+    run_backwards()
+    run_forwards()
+    task.refresh_from_db()
+    assert (task.due_all_day, task.due_at) == (True, from_form)

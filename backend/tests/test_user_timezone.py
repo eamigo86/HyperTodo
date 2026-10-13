@@ -358,6 +358,26 @@ def test_an_all_day_deadline_round_trips_through_the_clients_zone(user):
     assert schedule_of(assert_hxml(edit)) == ("2026-07-15", "")
 
 
+def test_a_date_only_deadline_is_open_through_a_repeated_hour_and_late_after_it(
+    user, monkeypatch
+):
+    # Santiago turns its clocks back at midnight, so 23:xx on 4 April happens twice.
+    # The deadline used to be the first 23:59:59, an hour before the day really ended.
+    santiago = ZoneInfo("America/Santiago")
+    create_all_day(user, "2026-04-04", "America/Santiago")
+
+    def overdue_at(*wall_clock, fold):
+        now = datetime(*wall_clock, fold=fold, tzinfo=santiago).astimezone(UTC)
+        monkeypatch.setattr("django.utils.timezone.now", lambda: now)
+        return listed(get(user, "todo:tasks", "America/Santiago", "?status=overdue"))
+
+    assert overdue_at(2026, 4, 4, 23, 30, fold=0) == []
+    # The same wall-clock minute again, an hour later: still the 4th.
+    assert overdue_at(2026, 4, 4, 23, 30, fold=1) == []
+    assert overdue_at(2026, 4, 4, 23, 59, 59, fold=1) == []
+    assert overdue_at(2026, 4, 5, 0, 0, fold=0) == ["Pay rent"]
+
+
 def test_a_title_only_edit_from_another_zone_does_not_move_the_deadline(user):
     # Created for the 10th in New York, the deadline is 03:59:59 UTC on the 11th, and
     # Madrid shows the 11th for it. Posting that date back used to rebuild the end of

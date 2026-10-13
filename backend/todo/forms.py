@@ -56,6 +56,12 @@ LAST_DUE_YEAR = 2100
 MAX_ECHO_CHARS = 64
 # Django's copy for a bad choice quotes the submitted value, so error text is bounded.
 MAX_ERROR_CHARS = 300
+# The last instant of a day. fold=1 takes the later reading of 23:59:59.999999 on a
+# night the clocks go back (Santiago, Cairo, Beirut, Nuuk) and the instant before the
+# jump on a night they go forward (Nuuk), where fold=0 ended the day an hour early or
+# on the next day. A date that never happened (Pacific/Apia, 2011-12-30) has no last
+# instant and lands on the end of the day before it.
+END_OF_DAY = time.max.replace(fold=1)
 
 
 class XmlSafeBoundField(forms.BoundField):
@@ -314,7 +320,7 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
         cleaned["due_all_day"] = bool(due_date) and due_time is None
         cleaned["due_at"] = (
             timezone.make_aware(
-                datetime.combine(due_date, time.max if due_time is None else due_time)
+                datetime.combine(due_date, END_OF_DAY if due_time is None else due_time)
             )
             if due_date
             else None

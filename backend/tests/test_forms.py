@@ -1,6 +1,6 @@
 """Tests for TODO input validation."""
 
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -287,3 +287,78 @@ def test_clearing_the_date_removes_the_deadline(user):
 
     assert form.cleaned_data["due_at"] is None
     assert form.cleaned_data["due_all_day"] is False
+
+
+# --- the last instant of a day when the clocks change ---------------------------
+
+# Nights when 23:xx happens twice, and one night when it never happens at all.
+CLOCK_CHANGE_DAYS = [
+    pytest.param("America/Santiago", date(2026, 4, 4), id="santiago-repeats-23h"),
+    pytest.param("Africa/Cairo", date(2026, 10, 29), id="cairo-repeats-23h"),
+    pytest.param("Asia/Beirut", date(2026, 10, 24), id="beirut-repeats-23h"),
+    pytest.param("America/Nuuk", date(2026, 10, 24), id="nuuk-repeats-23h"),
+    pytest.param("America/Nuuk", date(2026, 3, 28), id="nuuk-skips-23h"),
+    pytest.param("America/New_York", date(2026, 11, 1), id="new-york-ordinary"),
+]
+
+
+def end_of_day_for(zone, day, user):
+    """Return, in UTC, the deadline the form stores for a date posted with no time.
+
+    In UTC because Python refuses to call an instant in a repeated hour equal to the
+    same instant read in another zone.
+    """
+    with timezone.override(ZoneInfo(zone)):
+        form = TaskForm(
+            {"title": "Pay rent", "due_date": day.isoformat(), "due_time": ""},
+            user=user,
+        )
+        assert form.is_valid(), form.errors
+    return form.cleaned_data["due_at"].astimezone(UTC)
+
+
+@pytest.mark.parametrize(("zone", "day"), CLOCK_CHANGE_DAYS)
+def test_a_date_only_deadline_is_the_very_last_instant_of_its_day(user, zone, day):
+    instant = end_of_day_for(zone, day, user)
+
+    # On that day, and the next microsecond is already on the following one: not an
+    # hour early (the first of two 23:59:59), not an hour late (the next day).
+    assert instant.astimezone(ZoneInfo(zone)).date() == day
+    after = (instant + timedelta(microseconds=1)).astimezone(ZoneInfo(zone))
+    assert after.date() == day + timedelta(days=1)
+
+
+def test_the_last_instant_of_a_repeated_hour_night_is_the_second_midnight_side(user):
+    # Santiago turns its clocks back at midnight, so 23:xx on the 4th happens twice and
+    # the day ends with the second one, at 03:59:59 UTC.
+    assert end_of_day_for("America/Santiago", date(2026, 4, 4), user) == datetime(
+        2026, 4, 5, 3, 59, 59, 999999, tzinfo=UTC
+    )
+
+
+def test_a_day_that_skips_its_last_hour_ends_where_the_clocks_jump(user):
+    # Nuuk goes from 22:59:59 straight to 00:00 on the 29th: the 28th ends at 22:59:59.
+    assert end_of_day_for("America/Nuuk", date(2026, 3, 28), user) == datetime(
+        2026, 3, 29, 0, 59, 59, 999999, tzinfo=UTC
+    )
+
+
+def test_an_all_day_task_keeps_its_day_through_the_edit_form_when_an_hour_is_skipped(
+    user,
+):
+    task = Task.objects.create(
+        user=user,
+        title="Pay rent",
+        due_at=end_of_day_for("America/Nuuk", date(2026, 3, 28), user),
+        due_all_day=True,
+    )
+    task.refresh_from_db()
+
+    form = edited_in(ZoneInfo("America/Nuuk"), task, user, title="Pay rent now")
+
+    # The form shows the day the deadline was set for, and saves it back unchanged.
+    with timezone.override(ZoneInfo("America/Nuuk")):
+        assert TaskForm(instance=task, user=user).initial["due_date"] == date(
+            2026, 3, 28
+        )
+    assert form.cleaned_data["due_at"] == task.due_at

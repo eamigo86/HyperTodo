@@ -35,6 +35,11 @@ CHUNK = 500
 # local time first, and fails on the very rows it is meant to exclude.
 CONVERTIBLE_FROM = datetime(1, 1, 2, tzinfo=UTC)
 CONVERTIBLE_BEFORE = datetime(9999, 1, 1, tzinfo=UTC)
+# The last instant of a day, as the task form stores it: fold=1 is the later reading of
+# 23:59:59.999999 on a night the clocks go back and the instant before the jump on a
+# night they go forward. The default, fold=0, ended such a day an hour early or on the
+# next day.
+END_OF_DAY = time.max.replace(fold=1)
 
 
 def _convertible(rows):
@@ -68,7 +73,7 @@ def mark_midnight_deadlines_all_day(apps, schema_editor):
         for pk, day in chunk:
             tasks.filter(pk=pk).update(
                 due_all_day=True,
-                due_at=timezone.make_aware(datetime.combine(day, time.max)),
+                due_at=timezone.make_aware(datetime.combine(day, END_OF_DAY)),
             )
 
 
