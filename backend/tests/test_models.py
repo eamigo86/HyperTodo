@@ -1,13 +1,14 @@
 """Tests for TODO persistence rules."""
 
 import importlib
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 from types import SimpleNamespace
 
 import pytest
 from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
+from django.db.migrations.executor import MigrationExecutor
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
@@ -231,3 +232,114 @@ def test_reversing_the_migration_restores_the_start_of_the_day(user):
     assert wall_clock(task.due_at) == datetime.combine(date(2026, 9, 6), time.min)
     assert wall_clock(timed.due_at) == datetime(2026, 9, 6, 9, 30)
     assert no_deadline.due_at is None
+
+
+# --- deadlines at the ends of the calendar ---------------------------------------
+
+
+def test_a_deadline_too_close_to_year_9999_stays_timed_instead_of_aborting(user):
+    # 9999-12-31 00:00 in New York is a legal stored value, but the last instant of
+    # that day is in year 10000 once converted to UTC. The update raised OverflowError,
+    # so the whole migration rolled back and `migrate` stayed at 0006.
+    forever = Task.objects.create(
+        user=user, title="Forever", due_at=local(date(9999, 12, 31), time.min)
+    )
+    ordinary = Task.objects.create(
+        user=user, title="Rent", due_at=local(date(2026, 9, 6), time.min)
+    )
+    before = forever.due_at
+
+    run_forwards()
+
+    forever.refresh_from_db()
+    ordinary.refresh_from_db()
+    assert (forever.due_all_day, forever.due_at) == (False, before)
+    assert ordinary.due_all_day is True
+
+
+def test_a_deadline_at_the_first_instant_of_year_1_stays_timed_instead_of_aborting(
+    user,
+):
+    # SQLite converts every row to local time to test its time of day, and the first
+    # instant of year 1 has no reading west of Greenwich: that query failed with a
+    # DataError before a single row was moved.
+    first = datetime(1, 1, 1, tzinfo=UTC)
+    task = Task.objects.create(user=user, title="Epoch", due_at=first)
+
+    run_forwards()
+
+    task.refresh_from_db()
+    assert (task.due_all_day, task.due_at) == (False, first)
+
+
+def test_the_year_9999_bound_is_exact(user):
+    # Midnight on the last day of 9998 still has a UTC end of day; midnight on the
+    # first day of 9999 is where the migration stops converting.
+    inside = Task.objects.create(
+        user=user, title="Inside", due_at=local(date(9998, 12, 31), time.min)
+    )
+    outside = Task.objects.create(
+        user=user, title="Outside", due_at=local(date(9999, 1, 1), time.min)
+    )
+
+    run_forwards()
+
+    inside.refresh_from_db()
+    outside.refresh_from_db()
+    assert inside.due_all_day is True
+    assert wall_clock(inside.due_at) == datetime.combine(date(9998, 12, 31), time.max)
+    assert outside.due_all_day is False
+
+
+def test_reversing_skips_a_row_it_cannot_read_in_local_time_as_well(user):
+    # An all-day flag set by hand on a row at the very start of the calendar, through
+    # the Admin, must not abort the way back: it has no local reading west of Greenwich.
+    first = datetime(1, 1, 1, tzinfo=UTC)
+    task = Task.objects.create(user=user, title="Epoch", due_at=first, due_all_day=True)
+
+    run_backwards()
+
+    task.refresh_from_db()
+    assert task.due_at == first
+
+
+def test_the_migration_reverses_with_the_real_restore_function():
+    operation = migration().Migration.operations[0]
+
+    assert operation.code is migration().mark_midnight_deadlines_all_day
+    # RunPython.noop here would let a rollback keep every end-of-day deadline.
+    assert operation.reverse_code is migration().restore_midnight_deadlines
+
+
+@pytest.mark.django_db(transaction=True)
+def test_migrate_converts_forwards_and_restores_backwards_the_way_it_really_runs(user):
+    before = ("todo", "0006_task_due_all_day")
+    after = ("todo", "0007_mark_all_day_deadlines")
+    legacy = Task.objects.create(
+        user=user, title="Rent", due_at=local(date(2026, 9, 6), time.min)
+    )
+    forever = Task.objects.create(
+        user=user, title="Forever", due_at=local(date(9999, 12, 31), time.min)
+    )
+    untouched = forever.due_at
+
+    def migrate_to(target):
+        MigrationExecutor(connection).migrate([target])
+        legacy.refresh_from_db()
+        forever.refresh_from_db()
+
+    try:
+        migrate_to(before)
+        # `migrate todo 0007` itself, over a table holding a row it cannot convert.
+        migrate_to(after)
+        assert legacy.due_all_day is True
+        assert wall_clock(legacy.due_at) == datetime.combine(date(2026, 9, 6), time.max)
+        assert (forever.due_all_day, forever.due_at) == (False, untouched)
+
+        # And `migrate todo 0006`: the end of the day goes back to its start.
+        migrate_to(before)
+        assert wall_clock(legacy.due_at) == datetime.combine(date(2026, 9, 6), time.min)
+        assert forever.due_at == untouched
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
