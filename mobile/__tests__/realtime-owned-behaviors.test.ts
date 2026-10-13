@@ -32,6 +32,14 @@ it("binds biometric submit before native prompt and never dispatches a global ev
  expect(f.submit).toHaveBeenCalledTimes(1);expect(f.submit).toHaveBeenCalledWith("credential");expect(f.native.readToken).toHaveBeenCalledTimes(1);expect(f.save).not.toHaveBeenCalled();
 });
 
+it("prompts with the HXML text and falls back to the default when the attribute is missing or empty",async()=>{
+ // xmldom answers "" for a missing attribute, so only a falsy check reaches the default.
+ const f=await fixture();f.element.setAttribute("prompt","Unlock your tasks");await f.run("biometric-unlock");
+ expect(f.native.unlock).toHaveBeenLastCalledWith("Unlock your tasks");
+ f.element.removeAttribute("prompt");await f.run("biometric-unlock");expect(f.native.unlock).toHaveBeenLastCalledWith("Sign in to HyperTodo");
+ f.element.setAttribute("prompt","");await f.run("biometric-unlock");expect(f.native.unlock).toHaveBeenLastCalledWith("Sign in to HyperTodo");
+});
+
 it.each(["prompt","token"])("drops an old owner's biometric continuation after %s await",async(stage)=>{
  const f=await fixture();const delayed=deferred<unknown>();if(stage==="prompt")f.native.unlock.mockImplementationOnce(()=>delayed.promise as Promise<{success:boolean}>);else f.native.readToken.mockImplementationOnce(()=>delayed.promise as Promise<string>);
  const task=f.run("biometric-unlock");await tick();expect(stage==="prompt"?f.native.unlock:f.native.readToken).toHaveBeenCalledTimes(1);f.supervisor.invalidate();delayed.resolve(stage==="prompt"?{success:true}:"old secret");await task;

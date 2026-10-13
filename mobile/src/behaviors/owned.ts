@@ -47,7 +47,7 @@ export function createOwnedBehaviors(ports:OwnedBehaviorPorts):HvBehavior[]{
   const behaviors=[
     callback("biometric-unlock",async(element,source,_getRoot,_updateRoot,lease,current)=>{
       const submit=source.bindBiometricSubmit();if(!submit)return;
-      const result=await native.unlock(element.getAttribute("prompt")??"Sign in to HyperTodo");if((!await current()||!current.now()))return;
+      const result=await native.unlock(element.getAttribute("prompt")||"Sign in to HyperTodo");if((!await current()||!current.now()))return;
       if(!result.success){if(!DISMISSED.has(result.error??""))ports.notice({message:UNLOCK_FAILED,tone:"error"});return;}
       const token=await native.readToken();if((!await current()||!current.now()))return;
       if(!token){
