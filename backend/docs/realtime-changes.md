@@ -157,8 +157,7 @@ make backend-test-redis
 
 The complete default suite uses the locked a22 package, with no source hook or
 temporary METADATA. Redis integration is explicitly opt-in and uses unique test
-namespaces, never a shared-key flush. `test_support.runtime.verify_package()`
-checks the actual import, metadata, pin and Python/Django versions before private
-fixture allocation. Keep the full coverage policy enabled for the default suite.
+namespaces, never a shared-key flush. Keep the full coverage policy enabled for
+the default suite.
 Source-only experiments and historical installed-a21 compatibility remain separate
 evidence; neither substitutes for current installed-package acceptance.

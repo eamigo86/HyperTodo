@@ -138,22 +138,3 @@ def test_real_startup_rejects_legacy_without_database_or_network(tmp_path, value
     assert result.stderr.splitlines()[-1].startswith(
         "django.core.exceptions.ImproperlyConfigured:"
     )
-
-
-def test_native_fixture_disables_only_realtime_and_preserves_app_schema(tmp_path):
-    from config import settings
-    from test_support.native_app_fixture import (
-        cleanup_fixture,
-        create_fixture,
-        settings_overrides,
-    )
-
-    previous = copy.deepcopy(settings.HYPERVIEW)
-    fixture = create_fixture(tmp_path)
-    try:
-        overrides = settings_overrides(fixture)
-        assert "HYPERTODO_REALTIME" not in tuple(overrides)
-        assert overrides["HYPERVIEW"] == {**previous, "REALTIME": None}
-        assert settings.HYPERVIEW == previous
-    finally:
-        cleanup_fixture(fixture.root)

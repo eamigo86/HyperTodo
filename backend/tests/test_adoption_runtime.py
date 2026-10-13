@@ -2,7 +2,6 @@
 
 import asyncio
 import importlib
-import sys
 import tomllib
 from pathlib import Path
 
@@ -29,15 +28,6 @@ def test_installed_release_supports_both_invalidation_wire_versions():
     import dj_hyperview.realtime as realtime
 
     assert realtime.INVALIDATION_VERSIONS == (1, 2)
-
-
-def test_runner_uses_selected_environment_without_import_path_mutation():
-    from test_support.native_app import load_runner
-
-    before = tuple(sys.path)
-    runner = load_runner()
-    assert tuple(sys.path) == before
-    assert Path(runner.__file__).is_relative_to(Path(sys.prefix))
 
 
 async def asgi_get(application, path, *, headers=None, disconnect_on_body=False):

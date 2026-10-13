@@ -131,6 +131,5 @@ Permanent tests use real Django session/auth/SQLite, actual ASGI middleware and
 public package framing/cleanup, with a controlled acknowledged subscription where
 Redis is not under test. They cover expiry/revocation, old bindings, capacity,
 cancellation, lifetime-after-auth, exact Origin ports and preheader ownership.
-The earlier failed native recovery trace remains historical; it was followed by
-separately reviewed recovery and limited [normal-App SSE demo](sse-demo-fixture.md)
-evidence. This configuration migration does not rerun or extend native acceptance.
+The earlier failed native recovery trace remains historical. This configuration
+migration does not rerun or extend native acceptance.

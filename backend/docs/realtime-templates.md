@@ -102,6 +102,6 @@ before implementation; evidence is under `evidence/gate0-mobile/c3-templates-*`.
 These backend tests do not exercise React Native layout, SSE transport or native
 authentication transitions. The final App-registration regression now verifies
 the explicit `AppSessionSurface` composition of `gate.components`; it remains a
-separate guarantee from the source catalog. See the mobile resource/App tests and
-the separately scoped [normal-App SSE demo](sse-demo-fixture.md). Historical C3
-RED checkpoints remain evidence, not the current App integration status.
+separate guarantee from the source catalog. See the mobile resource/App tests.
+Historical C3 RED checkpoints remain evidence, not the current App integration
+status.

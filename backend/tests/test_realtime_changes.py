@@ -38,12 +38,6 @@ def request(*, method="POST", mutation="a" * 32 + "00000001", feature="changes-v
     return req
 
 
-def test_published_package_provenance_is_explicit():
-    from test_support.runtime import verify_package
-
-    assert verify_package()["provenance"] == "installed"
-
-
 @pytest.mark.parametrize("status", [200, 304, 422])
 def test_bound_response_seed_is_fresh_and_not_replayed_from_cached_object(status):
     req = request(method="GET")

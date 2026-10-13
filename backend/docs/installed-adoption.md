@@ -106,19 +106,6 @@ Existing active overrides become effective under **every** launcher, including `
 5. Adopt the reviewed package, consumer configuration and lock together after effective-source review. Repeat installed-package acceptance before an authorized restart. On a synthetic account, save a reviewed About change through Admin, expect no hint until commit, then a shared `ui` hint and authenticated refresh showing the changed text. Rollbacks must not notify. Verify the actual device separately; backend tests are not native acceptance.
 6. Roll back package/configuration together, never by disabling validation. DB restoration requires a separate approved backup procedure without overwriting concurrent edits. Rotate only Hyperview's namespace if necessary; never flush a shared cache.
 
-## Disposable fixture provenance
-
-The private launchers in `test_support` verify the consumer's exact dependency pin, imported package location, Distribution metadata and installed RECORD checksums before allocating a database. Uvicorn/h11 must come from that same selected venv. Installed mode is the default; it does not require PYTHONPATH or source metadata. A source experiment requires **both** `--source-root` and `--source-metadata`, with matching source pyproject/module path/metadata and Python `-B`; results are explicitly labelled `source`, not installed-artifact acceptance. There is no fallback between modes.
-
-For portable fixtures, first create an empty private workspace (mode0700), then pass `--workspace /absolute/private/workspace`. Parent/report/event paths must stay inside it with no symlink traversal. Only newly allocated `native-app-*` directories with owned private config may be loaded/cleaned; original database paths are never accepted. The equivalent `HYPERTODO_FIXTURE_WORKSPACE`, `HYPERTODO_FIXTURE_SOURCE` and `HYPERTODO_FIXTURE_METADATA` environment variables are **test-support inputs**, not Django/public package settings. The application itself never reads them.
-
-```console
-# From backend/, with dependencies installed. Only fixture SQLite is initialized.
-python -B -m test_support.sse_demo --workspace /absolute/private/workspace --check-only --report /absolute/private/workspace/check.json
-```
-
-This check creates and removes its own synthetic users/data. It is not a native run, never starts Redis or changes DNS, and does not inspect existing accounts or credentials. Reports contain no passwords/tokens. Serving is a separate explicit finite action, with exact bind/port and a maximum600-second lifetime. Historical machine-specific native evidence is not a reproducible installed-package command or new-version native proof.
-
 ## Verification
 
-Permanent tests cover installed/source separation, wrong versions, missing RECORD, shadowed imports, explicit private workspace/unsafe-path rejection, genuine Admin asset serving only in DEBUG, and authenticated SSE/disconnect through that wrapper. Run the full backend gates with installed dependencies; opt into the separate scoped Redis acceptance only against the authorized test service/UUID namespaces.
+Permanent tests cover genuine Admin asset serving only in DEBUG, and authenticated SSE/disconnect through the DEBUG static wrapper. Run the full backend gates with installed dependencies; opt into the separate scoped Redis acceptance only against the authorized test service/UUID namespaces.
