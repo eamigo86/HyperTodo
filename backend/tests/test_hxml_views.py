@@ -1,7 +1,7 @@
 """HTTP contract tests for server-driven Hyperview screens."""
 
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -970,6 +970,83 @@ def test_invalid_task_form_returns_422_hxml(user):
     assert due_time is not None
     assert "field-invalid" in due_time.attrib["style"]
     assert_snackbar(root, "Please review the highlighted task details.", tone="error")
+
+
+def schedule_of(root):
+    """Return the (date, time) values a task form panel would post back."""
+    due_date = root.find(".//hv:date-field[@name='due_date']", NS)
+    due_time = root.find(".//hv:text-field[@name='due_time']", NS)
+    assert due_date is not None and due_time is not None
+    return due_date.attrib["value"], due_time.attrib["value"]
+
+
+@pytest.mark.parametrize(
+    ("posted", "refused_field"),
+    [
+        ({"title": "", "due_date": "2026-10-20", "due_time": "09:30"}, "title"),
+        ({"title": "Ship", "due_date": "2026-10-20", "due_time": "99:99"}, "due_time"),
+        ({"title": "Ship", "due_date": "", "due_time": "09:30"}, "due_time"),
+    ],
+    ids=["title-missing", "time-malformed", "time-without-date"],
+)
+def test_a_refused_task_form_keeps_the_schedule_that_was_posted(
+    user, posted, refused_field
+):
+    # A bound form's .value is the raw posted string, and the date and time filters
+    # return "" for a string, so every refusal used to wipe the schedule the person
+    # had just picked. The 422 panel owes the submitted draft back, as the realtime
+    # contract says it does.
+    client = csrf_client()
+    client.force_login(user)
+    token = token_from(client.get(reverse("todo:task-new")))
+
+    root = assert_hxml(
+        client.post(reverse("todo:task-new"), {**posted, "csrfmiddlewaretoken": token}),
+        status=422,
+    )
+
+    assert root.find(".//hv:text[@style='field-error']", NS) is not None
+    assert schedule_of(root) == (posted["due_date"], posted["due_time"])
+
+
+def test_a_refused_task_edit_shows_the_posted_schedule_and_not_the_stored_one(user):
+    task = Task.objects.create(
+        user=user,
+        title="Stored",
+        due_at=timezone.make_aware(datetime(2026, 9, 1, 8, 15)),
+    )
+    client = csrf_client()
+    client.force_login(user)
+    token = token_from(client.get(reverse("todo:task-edit", args=(task.pk,))))
+
+    root = assert_hxml(
+        client.post(
+            reverse("todo:task-edit", args=(task.pk,)),
+            {
+                "title": "",
+                "due_date": "2026-10-20",
+                "due_time": "",
+                "csrfmiddlewaretoken": token,
+            },
+        ),
+        status=422,
+    )
+
+    assert schedule_of(root) == ("2026-10-20", "")
+
+
+def test_the_task_edit_form_shows_the_stored_schedule(user):
+    task = Task.objects.create(
+        user=user,
+        title="Stored",
+        due_at=timezone.make_aware(datetime(2026, 9, 1, 8, 15)),
+    )
+    client = Client()
+    client.force_login(user)
+
+    root = assert_hxml(client.get(reverse("todo:task-edit", args=(task.pk,))))
+
+    assert schedule_of(root) == ("2026-09-01", "08:15")
 
 
 def test_category_crud_and_cross_user_resources_are_hidden(user, other_user):

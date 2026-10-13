@@ -25,11 +25,15 @@
     </view>
     <view style="card">
       <text style="section">{% translate "Schedule" %}</text>
+      {% comment %}A bound form hands back the RAW posted string, and the date and time
+      filters turn any string into "", so a refused save used to wipe the schedule. Echo
+      the submission when bound (XmlSafeBoundField already made it XML-safe) and format
+      the initial date and time objects otherwise.{% endcomment %}
       <text style="label">{% translate "Due date" %}</text>
-      <date-field name="due_date" value="{{ form.due_date.value|date:'Y-m-d'|default:'' }}" field-style="field{% if form.due_date.errors %} field-invalid{% endif %}" field-text-style="field-text" label-format="DD/MM/YYYY" modal-style="date-modal" modal-overlay-style="date-modal-overlay" modal-text-style="date-modal-action" cancel-label="{% translate "Cancel" %}" done-label="{% translate "Done" %}" placeholder="{% translate "Select due date" %}" placeholderTextColor="{{ theme.ink_muted }}" />
+      <date-field name="due_date" value="{% if form.is_bound %}{{ form.due_date.value|default:'' }}{% else %}{{ form.due_date.value|date:'Y-m-d'|default:'' }}{% endif %}" field-style="field{% if form.due_date.errors %} field-invalid{% endif %}" field-text-style="field-text" label-format="DD/MM/YYYY" modal-style="date-modal" modal-overlay-style="date-modal-overlay" modal-text-style="date-modal-action" cancel-label="{% translate "Cancel" %}" done-label="{% translate "Done" %}" placeholder="{% translate "Select due date" %}" placeholderTextColor="{{ theme.ink_muted }}" />
       {% if form.due_date.errors %}<text style="field-error">{{ form.due_date.errors|join:', ' }}</text>{% endif %}
       <text style="label">{% translate "Due time" %}</text>
-      <text-field name="due_time" value="{{ form.due_time.value|time:'H:i'|default:'' }}" placeholder="HH:MM" placeholderTextColor="{{ theme.ink_muted }}" keyboard-type="number-pad" mask="99:99" accessibilityLabel="{% translate "Due time" %}" style="field{% if form.due_time.errors %} field-invalid{% endif %}" />
+      <text-field name="due_time" value="{% if form.is_bound %}{{ form.due_time.value|default:'' }}{% else %}{{ form.due_time.value|time:'H:i'|default:'' }}{% endif %}" placeholder="HH:MM" placeholderTextColor="{{ theme.ink_muted }}" keyboard-type="number-pad" mask="99:99" accessibilityLabel="{% translate "Due time" %}" style="field{% if form.due_time.errors %} field-invalid{% endif %}" />
       {% if form.due_time.errors %}<text style="field-error">{{ form.due_time.errors|join:', ' }}</text>{% endif %}
     </view>
     {% hv_csrf_token %}
