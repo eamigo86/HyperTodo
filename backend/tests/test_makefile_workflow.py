@@ -185,6 +185,60 @@ def test_lan_ip_skips_a_vpn_default_route_for_the_first_en_interface(
     assert result.stdout == "192.168.50.7\n"
 
 
+@pytest.mark.parametrize(
+    ("names", "addresses", "expected"),
+    [
+        # en0 is the port a laptop is normally on, whatever order ifconfig lists them.
+        (
+            "lo0 utun9 en6 en1 en0",
+            {"en1": "192.168.7.7", "en0": "192.168.1.20"},
+            "192.168.1.20",
+        ),
+        # A 169.254.x.x address is a failed DHCP lease that no phone can reach.
+        (
+            "lo0 utun3 en5 en0",
+            {"en5": "169.254.12.3", "en0": "192.168.1.20"},
+            "192.168.1.20",
+        ),
+        (
+            "lo0 utun3 en0 en5 en7",
+            {"en0": "169.254.1.1", "en5": "169.254.12.3", "en7": "192.168.50.7"},
+            "192.168.50.7",
+        ),
+    ],
+)
+def test_lan_ip_behind_a_vpn_prefers_en0_and_skips_link_local_addresses(
+    make, tmp_path, names, addresses, expected
+):
+    _stub(tmp_path / "bin", "route", "echo '  interface: utun3'")
+    _stub(tmp_path / "bin", "ifconfig", f'echo "{names}"')
+    cases = "\n".join(f'"getifaddr {n}") echo {a};;' for n, a in addresses.items())
+    _stub(tmp_path / "bin", "ipconfig", f'case "$*" in\n{cases}\n*) exit 1;;\nesac')
+
+    result = make("lan-ip")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == f"{expected}\n"
+
+
+def test_lan_ip_fails_clearly_when_a_vpn_route_leaves_only_link_local_addresses(
+    make, tmp_path
+):
+    _stub(tmp_path / "bin", "route", "echo '  interface: utun3'")
+    _stub(tmp_path / "bin", "ifconfig", 'echo "lo0 utun3 en0"')
+    _stub(
+        tmp_path / "bin",
+        "ipconfig",
+        '[[ "$*" == "getifaddr en0" ]] && echo 169.254.12.3',
+    )
+
+    result = make("lan-ip")
+
+    assert result.stdout == ""
+    assert "No LAN address found" in result.stderr
+    assert "Error 1" in result.stderr
+
+
 def test_lan_ip_fails_clearly_when_a_vpn_route_leaves_no_en_address(make, tmp_path):
     _stub(tmp_path / "bin", "route", "echo '  interface: utun3'")
     _stub(
