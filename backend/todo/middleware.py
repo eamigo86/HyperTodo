@@ -1,10 +1,12 @@
 """Request middleware owned by the TODO application."""
 
 from collections.abc import Callable
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
-from django.utils import translation
+from django.utils import timezone, translation
+from django.utils.cache import patch_vary_headers
 
 from .context_processors import theme
 from .realtime_middleware import is_stream_request
@@ -14,6 +16,76 @@ from .recovery import is_recovery
 # request headers (services/dom/parser.ts:120-128) and a future version could claim
 # a response header there.
 THEME_HEADER = "X-HyperTodo-Theme"
+# The zone the person is really in, as an IANA name such as Europe/Madrid.
+TIMEZONE_HEADER = "X-Timezone"
+# The longest IANA key is 32 characters, so anything past this cannot be one. The bound
+# keeps a hostile header away from the tz database lookup.
+MAX_TIMEZONE_LENGTH = 64
+
+
+def _client_zone(request: HttpRequest) -> ZoneInfo | None:
+    """Read the zone a request reports, or None when it names no usable one.
+
+    Args:
+        request: Incoming request.
+
+    Returns:
+        The zone, or None when the header is absent, too long or not an IANA name.
+    """
+    name = request.headers.get(TIMEZONE_HEADER, "")
+    if not name or len(name) > MAX_TIMEZONE_LENGTH:
+        return None
+    try:
+        return ZoneInfo(name)
+    except KeyError, ValueError, OSError:
+        # ZoneInfoNotFoundError is a KeyError; ValueError covers a key that is not a
+        # normalized relative path, and OSError a name that hits a directory or file.
+        return None
+
+
+class UserTimezoneMiddleware:
+    """Run each request in the time zone the client says it is in.
+
+    Today, Scheduled, the greeting and every date a screen shows are worked out in the
+    active zone. Without this they all used the server zone, so someone in Madrid was
+    told "Good morning" until 18:00 and saw their day roll over at New York midnight.
+    A name that is not an IANA zone is ignored and the server zone (TIME_ZONE) stays in
+    force.
+
+    The task form builds the end of a date-only deadline in the active zone as well,
+    so it ends the day the person is in, and Overdue, which compares that instant with
+    now, flips when that day ends.
+    """
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        """Store the next handler in the chain.
+
+        Args:
+            get_response: Next middleware or view.
+        """
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        """Activate the reported zone for the rest of the chain, then restore.
+
+        The event stream has no screen to date, so it is left alone, headers and all.
+        Every other response is marked as varying on the header, also when the
+        request sent none or an unusable one: a cache that stored the answer for a
+        client without the header must not serve it to one that sends it.
+
+        Args:
+            request: Incoming request.
+
+        Returns:
+            The downstream response.
+        """
+        if is_stream_request(request):
+            return self.get_response(request)
+        # override puts back whatever was active before, and None means the default.
+        with timezone.override(_client_zone(request)):
+            response = self.get_response(request)
+        patch_vary_headers(response, (TIMEZONE_HEADER,))
+        return response
 
 
 class ProfileLanguageMiddleware:

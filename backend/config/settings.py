@@ -48,6 +48,11 @@ MIDDLEWARE = [
     # resolution need a language already active; it also owns Content-Language and
     # the Vary: Accept-Language patch, which is why we do not hand-roll it.
     "django.middleware.locale.LocaleMiddleware",
+    # Runs the rest of the chain in the zone the client reports (X-Timezone), so the
+    # CSRF failure view, the views and the template rendering all see one zone. It needs
+    # neither the session nor the user, the header alone decides, so it can sit this
+    # high and also stamp Vary: X-Timezone on every response, errors included.
+    "todo.middleware.UserTimezoneMiddleware",
     "django.middleware.common.CommonMiddleware",
     # Reject non-GET on the exact SSE path before CSRF; all GET guards remain.
     "todo.realtime_middleware.RealtimeMethodMiddleware",
