@@ -25,6 +25,11 @@ this same file. So localhost and cleartext are an explicit developer opt-in inst
 - The URL's path must be exactly `/hv/` (a missing trailing slash is added at runtime). The app requests
   root-level `/hv/...` paths, so `https://api.example.com/api/hv/` or the bare origin throws at build time
   instead of producing an app that loads nothing.
+- The URL must be a plain `http(s)` URL: no credentials (`user:password@`), no query, no fragment and no other
+  scheme (`ftp:` or `ws:` are refused even with the development opt-in). The runtime refuses credentials and a
+  fragment, and a query would reach only the first request, so each of them throws at build time. The build
+  bakes in the canonical form it judged (lower-case scheme and host, default port and dot segments removed),
+  not the raw string, and its error messages never echo a value that can carry a secret.
 - The runtime has no fallback either: `src/config.ts` throws when the baked-in `extra.apiUrl` is missing
   instead of defaulting to `127.0.0.1`.
 - `EAS_BUILD` is read boolish (`1` counts as `true`), the way Expo's own CLI reads it.

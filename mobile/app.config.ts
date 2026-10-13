@@ -66,7 +66,25 @@ export function resolveApiUrl(env: Record<string, string | undefined> = process.
         `EXPO_PUBLIC_ALLOW_LOCAL_API=1 to use ${LOCAL_API_URL} (see mobile/.env.example).`
     );
   }
-  const { protocol, hostname, pathname } = new URL(apiUrl);
+  const url = new URL(apiUrl);
+  // The scheme is judged first, because it decides what the rest means: `ftp://localhost/`
+  // and `ws://localhost/` have a private host that the development opt-in would accept.
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error(`EXPO_PUBLIC_API_URL must be an http or https URL (got the scheme "${url.protocol}").`);
+  }
+  // The runtime refuses userinfo and a fragment (session.ts address()), and a query on
+  // the base would reach only the first request, never the ones built from it. All three
+  // are mistakes, so they fail the build instead of shipping an app that loads nothing.
+  // The messages never echo the value: it can carry a password or a token, and build logs
+  // outlive the build.
+  if (url.username || url.password) {
+    throw new Error("EXPO_PUBLIC_API_URL must not contain credentials (user:password@).");
+  }
+  // Tested on the href: `search` and `hash` are both empty for a bare "?" or "#".
+  if (/[?#]/.test(url.href)) {
+    throw new Error("EXPO_PUBLIC_API_URL must not contain a query or a fragment.");
+  }
+  const { protocol, hostname, pathname } = url;
   if (protocol !== "https:" && !(allowLocal && PRIVATE_HOST.test(hostname))) {
     throw new Error(
       `EXPO_PUBLIC_API_URL must use https (got "${apiUrl}"). ` +
@@ -85,7 +103,8 @@ export function resolveApiUrl(env: Record<string, string | undefined> = process.
         "bare origin, would build and then load nothing."
     );
   }
-  return apiUrl;
+  // What was judged is what ships: the canonical form, not the raw string.
+  return url.href;
 }
 
 export default (): ExpoConfig => {

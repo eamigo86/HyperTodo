@@ -177,6 +177,79 @@ describe("app.config API URL guard", () => {
       "https://api.example.com/hv",
     );
   });
+
+  // The guard judges the parsed URL, so what ships must be that parsed URL: returning the
+  // raw string baked forms such as an upper-case host or a dot segment into the binary.
+  it.each([
+    ["an upper-case scheme and host", "HTTPS://API.Example.COM/hv/", "https://api.example.com/hv/"],
+    ["an explicit default port", "https://api.example.com:443/hv/", "https://api.example.com/hv/"],
+    ["a non-default port", "https://api.example.com:8443/hv/", "https://api.example.com:8443/hv/"],
+    ["a dot segment", "https://api.example.com/./hv/", "https://api.example.com/hv/"],
+    ["a parent segment", "https://api.example.com/api/../hv/", "https://api.example.com/hv/"],
+    ["surrounding whitespace", "  https://api.example.com/hv/ ", "https://api.example.com/hv/"],
+  ])("bakes the canonical form of %s into the binary", (_label, url, canonical) => {
+    expect(resolve({ ...NO_EAS, EXPO_PUBLIC_API_URL: url }).extra!.apiUrl).toBe(canonical);
+  });
+
+  it("canonicalizes an opted-in developer URL the same way", () => {
+    expect(resolve({ ...DEV, EXPO_PUBLIC_API_URL: "HTTP://LocalHost:80/hv/" }).extra!.apiUrl).toBe(
+      "http://localhost/hv/",
+    );
+  });
+
+  // The runtime refuses a URL with userinfo or a fragment (session.ts address()), so the
+  // build refuses it first instead of shipping an app that cannot load anything.
+  it.each([
+    ["a username and password", "https://admin:s3cret@api.example.com/hv/"],
+    ["only a username", "https://admin@api.example.com/hv/"],
+    ["an empty password", "https://admin:@api.example.com/hv/"],
+  ])("refuses %s in the API URL without echoing the secret", (_label, url) => {
+    expect(() => resolve({ ...NO_EAS, EXPO_PUBLIC_API_URL: url })).toThrow(/must not contain credentials/);
+    let message = "";
+    try {
+      resolve({ ...NO_EAS, EXPO_PUBLIC_API_URL: url });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).not.toContain("s3cret");
+    expect(message).not.toContain("admin");
+  });
+
+  it.each([
+    ["a query", "https://api.example.com/hv/?next=/tasks/"],
+    ["an empty query", "https://api.example.com/hv/?"],
+    ["a fragment", "https://api.example.com/hv/#top"],
+    ["an empty fragment", "https://api.example.com/hv/#"],
+    ["a query and a fragment", "https://api.example.com/hv/?a=1#top"],
+  ])("refuses %s in the API URL", (_label, url) => {
+    expect(() => resolve({ ...NO_EAS, EXPO_PUBLIC_API_URL: url })).toThrow(/must not contain a query or a fragment/);
+  });
+
+  it("applies the credential, query and fragment rules to an opted-in developer URL as well", () => {
+    expect(() => resolve({ ...DEV, EXPO_PUBLIC_API_URL: "http://dev:pw@192.168.4.43:8000/hv/" })).toThrow(
+      /must not contain credentials/,
+    );
+    expect(() => resolve({ ...DEV, EXPO_PUBLIC_API_URL: "http://192.168.4.43:8000/hv/?x=1" })).toThrow(
+      /query or a fragment/,
+    );
+    expect(() => resolve({ ...DEV, EXPO_PUBLIC_API_URL: "http://192.168.4.43:8000/hv/#x" })).toThrow(
+      /query or a fragment/,
+    );
+  });
+
+  // `ftp://localhost/` and `ws://localhost/` have a private host, so the opt-in used to
+  // wave them through; the app only speaks http and https.
+  it.each([
+    "ftp://localhost:8000/hv/",
+    "ws://localhost:8000/hv/",
+    "wss://api.example.com/hv/",
+    "custom://localhost/hv/",
+    "file:///hv/",
+    "javascript:alert(1)",
+  ])("refuses the scheme of %s, opt-in or not", (url) => {
+    expect(() => resolve({ ...DEV, EXPO_PUBLIC_API_URL: url })).toThrow(/must be an http or https URL/);
+    expect(() => resolve({ ...NO_EAS, EXPO_PUBLIC_API_URL: url })).toThrow(/must be an http or https URL/);
+  });
 });
 
 const REMOTE = { ...PROD_EAS, EXPO_PUBLIC_API_URL: "https://api.example.com/hv/" };

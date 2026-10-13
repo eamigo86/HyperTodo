@@ -27,11 +27,17 @@ Parser tests use controlled HTTP and native ports, not native network proof.
 - Every ordinary and neutral HXML request has a 30 s deadline on the supervisor's
   clock, because the platform adds none and a request whose headers never arrive
   would hold logout and recovery forever. The transport is aborted, the caller gets
-  a rejection and the session state is unchanged. A response with no binding header
-  at all (a gateway error, a WAF or portal page) is rejected the same way and the
+  a rejection and the session state is unchanged.
+- An ordinary request (not a neutral recovery one) that gets a response with no
+  binding header at all (a gateway error, a WAF or portal page) is rejected and the
   owner is then re-observed: an unchanged binding restores the foreground without a
   manual retry, a different one revokes it. A present but different binding, or a
   401, still waits for an explicit Retry.
+- A neutral recovery request gets no such re-observation. Its GET must answer 200
+  with the recovery's own binding; any other answer (another status, a missing or
+  different binding header, a redirect or foreign URL) revokes the recovery
+  capability at once and the shield offers Retry and Sign in again. An
+  over-sized body revokes it too.
 - Native probes, unlock and picker continuations use captured source authority.
   A removed source or old generation cannot read credentials, update XML, submit
   into another account or display a late snackbar. Settings clears require the

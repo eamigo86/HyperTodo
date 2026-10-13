@@ -151,6 +151,31 @@ it('rejects a revoked handle and a cookie mismatch before reading content or adm
   });
   expect(f.transport).toHaveBeenCalledTimes(count);
 });
+// docs/realtime-app.md: an ordinary request that gets a binding-less response is re-observed and its
+// unchanged owner restored. A neutral recovery GET is not: anything but a 200 that carries the recovery's
+// own binding revokes the capability at once, with no further request, and the shield takes over.
+it.each([
+  ['a binding-less gateway page', 200, false],
+  ['a binding-less 502', 502, false],
+  ['a 503 that names the recovery binding', 503, true],
+  ['a 401 that names the recovery binding', 401, true]
+] as const)('revokes the recovery at once on %s, without re-observing it', async (_label, status, named) => {
+  const f = setup(),
+    handle = await recover(f);
+  // The recovery's own binding is B, the one observed before it began.
+  const bad = response('<html>gateway</html>', B, undefined, status);
+  if (!named) bad.headers.delete(H.binding);
+  f.transport.mockResolvedValueOnce(bad);
+  const count = f.transport.mock.calls.length;
+  await expect(handle.fetch('/hv/recovery/')).rejects.toThrow('untrusted-response');
+  expect(f.transport).toHaveBeenCalledTimes(count + 1);
+  expect(handle.isAlive()).toBe(false);
+  expect(f.supervisor.snapshot()).toMatchObject({
+    availability: 'uncertain',
+    reason: 'revoked',
+    identity: null
+  });
+});
 it('retains the POST settlement barrier after revoke and does not auto-replay auth', async () => {
   const f = setup();
   await f.supervisor.bootstrap();
