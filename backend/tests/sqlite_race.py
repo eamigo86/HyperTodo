@@ -122,9 +122,19 @@ SCENARIOS = (
 def main():
     """Migrate the scratch database, run every scenario and print the statuses."""
     import django
-
-    django.setup()
     from django.conf import settings
+
+    # Never the project's Redis: realtime would publish a hint to the development
+    # channels for every write, and a Redis cache would fill the development one.
+    hyperview = settings.HYPERVIEW
+    caches = {cache["BACKEND"] for cache in settings.CACHES.values()}
+    if (
+        hyperview.get("REALTIME")
+        or "CACHE" in hyperview
+        or caches != {"django.core.cache.backends.locmem.LocMemCache"}
+    ):
+        sys.exit("refusing to run with realtime or a cache other than local memory")
+    django.setup()
     from django.contrib.auth import get_user_model
     from django.core.management import call_command
     from django.test.utils import setup_test_environment

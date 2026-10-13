@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from config import settings as project
+from tests.test_config import load_settings
 
 BACKEND = Path(__file__).resolve().parents[1]
 # One of two identical creates wins and the other is told, on its field, that it lost.
@@ -33,11 +34,9 @@ def test_the_default_database_takes_the_write_lock_up_front_and_waits_for_it():
     assert options["timeout"] >= 10
 
 
-@pytest.fixture(scope="module")
-def races(tmp_path_factory):
-    """Run the scenarios once and return each one's list of per-trial statuses."""
-    database = tmp_path_factory.mktemp("races") / "race.sqlite3"
-    result = subprocess.run(
+def run_race(database, settings_module="tests.settings_file_database", **env):
+    """Run the race in a clean child interpreter and return the finished process."""
+    return subprocess.run(
         [sys.executable, "-m", "tests.sqlite_race"],
         cwd=BACKEND,
         env={
@@ -46,13 +45,20 @@ def races(tmp_path_factory):
                 for name, value in os.environ.items()
                 if not name.startswith(("DJANGO_", "HYPERTODO_"))
             },
-            "DJANGO_SETTINGS_MODULE": "tests.settings_file_database",
+            "DJANGO_SETTINGS_MODULE": settings_module,
             "HYPERTODO_RACE_DATABASE": str(database),
+            **env,
         },
         capture_output=True,
         text=True,
         timeout=240,
     )
+
+
+@pytest.fixture(scope="module")
+def races(tmp_path_factory):
+    """Run the scenarios once and return each one's list of per-trial statuses."""
+    result = run_race(tmp_path_factory.mktemp("races") / "race.sqlite3")
     assert result.returncode == 0, result.stderr[-2000:]
     return json.loads(result.stdout.splitlines()[-1])
 
@@ -84,3 +90,63 @@ def test_a_task_created_while_its_category_is_deleted_never_errors(races):
 
 def test_two_accounts_creating_tasks_at_once_both_succeed(races):
     assert all(statuses == [201, 201] for statuses in races["two_users_create_tasks"])
+
+
+# --- the races stay away from the project's Redis -------------------------------
+
+LOCMEM = "django.core.cache.backends.locmem.LocMemCache"
+SETTINGS_PROBE = (
+    "import json; from django.conf import settings as s; "
+    "print(json.dumps({'hyperview': s.HYPERVIEW, 'caches': s.CACHES}, default=str))"
+)
+
+
+@pytest.mark.parametrize("redis_cache", ["0", "1"], ids=["cache-off", "cache-on"])
+def test_the_race_settings_publish_nothing_and_cache_in_memory(tmp_path, redis_cache):
+    # The project settings turn on realtime and, with ENABLE_REDIS_CACHE, a Redis
+    # template cache. The races used to inherit both: 240 hints published to the
+    # development channels of the users with ids 1 and 2.
+    result = load_settings(
+        SETTINGS_PROBE,
+        DJANGO_SETTINGS_MODULE="tests.settings_file_database",
+        HYPERTODO_RACE_DATABASE=str(tmp_path / "race.sqlite3"),
+        ENABLE_REDIS_CACHE=redis_cache,
+    )
+
+    assert result.returncode == 0, result.stderr
+    state = json.loads(result.stdout)
+    assert state["hyperview"]["REALTIME"] is None
+    assert "CACHE" not in state["hyperview"]
+    assert {cache["BACKEND"] for cache in state["caches"].values()} == {LOCMEM}
+
+
+# Closed port 1, so a refusal that fails to happen still reaches no real Redis.
+NOWHERE = "redis://127.0.0.1:1/15"
+LEAKS = {
+    "realtime": (
+        "HYPERVIEW = {**HYPERVIEW, 'REALTIME': "
+        f"{{'REDIS_URL': '{NOWHERE}', 'NAMESPACE': 'leak'}}}}"
+    ),
+    "template-cache": "HYPERVIEW = {**HYPERVIEW, 'CACHE': {'ALIAS': 'default'}}",
+    "redis-cache": (
+        "CACHES = {'default': {'BACKEND': 'django_redis.cache.RedisCache', "
+        f"'LOCATION': '{NOWHERE}'}}}}"
+    ),
+}
+
+
+@pytest.mark.parametrize("leak", LEAKS)
+def test_the_race_refuses_to_run_when_settings_would_reach_redis(tmp_path, leak):
+    (tmp_path / "leaky_race_settings.py").write_text(
+        f"from tests.settings_file_database import *\n{LEAKS[leak]}\n"
+    )
+    database = tmp_path / "race.sqlite3"
+
+    result = run_race(
+        database, settings_module="leaky_race_settings", PYTHONPATH=str(tmp_path)
+    )
+
+    assert result.returncode != 0
+    assert "refusing to run" in result.stderr
+    # It stopped before it migrated anything or published a single hint.
+    assert not database.exists()
