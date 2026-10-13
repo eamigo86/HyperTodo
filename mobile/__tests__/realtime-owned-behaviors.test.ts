@@ -3,9 +3,14 @@ import {DOMParser} from "@instawork/xmldom";
 import {createSessionSupervisor} from "../src/realtime/session";
 import {SESSION_HEADERS as H} from "../src/realtime/session-protocol";
 import {createOwnedBehaviors,type OwnedNativePorts} from "../src/behaviors/owned";
+import {hyperviewLogger} from "../src/feedback/logging";
 const A="hvs1."+"A".repeat(43),B="hvs1."+"B".repeat(43),NS="https://hyperview.org/hyperview";
 function deferred<T>(){let resolve!:(value:T)=>void;let reject!:(error:Error)=>void;const promise=new Promise<T>((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};}
 const tick=async()=>{for(let i=0;i<16;i++)await Promise.resolve();};
+// The diagnostics go to the console in the app; keep them out of the test output.
+let warn:jest.SpyInstance;
+beforeEach(()=>{warn=jest.spyOn(hyperviewLogger,"warn").mockImplementation(()=>{});});
+afterEach(()=>warn.mockRestore());
 async function fixture(){
  let binding=A;const save=jest.fn(async(_token:string)=>{}),clear=jest.fn(async()=>{});
  const transport=jest.fn(async()=>({status:200,url:"https://app.test/hv/session-state/",headers:new Headers({[H.binding]:binding}),text:async()=>JSON.stringify({version:1,authenticated:true,binding})}) as Response);
@@ -76,6 +81,21 @@ it.each(["hasHardware","isEnrolled","readToken","supportedTypes"] as const)("sto
  const f=await fixture(),delayed=deferred<unknown>();(f.native[stage] as jest.Mock).mockImplementationOnce(()=>delayed.promise);const task=f.run("probe-biometrics");await tick();expect(f.native[stage]).toHaveBeenCalledTimes(1);f.remove();delayed.resolve(stage==="readToken"?"token":stage==="supportedTypes"?[2]:true);await task;
  expect(f.updateRoot).not.toHaveBeenCalled();expect(f.notice).not.toHaveBeenCalled();expect(f.doc().getElementById("available")!.getAttribute("hide")).toBe("true");
  const order=["hasHardware","isEnrolled","readToken","supportedTypes"] as const;for(const next of order.slice(order.indexOf(stage)+1))expect(f.native[next]).not.toHaveBeenCalled();
+});
+
+it("logs only the code of a refused unlock and nothing for an intentional dismissal",async()=>{
+ const f=await fixture();f.native.unlock.mockResolvedValueOnce({success:false,error:"user_cancel"} as {success:boolean});await f.run("biometric-unlock");
+ expect(warn).not.toHaveBeenCalled();
+ f.native.unlock.mockResolvedValueOnce({success:false,error:"lockout"} as {success:boolean});await f.run("biometric-unlock");
+ expect(warn.mock.calls).toEqual([["biometric unlock refused","lockout"]]);
+});
+
+it("logs only the code of a crashed unlock or failed pick, never its message",async()=>{
+ const f=await fixture();
+ f.native.unlock.mockRejectedValueOnce(Object.assign(new Error("native secret"),{code:"ERR_BIOMETRIC"}));await f.run("biometric-unlock");
+ f.native.pick.mockRejectedValueOnce(Object.assign(new Error("file://private/photo.jpg"),{code:"E_PICKER"}));await f.run("pick-avatar");
+ f.native.pick.mockRejectedValueOnce(new Error("no code here"));await f.run("pick-avatar");
+ expect(warn.mock.calls).toEqual([["biometric-unlock failed","ERR_BIOMETRIC"],["pick-avatar failed","E_PICKER"],["pick-avatar failed","unknown"]]);
 });
 
 it.each(["hasHardware","isEnrolled","readToken"] as const)("keeps the probe silent when %s rejects",async(stage)=>{

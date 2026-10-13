@@ -3,6 +3,7 @@ import type {SaveOptions} from "expo-image-manipulator";
 import type {HvBehavior,HvComponentOnUpdate,HvGetRoot,HvUpdateRoot} from "hyperview";
 import type {createSessionSupervisor,RecoveryHandle} from "../realtime/session";
 import type {SnackbarNotice} from "../feedback/snackbar";
+import {hyperviewLogger} from "../feedback/logging";
 export type SourceAuthority={isAlive():boolean;sourceIsCurrent():boolean;onUpdate:HvComponentOnUpdate;effectReceipt():object|null;bindBiometricSubmit():((token:string)=>boolean)|null;markDraftEdit?(field:Element):void};
 export type RenderedImage={saveAsync(options:SaveOptions):Promise<{base64?:string}>};
 export type OwnedNativePorts={platform:"ios"|"android";hasHardware():Promise<boolean>;isEnrolled():Promise<boolean>;supportedTypes():Promise<number[]>;readToken():Promise<string|null>;unlock(prompt:string):Promise<{success:boolean;error?:string}>;pick():Promise<{canceled:boolean;uri?:string}>;render(uri:string):Promise<RenderedImage>;save(image:RenderedImage):Promise<{base64?:string}>};
@@ -11,6 +12,8 @@ export type OwnedBehaviorPorts={recovery?:RecoveryHandle;supervisor:ReturnType<t
 
 const DISMISSED=new Set(["app_cancel","system_cancel","user_cancel","user_fallback"]);
 const UNLOCK_FAILED="Biometric unlock isn't available right now. Sign in with your password.";
+// A native error's message can carry a path or a secret, so only its code is ever logged.
+const codeOf=(error:unknown):string=>{const code=(error as {code?:unknown}|null)?.code;return typeof code==="string"?code:"unknown";};
 function byId(root:Document|undefined,id:string|null):Element|null {
   if(!root||!id)return null;
   return Array.from(root.getElementsByTagName("*")).find(value=>value.getAttribute("id")===id)??null;
@@ -40,7 +43,8 @@ export function createOwnedBehaviors(ports:OwnedBehaviorPorts):HvBehavior[]{
         return allowed();
       },{now:allowed});
       await run(element,source,getRoot,updateRoot,lease,current);
-    } catch {
+    } catch(error) {
+      if(failure)hyperviewLogger.warn(`${action} failed`,codeOf(error));
       if(failure&&allowed())ports.notice({message:failure,tone:"error"});
     }
   }});
@@ -48,7 +52,7 @@ export function createOwnedBehaviors(ports:OwnedBehaviorPorts):HvBehavior[]{
     callback("biometric-unlock",async(element,source,_getRoot,_updateRoot,lease,current)=>{
       const submit=source.bindBiometricSubmit();if(!submit)return;
       const result=await native.unlock(element.getAttribute("prompt")||"Sign in to HyperTodo");if((!await current()||!current.now()))return;
-      if(!result.success){if(!DISMISSED.has(result.error??""))ports.notice({message:UNLOCK_FAILED,tone:"error"});return;}
+      if(!result.success){if(!DISMISSED.has(result.error??"")){hyperviewLogger.warn("biometric unlock refused",result.error??"unknown");ports.notice({message:UNLOCK_FAILED,tone:"error"});}return;}
       const token=await native.readToken();if((!await current()||!current.now()))return;
       if(!token){
         const result=await lease.clearCredential(Object.freeze({}));
