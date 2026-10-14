@@ -19,9 +19,11 @@ used. Both directions work in the server zone, while the task form has saved in 
 zone each client reports (X-Timezone) since UserTimezoneMiddleware, so a second pass
 re-anchors every all-day row created in another zone (a Tokyo one moves 13 or 14
 hours on a New York server), turns a task deliberately set at 00:00 into an all-day
-one, and leaves wrong a row that an earlier version of this migration wrote with
-fold=0 (an hour early on a repeated hour, a day late in Nuuk's skipped one). Data
-damaged that way needs a selective repair of the affected rows, after a backup.
+one, and moves a row that an earlier version of this migration wrote with fold=0 on
+Nuuk's skipped hour a further day, because it reads the date back from the wrong
+instant. An hour-early row from a repeated hour is put right only when the server
+zone is the one that wrote it. Data damaged that way needs a selective repair of the
+affected rows, after a backup.
 
 A day whose clocks skip 00:00 (Africa/Cairo on a spring Friday) never had a midnight
 to store, so a date-only deadline the old form saved there sits at 01:00 and stays a
