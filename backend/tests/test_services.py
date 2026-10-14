@@ -87,6 +87,32 @@ def test_the_all_day_flag_is_stored_and_replaced_with_the_deadline(user):
     assert task.due_all_day is False
 
 
+def test_a_save_that_leaves_the_schedule_alone_keeps_the_stored_deadline(user):
+    task = create_task(
+        user=user,
+        title="Call",
+        notes="",
+        category=None,
+        due_at=timezone.make_aware(datetime(2026, 9, 6, 9, 0)),
+    )
+    newer = timezone.make_aware(datetime(2026, 9, 20, 23, 59, 59, 999999))
+    # Another request moves the deadline after the caller read the task.
+    Task.objects.filter(pk=task.pk).update(due_at=newer, due_all_day=True)
+
+    update_task(
+        user=user,
+        task_id=task.pk,
+        title="Renamed",
+        notes="",
+        category=None,
+        due_at=timezone.make_aware(datetime(2026, 9, 6, 9, 0)),
+        schedule_changed=False,
+    )
+
+    task.refresh_from_db()
+    assert (task.title, task.due_at, task.due_all_day) == ("Renamed", newer, True)
+
+
 def test_a_task_is_timed_unless_the_caller_says_otherwise(user):
     task = create_task(
         user=user,

@@ -179,6 +179,7 @@ def update_task(
     category: Category | None,
     due_at: datetime | None,
     due_all_day: bool = False,
+    schedule_changed: bool = True,
 ) -> Task:
     """Update an owned task.
 
@@ -190,6 +191,9 @@ def update_task(
         category: Replacement optional category.
         due_at: Replacement optional deadline.
         due_all_day: Whether the replacement deadline is a day chosen without a time.
+        schedule_changed: Whether the caller changed the schedule. When False, due_at
+            and due_all_day are ignored and the stored deadline stays as it is, so a
+            deadline another request set since the caller read the task is not undone.
 
     Returns:
         Updated task.
@@ -202,19 +206,13 @@ def update_task(
     task.title = title
     task.notes = notes
     task.category = category
-    task.due_at = due_at
-    task.due_all_day = due_all_day
+    update_fields = ["title", "notes", "category", "updated_at"]
+    if schedule_changed:
+        task.due_at = due_at
+        task.due_all_day = due_all_day
+        update_fields += ["due_at", "due_all_day"]
     task.full_clean()
-    task.save(
-        update_fields=(
-            "title",
-            "notes",
-            "category",
-            "due_at",
-            "due_all_day",
-            "updated_at",
-        )
-    )
+    task.save(update_fields=update_fields)
     return task
 
 

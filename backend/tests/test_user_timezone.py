@@ -23,6 +23,7 @@ from tests.test_hxml_views import (
     text_of,
     token_from,
 )
+from todo import views
 from todo.middleware import TIMEZONE_HEADER, UserTimezoneMiddleware
 from todo.models import Task
 
@@ -625,6 +626,43 @@ def test_a_stale_form_still_applies_a_schedule_the_person_changed(user):
     Task.objects.filter(pk=task.pk).update(
         due_at=datetime(2026, 6, 20, 14, 0, tzinfo=UTC)
     )
+
+    assert_hxml(save_form(client, task, NEW_YORK, values, due_time="11:00"))
+
+    assert stored_deadline(task) == (datetime(2026, 6, 10, 15, 0, tzinfo=UTC), False)
+
+
+def race_a_deadline_change(monkeypatch, task, due_at):
+    """Have another device move the deadline after the view read the task."""
+    save = views.update_task
+
+    def raced(**kwargs):
+        Task.objects.filter(pk=task.pk).update(due_at=due_at)
+        return save(**kwargs)
+
+    monkeypatch.setattr(views, "update_task", raced)
+
+
+def test_a_title_only_save_keeps_a_deadline_set_while_it_is_being_saved(
+    user, monkeypatch
+):
+    client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
+    values = open_form(client, task, NEW_YORK)
+    newer = datetime(2026, 6, 20, 14, 0, tzinfo=UTC)
+    race_a_deadline_change(monkeypatch, task, newer)
+
+    assert_hxml(save_form(client, task, NEW_YORK, values, title="Renamed"))
+
+    assert stored_deadline(task) == (newer, False)
+    assert task.title == "Renamed"
+
+
+def test_a_schedule_the_person_changed_wins_over_one_set_while_saving(
+    user, monkeypatch
+):
+    client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
+    values = open_form(client, task, NEW_YORK)
+    race_a_deadline_change(monkeypatch, task, datetime(2026, 6, 20, 14, 0, tzinfo=UTC))
 
     assert_hxml(save_form(client, task, NEW_YORK, values, due_time="11:00"))
 

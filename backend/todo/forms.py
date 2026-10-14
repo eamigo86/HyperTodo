@@ -334,8 +334,9 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
         deadline is kept as it is.
 
         Returns:
-            Cleaned form data with a timezone-aware due_at value and the due_all_day
-            flag that says whether a time was left out.
+            Cleaned form data with a timezone-aware due_at value, the due_all_day
+            flag that says whether a time was left out, and the schedule_changed flag
+            that is False when the stored deadline must not be written at all.
         """
         cleaned = super().clean()
         due_date = cleaned.get("due_date")
@@ -357,7 +358,9 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
             # that is not saved yet already has one.)
             cleaned["due_at"] = self.instance.due_at
             cleaned["due_all_day"] = self.instance.due_all_day
+            cleaned["schedule_changed"] = False
             return cleaned
+        cleaned["schedule_changed"] = True
         cleaned["due_all_day"] = bool(due_date) and due_time is None
         cleaned["due_at"] = (
             timezone.make_aware(

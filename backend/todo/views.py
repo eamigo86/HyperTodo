@@ -1122,6 +1122,7 @@ def task_edit(request: HttpRequest, task_id: UUID) -> HttpResponse:
                 category=form.cleaned_data["category"],
                 due_at=form.cleaned_data["due_at"],
                 due_all_day=form.cleaned_data["due_all_day"],
+                schedule_changed=form.cleaned_data["schedule_changed"],
             )
         except LOST_RACE:
             _category_vanished(form)
