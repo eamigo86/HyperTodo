@@ -36,6 +36,12 @@
       <text-field name="due_time" value="{% if form.is_bound %}{{ form.due_time.value|default:'' }}{% else %}{{ form.due_time.value|time:'H:i'|default:'' }}{% endif %}" placeholder="HH:MM" placeholderTextColor="{{ theme.ink_muted }}" keyboard-type="number-pad" mask="99:99" accessibilityLabel="{% translate "Due time" %}" style="field{% if form.due_time.errors %} field-invalid{% endif %}" />
       {% if form.due_time.errors %}<text style="field-error">{{ form.due_time.errors|join:', ' }}</text>{% endif %}
     </view>
+    {% comment %}The date and time the form showed, as drawn in the zone of this request.
+    The save compares what comes back with them, not with what its own zone would draw,
+    so a zone change while the form is open cannot move the deadline. A refused form
+    echoes the posted pair (never a recomputed one), like every other field.{% endcomment %}
+    <text-field hide="true" name="due_date_shown" value="{{ form.due_date_shown.value|default:'' }}" />
+    <text-field hide="true" name="due_time_shown" value="{{ form.due_time_shown.value|default:'' }}" />
     {% hv_csrf_token %}
     <view id="task-submit" style="button" href="{% if task %}/hv/tasks/{{ task.id }}/edit/{% else %}/hv/tasks/new/{% endif %}" verb="post" action="replace" target="task-form-panel"><text style="button-text">{% translate "Save task" %}</text></view>
   </form>

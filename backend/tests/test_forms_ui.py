@@ -353,10 +353,12 @@ def test_task_form_fields_are_legible_and_reachable(user):
     # value on a separate accessibility channel. On <date-field> the attribute lands
     # on the touchable box and REPLACES the announced value; on <picker-field> the
     # client never reads it at all (naming there is derived from the id).
+    # The hidden fields (the CSRF token, the schedule the form showed) are never
+    # focused or announced, so they carry no label.
     text_fields = [
         node
         for node in root.findall(".//hv:text-field", NS)
-        if node.attrib.get("name") != "csrfmiddlewaretoken"
+        if node.attrib.get("hide") != "true"
     ]
     assert len(text_fields) == 3
     for node in text_fields:

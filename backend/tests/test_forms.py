@@ -289,6 +289,24 @@ def test_clearing_the_date_removes_the_deadline(user):
     assert form.cleaned_data["due_all_day"] is False
 
 
+def test_a_new_task_keeps_its_deadline_whatever_the_posted_shown_values_say(user):
+    # An unsaved task already has a primary key (the id has a default), so a guard on
+    # "has a key" would take the deadline for an unchanged one and drop it.
+    form = TaskForm(
+        {
+            "title": "Plan",
+            "due_date": "2026-09-06",
+            "due_time": "14:30",
+            "due_date_shown": "2026-09-06",
+            "due_time_shown": "14:30",
+        },
+        user=user,
+    )
+
+    assert form.is_valid(), form.errors
+    assert wall_clock(form.cleaned_data["due_at"]) == datetime(2026, 9, 6, 14, 30)
+
+
 # --- the last instant of a day when the clocks change ---------------------------
 
 # Nights when 23:xx happens twice, and one night when it never happens at all.

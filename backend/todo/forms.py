@@ -227,6 +227,12 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
 
     due_date = forms.DateField(required=False, input_formats=("%Y-%m-%d",))
     due_time = forms.TimeField(required=False, input_formats=("%H:%M",))
+    # The date and time the form showed when it was drawn, carried in hidden inputs.
+    # They are text on purpose: a value that is not a schedule means "an older screen",
+    # never an error the person cannot see or fix. No max_length for the same reason:
+    # the echo of a refused form is bounded by XmlSafeBoundField, not refused.
+    due_date_shown = forms.CharField(required=False)
+    due_time_shown = forms.CharField(required=False)
 
     class Meta:
         model = Task
@@ -250,6 +256,10 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
             self.initial.setdefault("due_date", shown[0])
             if shown[1] is not None:
                 self.initial.setdefault("due_time", shown[1])
+            self.initial.setdefault("due_date_shown", shown[0].isoformat())
+            self.initial.setdefault(
+                "due_time_shown", "" if shown[1] is None else shown[1].strftime("%H:%M")
+            )
 
     def _shown_schedule(self) -> tuple[date, time | None] | None:
         """Return the date and time this form shows for the stored deadline.
@@ -267,6 +277,30 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
         if self.instance.due_all_day:
             return local_due.date(), None
         return local_due.date(), local_due.time().replace(second=0, microsecond=0)
+
+    def _posted_shown_schedule(self) -> tuple[date | None, time | None] | None:
+        """Return the date and time the form showed, as the client posted them back.
+
+        They were read in the zone that drew the form, which may not be the one that
+        saves it, so they are the only reliable record of what the person saw.
+
+        Returns:
+            The (date, time) pair, (None, None) for a form that showed no deadline, or
+            None when the client sent none or sent something that is not a schedule.
+        """
+        if not {"due_date_shown", "due_time_shown"} <= self.data.keys():
+            return None
+        try:
+            return (
+                self.fields["due_date"].to_python(
+                    self.cleaned_data.get("due_date_shown")
+                ),
+                self.fields["due_time"].to_python(
+                    self.cleaned_data.get("due_time_shown")
+                ),
+            )
+        except forms.ValidationError:
+            return None
 
     def clean_due_date(self) -> date | None:
         """Keep the deadline inside the years the app can store and convert.
@@ -309,11 +343,17 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
         # under the date, and not also that it is missing.
         if due_time and not due_date and "due_date" not in self.errors:
             self.add_error("due_time", _("A due date is required when a time is set."))
-        if due_date and self._shown_schedule() == (due_date, due_time):
+        # What the form showed: as it was drawn when the client says so, else as it
+        # would be drawn here and now, which is all an older screen allows.
+        shown = self._posted_shown_schedule() or self._shown_schedule()
+        if shown == (due_date, due_time) and not self.instance._state.adding:
             # The person posted back what the form showed. Rebuilding the instant from
-            # it would move the deadline: the date was read in the active zone, which
-            # need not be the zone it was chosen in, and a wall-clock time inside a
-            # repeated hour names the wrong one of its two instants.
+            # it would move the deadline: the date was read in the zone that drew the
+            # form, which need not be the zone that saves it, and a wall-clock time
+            # inside a repeated hour names the wrong one of its two instants. A form
+            # that showed no deadline keeps the stored one too, which another device
+            # may have set since. (Not `instance.pk`: the id has a default, so a task
+            # that is not saved yet already has one.)
             cleaned["due_at"] = self.instance.due_at
             cleaned["due_all_day"] = self.instance.due_all_day
             return cleaned

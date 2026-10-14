@@ -313,7 +313,7 @@ def test_the_event_stream_neither_reads_the_header_nor_varies_on_it():
 # --- a date-only deadline is the end of the day wherever the person is ----------
 
 
-def create_all_day(user, due_date, zone=None):
+def create_deadline(user, due_date, due_time, zone=None):
     client = csrf_client()
     client.force_login(user)
     headers = {} if zone is None else {TIMEZONE_HEADER: zone}
@@ -323,13 +323,17 @@ def create_all_day(user, due_date, zone=None):
         {
             "title": "Pay rent",
             "due_date": due_date,
-            "due_time": "",
+            "due_time": due_time,
             "csrfmiddlewaretoken": token,
         },
         headers=headers,
     )
     assert_hxml(response, status=201)
     return client, Task.objects.get(user=user)
+
+
+def create_all_day(user, due_date, zone=None):
+    return create_deadline(user, due_date, "", zone)
 
 
 def test_a_date_only_deadline_ends_the_day_in_the_clients_zone(user):
@@ -414,3 +418,304 @@ def test_a_date_only_deadline_is_still_open_until_the_clients_day_ends(user):
     overdue = listed(get(user, "todo:tasks", MADRID, "?status=overdue"))
 
     assert today == ["Pay rent"] and overdue == []
+
+
+# --- a zone change while the edit form is open -----------------------------------
+
+NEW_YORK = "America/New_York"
+CHICAGO = "America/Chicago"
+LOS_ANGELES = "America/Los_Angeles"
+TOKYO = "Asia/Tokyo"
+
+
+def screen_values(response, *, status=200):
+    """Return every named value a form screen posts back, as the client reads it."""
+    root = assert_hxml(response, status=status)
+    return {
+        node.attrib["name"]: node.attrib.get("value", "")
+        for node in root.iterfind(".//*[@name]")
+    }
+
+
+def open_form(client, task, zone):
+    url = reverse("todo:task-edit", args=(task.pk,))
+    return screen_values(client.get(url, headers={TIMEZONE_HEADER: zone}))
+
+
+def save_form(client, task, zone, values, **changes):
+    url = reverse("todo:task-edit", args=(task.pk,))
+    return client.post(url, {**values, **changes}, headers={TIMEZONE_HEADER: zone})
+
+
+def stored_deadline(task):
+    task.refresh_from_db()
+    return task.due_at, task.due_all_day
+
+
+def switch(name, due_time, made_in, opened_in, saved_in):
+    return pytest.param(due_time, made_in, opened_in, saved_in, id=name)
+
+
+@pytest.mark.parametrize(
+    ("due_time", "made_in", "opened_in", "saved_in"),
+    [
+        switch("timed-new-york-to-madrid", "09:30", NEW_YORK, NEW_YORK, MADRID),
+        switch("timed-madrid-to-new-york", "09:30", MADRID, MADRID, NEW_YORK),
+        switch("timed-new-york-to-chicago", "09:30", NEW_YORK, NEW_YORK, CHICAGO),
+        switch("timed-new-york-to-tokyo", "09:30", NEW_YORK, NEW_YORK, TOKYO),
+        switch(
+            "timed-los-angeles-to-new-york", "09:30", LOS_ANGELES, LOS_ANGELES, NEW_YORK
+        ),
+        switch(
+            "timed-seen-from-madrid-saved-in-tokyo", "09:30", NEW_YORK, MADRID, TOKYO
+        ),
+        switch("all-day-new-york-to-madrid", "", NEW_YORK, NEW_YORK, MADRID),
+        switch("all-day-madrid-to-new-york", "", MADRID, MADRID, NEW_YORK),
+        switch("all-day-new-york-to-tokyo", "", NEW_YORK, NEW_YORK, TOKYO),
+        switch("all-day-tokyo-to-new-york", "", TOKYO, TOKYO, NEW_YORK),
+        switch(
+            "all-day-los-angeles-to-new-york", "", LOS_ANGELES, LOS_ANGELES, NEW_YORK
+        ),
+        switch("all-day-madrid-to-tokyo", "", MADRID, MADRID, TOKYO),
+        switch("all-day-tokyo-to-madrid", "", TOKYO, TOKYO, MADRID),
+        switch("all-day-seen-from-madrid-saved-in-tokyo", "", NEW_YORK, MADRID, TOKYO),
+        # Controls: the zone did not change.
+        switch("timed-same-zone", "09:30", NEW_YORK, NEW_YORK, NEW_YORK),
+        switch("all-day-same-zone", "", NEW_YORK, NEW_YORK, NEW_YORK),
+    ],
+)
+def test_a_title_only_save_keeps_the_deadline_after_a_zone_change_with_the_form_open(
+    user, due_time, made_in, opened_in, saved_in
+):
+    # The form shows the stored instant in the zone that opened it. Saved from another
+    # zone, the date and time it posted used to be read in that other one: a 09:30 task
+    # moved six hours from New York to Madrid after nothing but a new title.
+    client, task = create_deadline(user, "2026-06-10", due_time, made_in)
+    stored = stored_deadline(task)
+    values = open_form(client, task, opened_in)
+
+    assert_hxml(save_form(client, task, saved_in, values, title="Renamed"))
+
+    task.refresh_from_db()
+    assert task.title == "Renamed"
+    assert (task.due_at, task.due_all_day) == stored
+
+
+@pytest.mark.parametrize(
+    ("due_time", "changes", "due_at", "all_day"),
+    [
+        (
+            "09:30",
+            {"due_date": "2026-06-12"},
+            datetime(2026, 6, 12, 7, 30, tzinfo=UTC),
+            False,
+        ),
+        (
+            "09:30",
+            {"due_time": "11:00"},
+            datetime(2026, 6, 10, 9, 0, tzinfo=UTC),
+            False,
+        ),
+        (
+            "09:30",
+            {"due_time": ""},
+            datetime(2026, 6, 10, 21, 59, 59, 999999, tzinfo=UTC),
+            True,
+        ),
+        (
+            "",
+            {"due_date": "2026-06-12"},
+            datetime(2026, 6, 12, 21, 59, 59, 999999, tzinfo=UTC),
+            True,
+        ),
+        ("", {"due_time": "09:30"}, datetime(2026, 6, 10, 7, 30, tzinfo=UTC), False),
+        ("09:30", {"due_date": "", "due_time": ""}, None, False),
+    ],
+    ids=[
+        "new-date",
+        "new-time",
+        "time-cleared",
+        "new-date-on-all-day",
+        "time-added-to-all-day",
+        "deadline-cleared",
+    ],
+)
+def test_a_real_change_after_a_zone_change_is_read_in_the_zone_that_saves(
+    user, due_time, changes, due_at, all_day
+):
+    client, task = create_deadline(user, "2026-06-10", due_time, NEW_YORK)
+    values = open_form(client, task, NEW_YORK)
+
+    assert_hxml(save_form(client, task, MADRID, values, **changes))
+
+    assert stored_deadline(task) == (due_at, all_day)
+
+
+def test_the_form_carries_the_schedule_it_shows_in_hidden_fields(user):
+    client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
+
+    in_new_york = open_form(client, task, NEW_YORK)
+    in_madrid = open_form(client, task, MADRID)
+
+    assert (in_new_york["due_date_shown"], in_new_york["due_time_shown"]) == (
+        "2026-06-10",
+        "09:30",
+    )
+    assert (in_madrid["due_date_shown"], in_madrid["due_time_shown"]) == (
+        "2026-06-10",
+        "15:30",
+    )
+    assert in_madrid["due_date_shown"] == in_madrid["due_date"]
+    assert in_madrid["due_time_shown"] == in_madrid["due_time"]
+
+
+def test_the_form_of_a_task_with_no_deadline_carries_empty_hidden_fields(user):
+    client, task = create_deadline(user, "", "", NEW_YORK)
+
+    values = open_form(client, task, NEW_YORK)
+
+    assert (values["due_date_shown"], values["due_time_shown"]) == ("", "")
+
+
+def test_a_refused_save_hands_back_the_schedule_the_form_showed(user):
+    # The refusal is drawn in Madrid, but the hidden values must stay the ones New York
+    # showed: recomputed in Madrid they would say 15:30 and the next save would move it.
+    client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
+    stored = stored_deadline(task)
+    values = open_form(client, task, NEW_YORK)
+
+    refused = screen_values(
+        save_form(client, task, MADRID, values, title=""), status=422
+    )
+
+    assert (refused["due_date_shown"], refused["due_time_shown"]) == (
+        values["due_date_shown"],
+        values["due_time_shown"],
+    )
+    assert_hxml(save_form(client, task, MADRID, refused, title="Fixed"))
+    assert stored_deadline(task) == stored
+
+
+def test_a_title_only_save_from_a_stale_form_keeps_the_newer_deadline(user):
+    client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
+    values = open_form(client, task, NEW_YORK)
+    newer = datetime(2026, 6, 20, 14, 0, tzinfo=UTC)
+    # Another device moves the deadline while this form is open.
+    Task.objects.filter(pk=task.pk).update(due_at=newer)
+
+    assert_hxml(save_form(client, task, NEW_YORK, values, title="Renamed"))
+
+    assert stored_deadline(task) == (newer, False)
+
+
+def test_a_stale_form_that_showed_no_deadline_keeps_the_one_set_since(user):
+    client, task = create_deadline(user, "", "", NEW_YORK)
+    values = open_form(client, task, NEW_YORK)
+    newer = datetime(2026, 6, 20, 14, 0, tzinfo=UTC)
+    Task.objects.filter(pk=task.pk).update(due_at=newer)
+
+    assert_hxml(save_form(client, task, NEW_YORK, values, title="Renamed"))
+
+    assert stored_deadline(task) == (newer, False)
+
+
+def test_a_stale_form_still_applies_a_schedule_the_person_changed(user):
+    client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
+    values = open_form(client, task, NEW_YORK)
+    Task.objects.filter(pk=task.pk).update(
+        due_at=datetime(2026, 6, 20, 14, 0, tzinfo=UTC)
+    )
+
+    assert_hxml(save_form(client, task, NEW_YORK, values, due_time="11:00"))
+
+    assert stored_deadline(task) == (datetime(2026, 6, 10, 15, 0, tzinfo=UTC), False)
+
+
+def test_a_new_task_stores_its_deadline_though_the_hidden_values_match(user):
+    # A task that is not saved yet already has a primary key (the id has a default), so
+    # "has a key" cannot tell a new task from an edited one.
+    client = csrf_client()
+    client.force_login(user)
+    values = screen_values(client.get(reverse("todo:task-new")))
+    assert (values["due_date_shown"], values["due_time_shown"]) == ("", "")
+
+    response = client.post(
+        reverse("todo:task-new"),
+        {
+            **values,
+            "title": "Pay rent",
+            "due_date": "2026-06-10",
+            "due_time": "09:30",
+            "due_date_shown": "2026-06-10",
+            "due_time_shown": "09:30",
+        },
+    )
+
+    assert_hxml(response, status=201)
+    assert stored_deadline(Task.objects.get(user=user)) == (
+        datetime(2026, 6, 10, 13, 30, tzinfo=UTC),
+        False,
+    )
+
+
+def test_hidden_values_that_equal_a_forged_new_schedule_only_keep_the_stored_one(user):
+    client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
+    stored = stored_deadline(task)
+    values = open_form(client, task, NEW_YORK)
+
+    assert_hxml(
+        save_form(
+            client,
+            task,
+            NEW_YORK,
+            values,
+            due_date="2026-06-15",
+            due_date_shown="2026-06-15",
+        )
+    )
+
+    assert stored_deadline(task) == stored
+
+
+def test_hidden_values_that_are_not_a_schedule_fall_back_to_the_visible_fields(user):
+    client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
+    values = open_form(client, task, NEW_YORK)
+
+    assert_hxml(
+        save_form(
+            client,
+            task,
+            NEW_YORK,
+            values,
+            due_date="2026-06-16",
+            due_time="08:00",
+            due_date_shown="not-a-date",
+            due_time_shown="zz",
+        )
+    )
+
+    assert stored_deadline(task) == (datetime(2026, 6, 16, 12, 0, tzinfo=UTC), False)
+
+
+def test_oversized_hidden_values_are_bounded_and_scrubbed_in_a_refused_form(user):
+    client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
+    stored = stored_deadline(task)
+    values = open_form(client, task, NEW_YORK)
+
+    refused = screen_values(
+        save_form(
+            client,
+            task,
+            NEW_YORK,
+            values,
+            title="",
+            due_date_shown="\x1b" * 5 + "9" * 1_000_000,
+            due_time_shown="\x1b" * 50,
+        ),
+        status=422,
+    )
+
+    assert len(refused["due_date_shown"]) <= 65
+    assert len(refused["due_time_shown"]) <= 65
+    assert not {"\x1b"} & set(refused["due_date_shown"] + refused["due_time_shown"])
+    assert stored_deadline(task) == stored
