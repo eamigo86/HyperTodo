@@ -1,7 +1,7 @@
 # HyperTodo
 
 [![CI](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml/badge.svg)](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml)
-[![dj-hyperview](https://img.shields.io/badge/dj--hyperview-0.1.0b2-278CFF)](https://pypi.org/project/dj-hyperview/0.1.0b2/)
+[![dj-hyperview](https://img.shields.io/badge/dj--hyperview-0.1.0b3-278CFF)](https://pypi.org/project/dj-hyperview/0.1.0b3/)
 [![Hyperview](https://img.shields.io/badge/Hyperview-0.112.0-171A2F)](https://www.npmjs.com/package/hyperview/v/0.112.0)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -25,7 +25,7 @@ Automated checks and manual device acceptance are separate; a passing XML or
 Jest test does not prove every native flow. Hyperview 0.112.0 keeps the 0.111.0
 fragment-fetch cleanup (covered by mounted regressions) and, replacing
 `createTestProps`, maps XML `id` to `testID`, as HyperTodo's custom components
-already did. The backend pins the published dj-hyperview 0.1.0b2, whose
+already did. The backend pins the published dj-hyperview 0.1.0b3, whose
 corrected 0.111.0 XSD is byte-identical to upstream's 0.112.0 one and stays the
 contract. None of this changes the SSE wire protocol or needs a Navigation 7
 migration.
@@ -34,7 +34,7 @@ migration.
 
 | Path | Purpose |
 | --- | --- |
-| [`backend/`](backend/) | Python 3.14 / Django 6.1.1, pinned to `dj-hyperview[editor,realtime]==0.1.0b2`. |
+| [`backend/`](backend/) | Python 3.14 / Django 6.1.1, pinned to `dj-hyperview[editor,realtime]==0.1.0b3`. |
 | [`mobile/`](mobile/) | Expo SDK 57, React Native 0.86 and Hyperview 0.112.0 host. |
 | [`Makefile`](Makefile) | Install, run and quality commands for both applications. |
 
