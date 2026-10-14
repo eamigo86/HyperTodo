@@ -228,11 +228,12 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
     due_date = forms.DateField(required=False, input_formats=("%Y-%m-%d",))
     due_time = forms.TimeField(required=False, input_formats=("%H:%M",))
     # The date and time the form showed when it was drawn, carried in hidden inputs.
-    # They are text on purpose: a value that is not a schedule means "an older screen",
-    # never an error the person cannot see or fix. No max_length for the same reason:
-    # the echo of a refused form is bounded by XmlSafeBoundField, not refused.
-    due_date_shown = forms.CharField(required=False)
-    due_time_shown = forms.CharField(required=False)
+    # They are plain fields on purpose: a value that is not a schedule means "an older
+    # screen", never an error the person cannot see or fix. So no max_length and no
+    # CharField null-character validator: the echo of a refused form is bounded and
+    # scrubbed by XmlSafeBoundField instead.
+    due_date_shown = forms.Field(required=False)
+    due_time_shown = forms.Field(required=False)
 
     class Meta:
         model = Task

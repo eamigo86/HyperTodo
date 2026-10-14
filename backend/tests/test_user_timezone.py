@@ -697,6 +697,27 @@ def test_hidden_values_that_are_not_a_schedule_fall_back_to_the_visible_fields(u
     assert stored_deadline(task) == (datetime(2026, 6, 16, 12, 0, tzinfo=UTC), False)
 
 
+def test_a_null_character_in_a_hidden_value_falls_back_instead_of_refusing(user):
+    client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
+    stored = stored_deadline(task)
+    values = open_form(client, task, NEW_YORK)
+
+    assert_hxml(
+        save_form(
+            client,
+            task,
+            NEW_YORK,
+            values,
+            title="renamed",
+            due_date_shown="2026-06-10\x00",
+        )
+    )
+
+    task.refresh_from_db()
+    assert task.title == "renamed"
+    assert stored_deadline(task) == stored
+
+
 def test_oversized_hidden_values_are_bounded_and_scrubbed_in_a_refused_form(user):
     client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
     stored = stored_deadline(task)
