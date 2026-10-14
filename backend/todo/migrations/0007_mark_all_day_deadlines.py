@@ -8,9 +8,20 @@ old form left behind.
 The approximation: a stored deadline cannot say whether its owner typed "00:00" or
 typed no time at all, so every deadline at exactly 00:00 local time becomes an
 all-day one, and a task deliberately set at midnight now lasts until the day ends.
-The local day is the server's TIME_ZONE, the only zone the form ever used. The day is
-rebuilt from its local date and never by adding 24 hours, which would slip an hour
-into the next day when the clocks change.
+The local day is the server's TIME_ZONE, the only zone the old date-only form used.
+The day is rebuilt from its local date and never by adding 24 hours, which would slip
+an hour into the next day when the clocks change.
+
+Apply it once. It is correct for its first application, on deadlines the old
+date-only form wrote in the server zone, and it is not a repair tool. Do not run it
+again (migrate todo 0006, then migrate todo 0007) on a database the current app has
+used. Both directions work in the server zone, while the task form has saved in the
+zone each client reports (X-Timezone) since UserTimezoneMiddleware, so a second pass
+re-anchors every all-day row created in another zone (a Tokyo one moves 13 or 14
+hours on a New York server), turns a task deliberately set at 00:00 into an all-day
+one, and leaves wrong a row that an earlier version of this migration wrote with
+fold=0 (an hour early on a repeated hour, a day late in Nuuk's skipped one). Data
+damaged that way needs a selective repair of the affected rows, after a backup.
 
 A day whose clocks skip 00:00 (Africa/Cairo on a spring Friday) never had a midnight
 to store, so a date-only deadline the old form saved there sits at 01:00 and stays a
@@ -90,6 +101,9 @@ def restore_midnight_deadlines(apps, schema_editor):
     its end of day, which is exactly what a later forward run expects to find. The same
     goes for a day whose start lies below CONVERTIBLE_FROM: the forward run never reads
     that far back, so an unflagged row there would lose the flag for good.
+
+    Rolling back and forward again is exact only for rows the old date-only form wrote
+    in the server zone; see the module docstring before using it on anything else.
     """
     tasks = apps.get_model("todo", "Task")._default_manager.using(
         schema_editor.connection.alias

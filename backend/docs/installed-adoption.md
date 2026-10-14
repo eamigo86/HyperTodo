@@ -21,7 +21,7 @@ The development seed creates `admin` / `admin123` and `demo` / `demo123`, with s
 
 ### Existing database
 
-Run `make setup` for the reviewed dependency changes. Take a verified backup and review the migration plan before deliberately applying migrations. **Do not run `make backend-seed`** as an upgrade or repair: it changes demo data and does not replace existing template edits. Review effective [DB overrides](#adopt-database-overrides-explicitly) separately.
+Run `make setup` for the reviewed dependency changes. Take a verified backup and review the migration plan before deliberately applying migrations. **Do not run `make backend-seed`** as an upgrade or repair: it changes demo data and does not replace existing template edits. Review effective [DB overrides](#adopt-database-overrides-explicitly) separately. Apply migration `todo.0007` (all-day deadlines) once and never roll it back and forward again (`migrate todo 0006`, then `migrate todo 0007`) as a repair on a database the current app has used: it works in the server `TIME_ZONE` while the form saves in each client's zone, so a second pass moves deadlines. Rows an earlier version of 0007 left wrong need a selective repair after a backup.
 
 ### Backend terminal
 
