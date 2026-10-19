@@ -65,14 +65,13 @@ function TimePickerComponent({ element, onUpdate, options, stylesheets }: HvComp
     if (Platform.OS === "ios") setPending(selected);
     else { commit(serializeTime(selected)); cancel(); }
   };
-  const displayed = timeDate(value)?.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZone: "UTC" }) ?? value;
 
   return (
     <View style={styles.row}>
       <Pressable
         accessibilityLabel={label}
         accessibilityRole="button"
-        accessibilityValue={{ text: value ? displayed : element.getAttribute("placeholder") ?? "" }}
+        accessibilityValue={{ text: value || element.getAttribute("placeholder") || "" }}
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={openPicker}
@@ -82,7 +81,7 @@ function TimePickerComponent({ element, onUpdate, options, stylesheets }: HvComp
         ]}
       >
         <Text style={[...textStyle, !value && { color: element.getAttribute("placeholderTextColor") ?? theme.ink_muted_alt }]}>
-          {value ? displayed : element.getAttribute("placeholder") ?? ""}
+          {value || element.getAttribute("placeholder") || ""}
         </Text>
       </Pressable>
       {!!value && !disabled && (
@@ -102,13 +101,13 @@ function TimePickerComponent({ element, onUpdate, options, stylesheets }: HvComp
                   <Text style={[...actionStyle, { color: theme.brand_ink }]}>{element.getAttribute("done-label") ?? "Done"}</Text>
                 </Pressable>
               </View>
-              <DateTimePicker display="spinner" mode="time" onChange={onNativeChange} themeVariant={themeName} timeZoneName="UTC" value={pending} />
+              <DateTimePicker display="spinner" locale="en-GB" mode="time" onChange={onNativeChange} themeVariant={themeName} timeZoneName="UTC" value={pending} />
             </View>
           </View>
         </Modal>
       )}
       {open && pending && Platform.OS !== "ios" && (
-        <DateTimePicker display="default" mode="time" onChange={onNativeChange} timeZoneName="UTC" value={pending} />
+        <DateTimePicker display="default" is24Hour mode="time" onChange={onNativeChange} timeZoneName="UTC" value={pending} />
       )}
     </View>
   );

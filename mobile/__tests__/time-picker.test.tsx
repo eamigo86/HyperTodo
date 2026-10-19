@@ -49,9 +49,11 @@ describe("native task time selection", () => {
     const form = mount();
     const baseline = captureDraft(form.boundary, form.registry);
     expect(form.screen.getByRole("button", { name: "Due time" }).props.accessibilityValue).toMatchObject({ text: "Select due time" });
+    expect(form.screen.queryByText("00:00")).toBeNull();
     fireEvent.press(form.screen.getByRole("button", { name: "Due time" }));
     expect(form.screen.getByTestId("native-time-picker").props.mode).toBe("time");
     expect(form.screen.getByTestId("native-time-picker").props.display).toBe("spinner");
+    expect(form.screen.getByTestId("native-time-picker").props.locale).toBe("en-GB");
     expect(form.screen.getByTestId("native-time-picker").props.timeZoneName).toBe("UTC");
     expect(form.posted().get("due_time")).toBe("");
     choose(form.screen, 21, 45);
@@ -89,6 +91,14 @@ describe("native task time selection", () => {
     expect(midnight.posted().get("due_time")).toBe("00:00");
   });
 
+  it.each(["00:00", "14:30", "23:59"])("shows %s without AM/PM in text and accessibility", (value) => {
+    platform("ios");
+    const form = mount(value);
+    expect(form.screen.getByText(value)).toBeTruthy();
+    expect(form.screen.getByRole("button", { name: "Due time" }).props.accessibilityValue).toEqual({ text: value });
+    expect(form.posted().get("due_time")).toBe(value);
+  });
+
   it("clears only time and leaves the date in the form", () => {
     platform("ios");
     const form = mount("14:30");
@@ -102,6 +112,7 @@ describe("native task time selection", () => {
     const form = mount("14:30");
     fireEvent.press(form.screen.getByRole("button", { name: "Due time" }));
     expect(form.screen.getByTestId("native-time-picker").props.mode).toBe("time");
+    expect(form.screen.getByTestId("native-time-picker").props.is24Hour).toBe(true);
     choose(form.screen, 8, 7, "dismissed");
     expect(form.posted().get("due_time")).toBe("14:30");
     fireEvent.press(form.screen.getByRole("button", { name: "Due time" }));
@@ -126,7 +137,7 @@ describe("native task time selection", () => {
       platform("ios");
       const form = mount("02:30");
       const baseline = captureDraft(form.boundary, form.registry);
-      expect(form.screen.getByRole("button", { name: "Due time" }).props.accessibilityValue.text).toContain("2:30");
+      expect(form.screen.getByRole("button", { name: "Due time" }).props.accessibilityValue.text).toBe("02:30");
       fireEvent.press(form.screen.getByRole("button", { name: "Due time" }));
       const picker = form.screen.getByTestId("native-time-picker");
       expect(picker.props.timeZoneName).toBe("UTC");
@@ -167,7 +178,7 @@ describe("native task time selection", () => {
   it("does not offer editing or clearing while disabled", () => {
     platform("ios");
     const form = mount("12:10", true);
-    expect(form.screen.getByRole("button", { name: "Due time" }).props.accessibilityValue.text).toContain("10");
+    expect(form.screen.getByRole("button", { name: "Due time" }).props.accessibilityValue.text).toBe("12:10");
     expect(form.screen.getByRole("button", { name: "Due time" }).props.accessibilityState.disabled).toBe(true);
     fireEvent.press(form.screen.getByRole("button", { name: "Due time" }));
     expect(form.screen.queryByTestId("native-time-picker")).toBeNull();
