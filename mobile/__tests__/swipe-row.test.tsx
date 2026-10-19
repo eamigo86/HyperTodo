@@ -388,4 +388,58 @@ describe("SwipeRow", () => {
     // from the module for as long as nothing else opens.
     expect(timing).toHaveBeenCalledTimes(1);
   });
+
+  it("ignores incomplete action declarations instead of rendering a broken control", () => {
+    const incomplete = rowWith([
+      node(NAMESPACE, "swipe-action", { label: "Missing destination" }),
+      node(NAMESPACE, "swipe-action", { href: "/hv/tasks/1/" }),
+    ]);
+    const screen = renderRow(incomplete);
+    expect(screen.getByTestId("category-swipe-9").props.accessibilityActions).toEqual([]);
+    expect(screen.getByTestId("swipe-row-actions", { includeHiddenElements: true }).props.style)
+      .toEqual(expect.objectContaining({ width: 0 }));
+    expect(props.onUpdate).not.toHaveBeenCalled();
+  });
+
+  it("defaults unsupported action tone and copy while retaining the declared destination", () => {
+    const fallback = node(NAMESPACE, "swipe-action", { href: "/hv/tasks/1/", label: "Open", tone: "unknown" });
+    const screen = renderRow(rowWith([fallback]));
+    expect(button(screen, "Open").props.style).toContainEqual({ backgroundColor: "#1F6FD1" });
+    fireEvent.press(button(screen, "Open"));
+    expect(props.onUpdate).toHaveBeenCalledWith("/hv/tasks/1/", "navigate", expect.anything(), { verb: "get" });
+  });
+
+  it("keeps short, vertical and rightward drags from opening a closed tray", () => {
+    const screen = renderRow();
+    const config = lastConfig() as PanConfig & Record<string, (...args: any[]) => boolean>;
+    expect(config.onMoveShouldSetPanResponder({}, { dx: 5, dy: 1 })).toBe(false);
+    expect(config.onMoveShouldSetPanResponder({}, { dx: 20, dy: 30 })).toBe(false);
+    expect(config.onMoveShouldSetPanResponder({}, { dx: -20, dy: 1 })).toBe(true);
+    act(() => config.onPanResponderRelease({}, { dx: 30, dy: 1 }));
+    expect(trayOpen(screen)).toBe(false);
+  });
+
+  it("keeps an open tray on a short drag but closes it past the outward threshold", () => {
+    const screen = renderRow();
+    openActions();
+    act(() => lastConfig().onPanResponderRelease({}, { dx: 20, dy: 0 }));
+    expect(trayOpen(screen)).toBe(true);
+    act(() => lastConfig().onPanResponderRelease({}, { dx: 60, dy: 0 }));
+    expect(trayOpen(screen)).toBe(false);
+  });
+
+  it("ignores unknown accessibility actions and leaves the current row untouched", () => {
+    const screen = renderRow();
+    act(() => screen.getByTestId("category-swipe-9").props.onAccessibilityAction({ nativeEvent: { actionName: "Unknown action" } }));
+    expect(props.onUpdate).not.toHaveBeenCalled();
+    expect(trayOpen(screen)).toBe(false);
+  });
+
+  it("does not dispatch a destructive action when its confirmation is cancelled", () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const screen = renderRow();
+    fireEvent.press(button(screen, "Delete category"));
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(props.onUpdate).not.toHaveBeenCalled();
+  });
 });

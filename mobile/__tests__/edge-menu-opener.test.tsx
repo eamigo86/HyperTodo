@@ -91,6 +91,28 @@ describe("EdgeMenuOpener", () => {
     expect(props.onUpdate).not.toHaveBeenCalled();
   });
 
+  it("ignores a long but predominantly vertical drag", () => {
+    render(<EdgeMenuOpener {...props} />);
+    const config = responder();
+    expect(config.onMoveShouldSetPanResponderCapture({}, { dx: 60, dy: 70 })).toBe(false);
+    expect(config.onMoveShouldSetPanResponderCapture({}, { dx: 60, dy: 2 })).toBe(true);
+    act(() => config.onPanResponderRelease({}, { dx: 60, dy: 70 }));
+    expect(props.onUpdate).not.toHaveBeenCalled();
+    expect(config.onPanResponderTerminationRequest()).toBe(false);
+  });
+
+  it("uses the declared menu destination when provided and defaults when omitted", () => {
+    const explicit = elementWith({ href: "/hv/menu/?active=tasks", target: "custom-host" });
+    render(<EdgeMenuOpener {...props} element={explicit} />);
+    act(() => responder().onPanResponderRelease({}, { dx: 64, dy: 4 }));
+    expect(props.onUpdate).toHaveBeenCalledWith("/hv/menu/?active=tasks", "replace", explicit, { targetId: "custom-host", verb: "get" });
+
+    const absent = elementWith({});
+    render(<EdgeMenuOpener {...props} element={absent} />);
+    act(() => responder().onPanResponderRelease({}, { dx: 64, dy: 4 }));
+    expect(props.onUpdate).toHaveBeenLastCalledWith("/hv/menu/?active=dashboard", "replace", absent, { targetId: "side-menu-host", verb: "get" });
+  });
+
   it("renders only the narrow server-styled edge hit area", () => {
     const screen = render(<EdgeMenuOpener {...props} />);
 

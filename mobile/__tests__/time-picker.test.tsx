@@ -182,4 +182,58 @@ describe("native task time selection", () => {
     expect(form.screen.queryByRole("button", { name: "Clear" })).toBeNull();
     expect(form.posted().get("due_time")).toBe("12:10");
   });
+
+  it.each(["24:00", "12:60", "9:05", "not-a-time"])
+    ("does not normalize an invalid stored value into a different posted time: %s", value => {
+      platform("ios");
+      const form = mount(value);
+      fireEvent.press(form.screen.getByRole("button", { name: "Due time" }));
+      expect(form.screen.getByTestId("native-time-picker").props.value).toBeInstanceOf(Date);
+      fireEvent.press(form.screen.getByRole("button", { name: "Cancel" }));
+      expect(form.posted().get("due_time")).toBe(value);
+      expect(form.onUpdate).not.toHaveBeenCalled();
+    });
+
+  it("ignores a native callback without a selected date", () => {
+    platform("ios");
+    const form = mount("14:30");
+    fireEvent.press(form.screen.getByRole("button", { name: "Due time" }));
+    fireEvent(form.screen.getByTestId("native-time-picker"), "onChange", { type: "set" }, undefined);
+    fireEvent.press(form.screen.getByRole("button", { name: "Done" }));
+    expect(form.posted().get("due_time")).toBe("14:30");
+    expect(form.onUpdate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the value unchanged when the native selector is dismissed on iOS", () => {
+    platform("ios");
+    const form = mount("16:40");
+    fireEvent.press(form.screen.getByRole("button", { name: "Due time" }));
+    choose(form.screen, 3, 10, "dismissed");
+    expect(form.screen.queryByTestId("native-time-picker")).toBeNull();
+    expect(form.posted().get("due_time")).toBe("16:40");
+  });
+
+  it("treats editable=false as disabled without changing the hidden form field", () => {
+    platform("ios");
+    const data = fixture("18:15");
+    data.element.setAttribute("editable", "false");
+    const screen = render(<TimePicker element={data.element} onUpdate={data.onUpdate} options={{}} stylesheets={stylesheets as any} />);
+    expect(screen.getByRole("button", { name: "Due time" }).props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByRole("button", { name: "Due time" }));
+    expect(screen.queryByTestId("native-time-picker")).toBeNull();
+    expect(new URLSearchParams(data.registry.getFormData(data.form) as any).get("due_time")).toBe("18:15");
+  });
+
+  it("does not fabricate a hidden field when malformed markup has none", () => {
+    platform("ios");
+    const data = fixture();
+    data.element.removeChild(data.element.getElementsByTagNameNS(HV, "text-field").item(0)!);
+    const screen = render(<TimePicker element={data.element} onUpdate={data.onUpdate} options={{}} stylesheets={stylesheets as any} />);
+    expect(screen.getByRole("button", { name: "Due time" }).props.accessibilityValue.text).toBe("Select due time");
+    fireEvent.press(screen.getByRole("button", { name: "Due time" }));
+    choose(screen, 7, 30);
+    fireEvent.press(screen.getByRole("button", { name: "Done" }));
+    expect(data.onUpdate).not.toHaveBeenCalled();
+    expect(new URLSearchParams(data.registry.getFormData(data.form) as any).get("due_time")).toBeNull();
+  });
 });
