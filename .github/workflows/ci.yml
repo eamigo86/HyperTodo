@@ -99,7 +99,7 @@ jobs:
       - run: corepack enable
       - run: corepack yarn install --frozen-lockfile
       - run: corepack yarn typecheck
-      - run: corepack yarn test
+      - run: corepack yarn test:coverage
 
   # Doctor compares the installed versions with data it fetches from api.expo.dev, so it
   # can turn red without any commit. A job of its own keeps the typecheck and Jest

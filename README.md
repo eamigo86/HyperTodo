@@ -211,7 +211,10 @@ make check
 
 Runs backend Ruff lint and format checks, tests and coverage, installed
 Admin-editor JavaScript, Django checks and migration-drift checks, plus mobile
-TypeScript/Jest/Expo Doctor. Doctor runs against `DOCTOR_API_URL`, by default the
+TypeScript, Jest coverage and Expo Doctor. Mobile CI enforces at least 95% each
+for statements, branches, functions and lines across `App.tsx`, `index.ts` and
+all mobile `src/` JavaScript/TypeScript files, including unimported files.
+Doctor runs against `DOCTOR_API_URL`, by default the
 HTTPS `.invalid` address `https://hypertodo-ci.invalid/hv/`, which is
 **validation-only**, not a backend. It must resolve Expo config and report all
 checks successfully, needs network access, and unavailable online checks are
@@ -222,8 +225,10 @@ the same coverage gate. The Redis tests exercise the default cache, database
 session ownership and live SSE, including a post-idle publish. They use unique
 key namespaces and never flush a shared Redis database.
 
-Use `make backend-test` / `make mobile-test` for separate suites and
-`make acceptance` for the manual iOS/Android checklist. Optional
+Use `make backend-test` / `make mobile-test` for separate suites; run
+`make mobile-test-coverage` for the mobile coverage gate (`corepack yarn
+test:coverage` from `mobile/`). Use `make acceptance` for the manual
+iOS/Android checklist. Optional
 `make backend-test-redis` requires an owned disposable loopback Redis service:
 set `HYPERTODO_REDIS_TEST_OWNED=1` and `REDIS_TEST_URL` to its explicit port and
 database 14. Never point it at shared data or flush a shared service. See the

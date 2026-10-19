@@ -48,7 +48,7 @@ endef
 	backend-install backend-migrate backend-seed backend-run backend-run-redis \
 	backend-run-device backend-run-sse \
 	backend-test backend-test-editor backend-test-redis backend-lint backend-check backend-quality \
-	mobile-install mobile-start mobile-start-android mobile-test mobile-typecheck \
+	mobile-install mobile-start mobile-start-android mobile-test mobile-test-coverage mobile-typecheck \
 	mobile-start-device mobile-start-go mobile-login mobile-whoami \
 	mobile-doctor mobile-check mobile-ios mobile-ios-device \
 	mobile-android mobile-android-device lan-ip acceptance
@@ -146,13 +146,16 @@ mobile-whoami: ## Display the Expo account used by the CLI.
 mobile-test: ## Run the mobile Jest suite.
 	@$(call run_mobile,$(YARN) test)
 
+mobile-test-coverage: ## Enforce 95% coverage across all owned mobile code.
+	@$(call run_mobile,$(YARN) test:coverage)
+
 mobile-typecheck: ## Run strict TypeScript validation without producing a build.
 	@$(call run_mobile,$(YARN) typecheck)
 
 mobile-doctor: ## Run Expo Doctor against a validation-only API URL (needs network access).
 	@$(call run_mobile,EXPO_PUBLIC_ALLOW_LOCAL_API=0 EXPO_PUBLIC_API_URL="$(DOCTOR_API_URL)" $(YARN) doctor)
 
-mobile-check: mobile-typecheck mobile-test mobile-doctor ## Run every automated mobile quality gate.
+mobile-check: mobile-typecheck mobile-test-coverage mobile-doctor ## Run every automated mobile quality gate.
 
 mobile-ios: ## Build and launch the iOS development app on a Simulator.
 	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="$(EXPO_PUBLIC_API_URL)" $(YARN) ios)
