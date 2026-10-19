@@ -310,6 +310,81 @@ it('does not mint recovery while an admitted ordinary request or a real native w
   });
   expect(g.clear).toHaveBeenCalledTimes(1);
 });
+it('keeps neutral recovery leases read-only and consumes only a receipt from that live recovery', async () => {
+  const f = setup(), handle = await recover(f);
+  const live = handle.lease(() => true);
+  const removed = handle.lease(() => { throw new Error('native source removed'); });
+  expect(live.isCurrent()).toBe(true);
+  expect(removed.isCurrent()).toBe(false);
+  await expect(live.clearCredential({})).resolves.toBe('stale');
+  await expect(handle.consumeEffect({})).resolves.toBe('retired');
+  const panel = '<view xmlns="https://hyperview.org/hyperview" id="login-panel"><behavior trigger="load" action="store-biometric-token" token="" once="true" immediate="true"/></view>';
+  f.transport.mockResolvedValueOnce(response(panel, B, 'biometric-invalid', 401));
+  const result = await handle.authenticate('/hv/biometric/login/', { method: 'POST' });
+  expect(result).toMatchObject({ kind: 'panel', status: 401 });
+  if (result.kind !== 'panel') throw new Error('Expected the rejected biometric panel');
+  await expect(handle.consumeEffect(result.receipt)).resolves.toBe('cleared');
+  expect(f.clear).toHaveBeenCalledTimes(1);
+  handle.revoke();
+  handle.revoke();
+  expect(live.isCurrent()).toBe(false);
+  await expect(handle.consumeEffect(result.receipt)).resolves.toBe('retired');
+  await expect(live.clearCredential({})).resolves.toBe('stale');
+});
+it('does not mint neutral authority after another revocation during its observation', async () => {
+  const f = setup(); await f.supervisor.bootstrap();
+  const waiting = deferred<Response>(); f.transport.mockImplementationOnce(() => waiting.promise);
+  const recovery = f.supervisor.beginRecovery();
+  await Promise.resolve();
+  f.supervisor.invalidate();
+  waiting.resolve(response(JSON.stringify({ version: 1, authenticated: true, binding: B }), B));
+  await expect(recovery).resolves.toMatchObject({ kind: 'stale' });
+  expect(f.supervisor.snapshot()).toMatchObject({ identity: null, reason: 'revoked' });
+});
+it('does not mint neutral authority when the app pauses during its observation', async () => {
+  const f = setup(); await f.supervisor.bootstrap();
+  const waiting = deferred<Response>(); f.transport.mockImplementationOnce(() => waiting.promise);
+  const recovery = f.supervisor.beginRecovery();
+  await Promise.resolve();
+  f.supervisor.pause();
+  waiting.resolve(response(JSON.stringify({ version: 1, authenticated: true, binding: B }), B));
+  await expect(recovery).resolves.toMatchObject({ kind: 'uncertain' });
+  expect(f.supervisor.snapshot()).toMatchObject({ identity: null, availability: 'paused' });
+});
+it('rejects a neutral response whose recovery owner was revoked before headers settled', async () => {
+  const f = setup(), handle = await recover(f), waiting = deferred<Response>();
+  f.transport.mockImplementationOnce(() => waiting.promise);
+  const fetch = handle.fetch('/hv/recovery/');
+  await Promise.resolve();
+  handle.revoke();
+  waiting.resolve(response('<view/>', B));
+  await expect(fetch).rejects.toThrow('stale-owner');
+  expect(handle.isAlive()).toBe(false);
+});
+it('rejects a paused neutral response after the recovery is revoked while waiting', async () => {
+  const f = setup(), handle = await recover(f), waiting = deferred<Response>();
+  f.transport.mockImplementationOnce(() => waiting.promise);
+  const fetch = handle.fetch('/hv/recovery/');
+  await Promise.resolve();
+  f.supervisor.pause();
+  waiting.resolve(response('<view/>', B));
+  for (let index = 0; index < 12; index++) await Promise.resolve();
+  handle.revoke();
+  await expect(fetch).rejects.toThrow('recovery-unavailable');
+});
+it('rejects a neutral body revoked during its actual read and preserves Response methods', async () => {
+  const f = setup(), handle = await recover(f), waiting = deferred<string>();
+  const raw = response('<view/>', B), read = jest.spyOn(raw, 'text').mockImplementation(() => waiting.promise);
+  f.transport.mockResolvedValueOnce(raw);
+  const result = await handle.fetch('/hv/recovery/');
+  expect(result.clone().status).toBe(200);
+  const body = result.text();
+  await Promise.resolve();
+  expect(read).toHaveBeenCalledTimes(1);
+  handle.revoke();
+  waiting.resolve('<view/>');
+  await expect(body).rejects.toThrow('stale-owner');
+});
 it('bounds neutral UTF-8 bodies and refuses late body delivery after revocation', async () => {
   const f = setup(),
     handle = await recover(f);

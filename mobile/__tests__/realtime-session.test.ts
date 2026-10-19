@@ -34,6 +34,79 @@ it("bootstraps only the bounded observation and configures same-origin credentia
  expect(identity).toHaveBeenCalledTimes(1);expect(supervisor.markRootReady(0)).toBe(false);expect(supervisor.markRootReady(1)).toBe(true);
 });
 
+it("does not publish a confirmation completed after explicit revocation",async()=>{
+ const f=fixture(),pending=deferred<Response>();
+ f.transport.mockImplementationOnce(()=>pending.promise);
+ const bootstrap=f.supervisor.bootstrap();await tick();
+ f.supervisor.invalidate();pending.resolve(observation());
+ await expect(bootstrap).resolves.toBe("stale");
+ expect(f.supervisor.snapshot()).toMatchObject({identity:null,reason:"revoked"});
+ expect(f.identity).toHaveBeenCalledTimes(1);
+ expect(f.identity).toHaveBeenCalledWith(null);
+});
+
+it("ignores an observation body that settles after its confirmation deadline",async()=>{
+ const f=fixture();await f.supervisor.bootstrap();
+ const body=deferred<string>(),late=observation(B);
+ late.text=jest.fn(()=>body.promise);
+ f.transport.mockResolvedValueOnce(late);
+ f.supervisor.pause();
+ const foreground=f.supervisor.foreground();
+ await tick();
+ expect(late.text).toHaveBeenCalledTimes(1);
+ f.timers.find(timer=>timer.active&&timer.ms===2000)!.run();
+ await expect(foreground).resolves.toMatchObject({kind:"held"});
+ body.resolve(JSON.stringify({version:1,authenticated:true,binding:B}));
+ await tick();
+ expect(f.supervisor.snapshot()).toMatchObject({identity:{binding:A,generation:1},observedBinding:A,availability:"foreground"});
+ expect(f.identity).toHaveBeenCalledTimes(1);
+});
+
+it("does not retry an initial observation after revocation during retry backoff",async()=>{
+ const f=fixture(),backoff=deferred<void>();
+ f.transport.mockResolvedValueOnce(response("unavailable",A,503));
+ jest.spyOn(f.clock,"sleep").mockImplementationOnce(()=>backoff.promise);
+ const initial=f.supervisor.bootstrap();
+ await tick();
+ expect(f.clock.sleep).toHaveBeenCalledWith(1000);
+ f.supervisor.invalidate();
+ backoff.resolve();
+ await expect(initial).resolves.toBe("stale");
+ expect(f.transport).toHaveBeenCalledTimes(1);
+ expect(f.supervisor.snapshot()).toMatchObject({identity:null,reason:"revoked"});
+});
+
+it("requires a current foreground owner for root readiness and ordinary requests",async()=>{
+ const f=fixture();
+ await expect(f.supervisor.authenticate("/hv/login/",{method:"POST"})).resolves.toMatchObject({kind:"stale"});
+ await expect(f.supervisor.request("/hv/tasks/")).rejects.toThrow("session-unavailable");
+ await f.supervisor.bootstrap();f.supervisor.pause();
+ expect(f.supervisor.markRootReady(f.supervisor.snapshot().generation)).toBe(false);
+ await expect(f.supervisor.request("/hv/tasks/")).rejects.toThrow("session-unavailable");
+ await f.supervisor.foreground();
+ expect(f.supervisor.markRootReady(f.supervisor.snapshot().generation)).toBe(true);
+ expect(f.supervisor.snapshot().rootReady).toBe(true);
+});
+
+it("bounds admitted credential clears while native storage is still busy",async()=>{
+ const f=fixture(),blocked=deferred<void>();
+ await f.supervisor.bootstrap();
+ const lease=f.supervisor.lease(()=>true);
+ f.store.clear.mockImplementationOnce(()=>blocked.promise);
+ const receipts=Array.from({length:64},()=>({}));
+ const admitted=receipts.map(receipt=>lease.clearCredential(receipt));
+ await tick();
+ expect(f.store.clear).toHaveBeenCalledTimes(1);
+ await expect(lease.clearCredential({})).resolves.toBe("capacity");
+ expect(f.store.clear).toHaveBeenCalledTimes(1);
+ blocked.resolve();
+ await expect(Promise.all(admitted)).resolves.toEqual(Array(64).fill("cleared"));
+ expect(f.store.clear).toHaveBeenCalledTimes(64);
+ await expect(lease.clearCredential({})).resolves.toBe("cleared");
+ expect(f.store.clear).toHaveBeenCalledTimes(65);
+});
+
+
 it('delivers negotiated seed only for the published identity and checked ordinary response, with no extra request',async()=>{
  const seed=jest.fn(),f=fixture(seed),boot=observation();boot.headers.set('X-HyperTodo-Realtime-Features','changes-v2');boot.headers.set('X-HyperTodo-Mutation-Seed','a'.repeat(32));f.transport.mockResolvedValueOnce(boot);
  await f.supervisor.bootstrap();expect(seed).toHaveBeenCalledWith('a'.repeat(32),f.supervisor.snapshot().identity);
