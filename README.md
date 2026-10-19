@@ -112,7 +112,7 @@ Six registered elements use `https://hypertodo.app/components` (`app:` below).
 | [`app:side-menu`](mobile/src/components/AnimatedSideMenu.tsx) | Animated drawer/backdrop with HXML-provided contents. |
 | [`app:edge-menu-opener`](mobile/src/components/EdgeMenuOpener.tsx) | Edge gesture that fetches the menu without replacing the screen. |
 | [`app:swipe-row`](mobile/src/components/SwipeRow.tsx) | Task/category action tray with equivalent screen-reader actions and optional destructive confirmation. |
-| [`app:time-picker`](mobile/src/components/TimePicker.tsx) | Native 24-hour task time selection with visible `HH:MM` (including `00:00`); blank remains distinct from midnight. Its hidden child `text-field` remains the sole serialized `due_time` value; opening or cancelling never changes the draft. |
+| [`app:time-picker`](mobile/src/components/TimePicker.tsx) | Native 24-hour task time selection with visible `HH:MM` (including `00:00`); blank remains distinct from midnight. Its hidden child `text-field` remains the sole serialized `due_time` value; opening or cancelling never changes the draft. Served only to clients announcing 1.3.0 or newer in `X-App-Version`; older binaries get the previous masked `HH:MM` text field. |
 | [`app:realtime`](mobile/src/realtime/gate.tsx) | Coordinates resource dependencies, safe refresh, forms and route/session ownership. |
 | [`app:realtime-page`](mobile/src/realtime/gate.tsx) | Invisible request/page marker for correlating actual layout; adds no row. |
 

@@ -283,7 +283,9 @@ def test_task_form_has_back_action_visible_categories_and_native_time_picker(use
     client.force_login(user)
     Category.objects.create(user=user, name="Work", color=Category.Color.LAVENDER)
 
-    root = assert_hxml(client.get(reverse("todo:task-new")))
+    root = assert_hxml(
+        client.get(reverse("todo:task-new"), headers={"X-App-Version": "1.3.0"})
+    )
     back = root.find(".//hv:view[@id='task-back']", NS)
     due_date = root.find(".//hv:date-field[@name='due_date']", NS)
     picker = root.find(".//app:time-picker", NS)
@@ -1003,6 +1005,7 @@ def test_invalid_task_form_returns_422_hxml(user):
     response = client.post(
         reverse("todo:task-new"),
         {"title": "", "due_time": "09:00", "csrfmiddlewaretoken": token},
+        headers={"X-App-Version": "1.3.0"},
     )
     root = assert_hxml(response, status=422)
     assert root.tag == f"{{{NS['hv']}}}view"

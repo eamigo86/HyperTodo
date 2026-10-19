@@ -995,7 +995,11 @@ def _version_gated_views():
         }
         for name, node in functions.items()
     }
-    gates = {"_supports_avatar_upload", "_supports_swipe_actions"}
+    gates = {
+        "_supports_avatar_upload",
+        "_supports_swipe_actions",
+        "_supports_time_picker",
+    }
     # Transitive closure: _avatar_context reads a gate and settings_view reads
     # _avatar_context, so settings_view depends on the header just as directly.
     reaching, changed = set(gates), True

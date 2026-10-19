@@ -52,7 +52,10 @@ def _validate_response(response):
     "theme,language,version,populated",
     list(
         product(
-            ("light", "dark"), ("en", "es"), (None, "1.0.0", "1.2.0"), (False, True)
+            ("light", "dark"),
+            ("en", "es"),
+            (None, "1.0.0", "1.2.0", "1.3.0"),
+            (False, True),
         )
     ),
 )

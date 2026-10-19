@@ -338,7 +338,9 @@ def test_task_form_fields_are_legible_and_reachable(user):
     client = Client()
     client.force_login(user)
 
-    root = assert_hxml(client.get(reverse("todo:task-new")))
+    root = assert_hxml(
+        client.get(reverse("todo:task-new"), headers={"X-App-Version": "1.3.0"})
+    )
 
     field = style_by_id(root, "field")
     assert field.attrib["fontSize"] == "16"

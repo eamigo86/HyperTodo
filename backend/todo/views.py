@@ -85,6 +85,8 @@ APP_VERSION_PATTERN = re.compile(r"[0-9A-Za-z.+-]{1,32}")
 MIN_SWIPE_ACTIONS_VERSION = (1, 1, 0)
 # The first client release that registers the `pick-avatar` behavior.
 MIN_AVATAR_UPLOAD_VERSION = (1, 2, 0)
+# The first client release that registers the `app:time-picker` component.
+MIN_TIME_PICKER_VERSION = (1, 3, 0)
 
 View = Callable[..., HttpResponse]
 PAGE_SIZE = 20
@@ -649,6 +651,25 @@ def _supports_swipe_actions(request: HttpRequest) -> bool:
     return _client_version(request) >= MIN_SWIPE_ACTIONS_VERSION
 
 
+def _supports_time_picker(request: HttpRequest) -> bool:
+    """Report whether this client registers the app:time-picker component.
+
+    Hyperview renders an element no registered component claims as nothing, so a
+    binary older than the picker would show the "Due time" label over an empty row
+    and the person could neither set nor change a time. Those clients get the masked
+    text field the form used before. Both markups post the time as HH:MM under the
+    same name, so the save needs no gate. Callers must declare
+    Vary: X-App-Version, because the response body moves with the request header.
+
+    Args:
+        request: Incoming request, which announces its own version or nothing.
+
+    Returns:
+        True when the announced version is at least MIN_TIME_PICKER_VERSION.
+    """
+    return _client_version(request) >= MIN_TIME_PICKER_VERSION
+
+
 def _settings_context(request: HttpRequest, form: ProfileForm) -> dict[str, object]:
     """Build everything the settings screen and its 422 fragment both need.
 
@@ -1039,6 +1060,7 @@ def _task_form_response(
             "form": form,
             "task": task,
             "header_title": _("Edit task") if task else _("New task"),
+            "time_picker": _supports_time_picker(request),
         },
         status=status,
     )
@@ -1057,6 +1079,7 @@ def _category_vanished(form: TaskForm) -> None:
 
 
 @hxml_endpoint(fragment=_is_post)
+@vary_on_headers(APP_VERSION_HEADER)
 def task_new(request: HttpRequest) -> HttpResponse:
     """Create a task owned by the authenticated user.
 
@@ -1096,6 +1119,7 @@ def task_new(request: HttpRequest) -> HttpResponse:
 
 
 @hxml_endpoint(fragment=_is_post)
+@vary_on_headers(APP_VERSION_HEADER)
 def task_edit(request: HttpRequest, task_id: UUID) -> HttpResponse:
     """Edit a task owned by the authenticated user.
 
