@@ -310,6 +310,7 @@ def test_task_form_has_back_action_visible_categories_and_native_time_picker(use
     assert picker is not None
     assert picker.attrib["done-label"] == "Done"
     assert picker.attrib["clear-label"] == "Clear"
+    assert picker.attrib["clear-a11y-label"] == "Clear due time"
     assert due_time.attrib["hide"] == "true"
     assert "keyboard-type" not in due_time.attrib
     assert category is not None

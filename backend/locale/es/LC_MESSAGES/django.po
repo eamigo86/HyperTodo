@@ -330,6 +330,10 @@ msgstr "Elegir hora límite"
 msgid "Clear"
 msgstr "Borrar"
 
+#: hyperview/fragments/task_form_panel.xml
+msgid "Clear due time"
+msgstr "Borrar hora límite"
+
 #: hyperview/fragments/task_form_panel.xml:26
 #: hyperview/fragments/task_form_panel.xml:27
 msgid "Due time"

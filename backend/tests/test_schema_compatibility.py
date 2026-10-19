@@ -139,7 +139,8 @@ def test_the_schema_declares_the_time_picker_and_rejects_an_invented_attribute()
         'id="due-time" hide="false" accessibilityLabel="Due time" placeholder="Pick"'
         ' placeholderTextColor="#6A6F86" field-style="field" field-text-style="t"'
         ' modal-style="m" modal-text-style="a" cancel-label="Cancel"'
-        ' done-label="Done" clear-label="Clear" disabled="true" editable="false"'
+        ' done-label="Done" clear-label="Clear" clear-a11y-label="Clear due time"'
+        ' disabled="true" editable="false"'
     )
 
     validate_hxml(document.format(attributes=declared, child=child))

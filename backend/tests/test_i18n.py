@@ -9,7 +9,7 @@ from django.conf import settings
 from django.test import Client
 from django.urls import reverse
 
-from tests.test_forms_ui import assert_hxml
+from tests.test_forms_ui import NS, assert_hxml
 from todo.models import Category, Profile, Task
 
 pytestmark = pytest.mark.django_db
@@ -76,6 +76,22 @@ def test_the_current_language_on_the_request_is_the_one_that_was_activated(user)
 
     assert current, "the Spanish option is missing from the switcher"
     assert "preference-option-current" in current[0].attrib["style"].split()
+
+
+def test_the_clear_time_button_is_named_for_screen_readers_in_the_active_language(user):
+    # The visible word stays short; the spoken name says what is cleared.
+    Profile.objects.create(user=user, language=Profile.Language.SPANISH)
+    client = Client()
+    client.force_login(user)
+
+    root = assert_hxml(
+        client.get(reverse("todo:task-new"), headers={"x-app-version": "1.3.0"})
+    )
+
+    picker = root.find(".//app:time-picker", NS)
+    assert picker is not None
+    assert picker.attrib["clear-label"] == "Borrar"
+    assert picker.attrib["clear-a11y-label"] == "Borrar hora límite"
 
 
 def test_the_compiled_catalog_agrees_with_its_source_and_carries_no_fuzzy_entry():

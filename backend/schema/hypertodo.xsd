@@ -94,6 +94,7 @@
       <xs:attribute name="cancel-label" type="xs:string" />
       <xs:attribute name="done-label" type="xs:string" />
       <xs:attribute name="clear-label" type="xs:string" />
+      <xs:attribute name="clear-a11y-label" type="xs:string" />
     </xs:complexType>
   </xs:element>
 

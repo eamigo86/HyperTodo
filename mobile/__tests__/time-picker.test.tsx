@@ -16,8 +16,8 @@ jest.mock("@react-native-community/datetimepicker", () => {
 const HV = "https://hyperview.org/hyperview";
 const APP = "https://hypertodo.app/components";
 const stylesheets = { regular: { field: { minHeight: 48 }, "field-text": { color: "#161A35" } }, selected: {}, pressed: {}, focused: {}, pressedSelected: {} };
-function fixture(value = "", disabled = false, placeholder = true) {
-  const doc = new DOMParser().parseFromString(`<view xmlns="${HV}" xmlns:app="${APP}"><form><date-field name="due_date" value="2026-10-20"/><app:time-picker accessibilityLabel="Due time"${placeholder ? ' placeholder="Select due time"' : ""} cancel-label="Cancel" done-label="Done" clear-label="Clear" field-style="field" field-text-style="field-text"${disabled ? ' disabled="true"' : ""}><text-field name="due_time" value="${value}" hide="true"/></app:time-picker></form></view>`, "application/xml") as Document;
+function fixture(value = "", disabled = false, placeholder = true, clearA11y = true) {
+  const doc = new DOMParser().parseFromString(`<view xmlns="${HV}" xmlns:app="${APP}"><form><date-field name="due_date" value="2026-10-20"/><app:time-picker accessibilityLabel="Due time"${placeholder ? ' placeholder="Select due time"' : ""} cancel-label="Cancel" done-label="Done" clear-label="Clear"${clearA11y ? ' clear-a11y-label="Clear due time"' : ""} field-style="field" field-text-style="field-text"${disabled ? ' disabled="true"' : ""}><text-field name="due_time" value="${value}" hide="true"/></app:time-picker></form></view>`, "application/xml") as Document;
   const element = doc.getElementsByTagNameNS(APP, "time-picker").item(0)!;
   const registry = new Registry([TimePicker]);
   const form = doc.getElementsByTagNameNS(HV, "form").item(0)!;
@@ -27,8 +27,8 @@ function fixture(value = "", disabled = false, placeholder = true) {
   });
   return { element, form, registry, onUpdate, boundary: doc.documentElement };
 }
-function mount(value = "", disabled = false, placeholder = true) {
-  const data = fixture(value, disabled, placeholder);
+function mount(value = "", disabled = false, placeholder = true, clearA11y = true) {
+  const data = fixture(value, disabled, placeholder, clearA11y);
   const screen = render(<TimePicker element={data.element} onUpdate={data.onUpdate} options={{}} stylesheets={stylesheets as any} />);
   const posted = () => new URLSearchParams(data.registry.getFormData(data.form) as any);
   return { ...data, screen, posted };
@@ -113,9 +113,31 @@ describe("native task time selection", () => {
   it("clears only time and leaves the date in the form", () => {
     platform("ios");
     const form = mount("14:30");
-    fireEvent.press(form.screen.getByRole("button", { name: "Clear" }));
+    fireEvent.press(form.screen.getByRole("button", { name: "Clear due time" }));
     expect(form.posted().get("due_time")).toBe("");
     expect(form.posted().get("due_date")).toBe("2026-10-20");
+  });
+
+  it("names the clear button for screen readers while the visible word stays short", () => {
+    platform("ios");
+    const form = mount("14:30");
+    expect(form.screen.getByText("Clear")).toBeTruthy();
+    expect(form.screen.getByRole("button", { name: "Clear due time" }).props.accessibilityLabel).toBe("Clear due time");
+  });
+
+  it("falls back to the visible clear label when the markup has no spoken one", () => {
+    platform("ios");
+    const form = mount("14:30", false, true, false);
+    expect(form.screen.getByRole("button", { name: "Clear" }).props.accessibilityLabel).toBe("Clear");
+  });
+
+  it("falls back to English when the markup carries no clear label at all", () => {
+    platform("ios");
+    const data = fixture("14:30", false, true, false);
+    data.element.removeAttribute("clear-label");
+    const screen = render(<TimePicker element={data.element} onUpdate={data.onUpdate} options={{}} stylesheets={stylesheets as any} />);
+    expect(screen.getByText("Clear")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Clear" }).props.accessibilityLabel).toBe("Clear");
   });
 
   it("commits Android set and ignores native dismissal", () => {
@@ -190,7 +212,7 @@ describe("native task time selection", () => {
     expect(form.screen.getByRole("button", { name: "Due time" }).props.accessibilityState.disabled).toBe(true);
     fireEvent.press(form.screen.getByRole("button", { name: "Due time" }));
     expect(form.screen.queryByTestId("native-time-picker")).toBeNull();
-    expect(form.screen.queryByRole("button", { name: "Clear" })).toBeNull();
+    expect(form.screen.queryByRole("button", { name: "Clear due time" })).toBeNull();
     expect(form.posted().get("due_time")).toBe("12:10");
   });
 

@@ -38,6 +38,9 @@ function TimePickerComponent({ element, onUpdate, options, stylesheets }: HvComp
   const value = field?.getAttribute("value") ?? "";
   const disabled = element.getAttribute("disabled") === "true" || element.getAttribute("editable") === "false";
   const label = element.getAttribute("accessibilityLabel") ?? "Time";
+  // The DOM answers "" for an absent attribute, so these fall back with ||, not ??.
+  const clearLabel = element.getAttribute("clear-label") || "Clear";
+  const clearA11yLabel = element.getAttribute("clear-a11y-label") || clearLabel;
   const textStyle = createStyleProp(element, stylesheets, { ...options, styleAttr: "field-text-style" });
   const modalStyle = createStyleProp(element, stylesheets, { ...options, styleAttr: "modal-style" });
   const actionStyle = createStyleProp(element, stylesheets, { ...options, styleAttr: "modal-text-style" });
@@ -85,8 +88,8 @@ function TimePickerComponent({ element, onUpdate, options, stylesheets }: HvComp
         </Text>
       </Pressable>
       {!!value && !disabled && (
-        <Pressable accessibilityLabel={element.getAttribute("clear-label") ?? "Clear"} accessibilityRole="button" onPress={() => commit("")} style={styles.clear}>
-          <Text style={[...actionStyle, { color: theme.brand_ink }]}>{element.getAttribute("clear-label") ?? "Clear"}</Text>
+        <Pressable accessibilityLabel={clearA11yLabel} accessibilityRole="button" onPress={() => commit("")} style={styles.clear}>
+          <Text style={[...actionStyle, { color: theme.brand_ink }]}>{clearLabel}</Text>
         </Pressable>
       )}
       {open && pending && Platform.OS === "ios" && (
