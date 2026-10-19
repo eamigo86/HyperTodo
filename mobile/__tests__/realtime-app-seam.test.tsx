@@ -19,9 +19,9 @@ const doc=(id:string,controls="")=>`<doc xmlns="${HV}" xmlns:app="${APP}"><scree
 const response=(body:string)=>({status:200,ok:true,url:BASE,headers:new Headers({"Content-Type":"application/vnd.hyperview+xml"}),text:async()=>body}) as Response;
 const items=(id:string)=>`<items xmlns="${HV}" xmlns:app="${APP}"><item key="two"><app:realtime-page request-id="${id}" page="2"/><text>Added row</text></item></items>`;
 function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(yes=>{resolve=yes;});return{promise,resolve};}
-function setup(authenticate:GateAuthPort,more:Partial<React.ComponentProps<ReturnType<typeof createRealtimeGate>["Root"]>>={},controls="",onReady=jest.fn()){
+function setup(authenticate:GateAuthPort,more:Partial<React.ComponentProps<ReturnType<typeof createRealtimeGate>["Root"]>>={},controls="",onReady=jest.fn(),transformDoc:(body:string)=>string=body=>body){
  const gate=createRealtimeGate({authenticate,onReady});const errors=jest.fn();
- const transport=jest.fn(async(_input:RequestInfo|URL,init?:RequestInit):Promise<Response>=>{const id=new Headers(init?.headers).get("X-HyperTodo-Request-ID")!;return response(transport.mock.calls.length===1?doc(id,controls):items(id));});
+ const transport=jest.fn(async(_input:RequestInfo|URL,init?:RequestInit):Promise<Response>=>{const id=new Headers(init?.headers).get("X-HyperTodo-Request-ID")!;return response(transport.mock.calls.length===1?transformDoc(doc(id,controls)):items(id));});
  const screen=render(<NavigationContainer><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="fixture">{()=> <gate.Root entrypointUrl={BASE} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={errors} {...more} components={[...gate.components,...(more.components??[])]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
  return{gate,screen,transport,errors,onReady};
 }
@@ -82,9 +82,74 @@ it("captures source and one-use biometric submit before native await without glo
  const behavior:HvBehavior={action:"capture-submit",callback:(element,_update,getRoot,updateRoot)=>{owned=gate.bindSource(element,{getRoot,updateRoot});submit=owned!.bindBiometricSubmit();}};
  const mounted=setup(auth,{behaviors:[behavior]});gate=mounted.gate;
  try{await mounted.screen.findByText("Login");await act(async()=>fireEvent.press(mounted.screen.getByText("Unlock")));expect(owned!.sourceIsCurrent()).toBe(true);
-  act(()=>gate.setRetainedPaused(gate.snapshot().epoch,true));expect(owned!.isAlive()).toBe(true);expect(owned!.sourceIsCurrent()).toBe(false);expect(submit!(TOKEN)).toBe(false);
+  expect(owned!.effectReceipt()).toBeNull();
+  act(()=>gate.setRetainedPaused(gate.snapshot().epoch,true));expect(owned!.isAlive()).toBe(true);expect(owned!.sourceIsCurrent()).toBe(false);expect(owned!.effectReceipt()).toBeNull();expect(owned!.bindBiometricSubmit()).toBeNull();expect(submit!(TOKEN)).toBe(false);
   act(()=>gate.setRetainedPaused(gate.snapshot().epoch,false));await act(async()=>expect(submit!(TOKEN)).toBe(true));await mounted.screen.findByText("Try later");
   expect(auth).toHaveBeenCalledTimes(1);expect((auth.mock.calls as unknown as [string,RequestInit][])[0][0]).toBe("https://hypertodo.test/hv/biometric/login/");expect(submit!(TOKEN)).toBe(false);expect(owned!.isAlive()).toBe(false);
+ }finally{mounted.screen.unmount();}
+});
+
+it.each([
+ ["missing target field",'id="biometric-token"','id="other-field"'],
+ ["unmatched event",'event-name="biometric-authenticated" href=', 'event-name="different-event" href='],
+ ["non-POST submit",'href="/hv/biometric/login/" verb="post"','href="/hv/biometric/login/" verb="get"'],
+ ["non-replacing submit",'event-name="biometric-authenticated" href="/hv/biometric/login/" verb="post" action="replace"','event-name="biometric-authenticated" href="/hv/biometric/login/" verb="post" action="append"'],
+ ["wrong panel target",'action="replace" target="login-panel"/>','action="replace" target="other-panel"/>'],
+ ["ordinary destination",'href="/hv/biometric/login/"','href="/hv/tasks/"'],
+ ["field outside the owning form",'<form id="biometric-form"><text-field id="biometric-token" name="biometric_token" value="" hide="true"/>','<text-field id="biometric-token" name="biometric_token" value="" hide="true"/><form id="biometric-form">'],
+ ["duplicate submit behavior",'<behavior trigger="on-event" event-name="biometric-authenticated" href="/hv/biometric/login/" verb="post" action="replace" target="login-panel"/>','<behavior trigger="on-event" event-name="biometric-authenticated" href="/hv/biometric/login/" verb="post" action="replace" target="login-panel"/><behavior trigger="on-event" event-name="biometric-authenticated" href="/hv/biometric/login/" verb="post" action="replace" target="login-panel"/>'],
+] as const)("does not create biometric submit authority for a %s",async(_reason,oldValue,newValue)=>{
+ let gate:ReturnType<typeof createRealtimeGate>,submit:((token:string)=>boolean)|null|undefined;
+ const behavior:HvBehavior={action:"capture-submit",callback:(element,_update,getRoot,updateRoot)=>{
+  const source=gate.bindSource(element,{getRoot,updateRoot});submit=source?.bindBiometricSubmit();
+ }};
+ const auth=jest.fn(async():Promise<AuthResult>=>({kind:"busy"}));
+ const mounted=setup(auth,{behaviors:[behavior]},"",jest.fn(),body=>body.replace(oldValue,newValue));gate=mounted.gate;
+ try{
+  await mounted.screen.findByText("Login");
+  await act(async()=>fireEvent.press(mounted.screen.getByText("Unlock")));
+  expect(submit).toBeNull();
+  expect(auth).not.toHaveBeenCalled();
+  expect(mounted.transport).toHaveBeenCalledTimes(1);
+ }finally{mounted.screen.unmount();}
+});
+
+it("rejects an invalid native biometric token without consuming the valid one-use submission",async()=>{
+ let gate:ReturnType<typeof createRealtimeGate>,submit:((token:string)=>boolean)|null=null;
+ const behavior:HvBehavior={action:"capture-submit",callback:(element,_update,getRoot,updateRoot)=>{submit=gate.bindSource(element,{getRoot,updateRoot})?.bindBiometricSubmit()??null;}};
+ const auth=jest.fn(async(_url:string,init:RequestInit):Promise<AuthResult>=>({kind:"panel",status:429,body:panel("Try later",false,requestId(init),true),receipt:{}}));
+ const mounted=setup(auth,{behaviors:[behavior]});gate=mounted.gate;
+ try{
+  await mounted.screen.findByText("Login");await act(async()=>fireEvent.press(mounted.screen.getByText("Unlock")));
+  expect(submit).toEqual(expect.any(Function));
+  expect(submit!("not-a-token")).toBe(false);
+  expect(auth).not.toHaveBeenCalled();
+  await act(async()=>expect(submit!(TOKEN)).toBe(true));
+  await mounted.screen.findByText("Try later");
+  expect(auth).toHaveBeenCalledTimes(1);
+ }finally{mounted.screen.unmount();}
+});
+
+it("does not submit a token into a field removed by a later public SDK swap",async()=>{
+ let gate:ReturnType<typeof createRealtimeGate>,submit:((token:string)=>boolean)|null=null,replaceField:(()=>void)|undefined;
+ const behavior:HvBehavior={action:"capture-submit",callback:(element,onUpdate,getRoot,updateRoot)=>{
+  const source=gate.bindSource(element,{getRoot,updateRoot});submit=source?.bindBiometricSubmit()??null;
+  replaceField=()=>{
+   const field=Array.from(getRoot()!.getElementsByTagName("*")).find(node=>node.getAttribute("id")==="biometric-token")!;
+   const replacement=field.cloneNode(true) as Element;
+   replacement.setAttribute("value","edited after capture");
+   onUpdate(null,"swap",field,{newElement:replacement});
+  };
+ }};
+ const auth=jest.fn(async():Promise<AuthResult>=>({kind:"busy"}));
+ const mounted=setup(auth,{behaviors:[behavior]});gate=mounted.gate;
+ try{
+  await mounted.screen.findByText("Login");await act(async()=>fireEvent.press(mounted.screen.getByText("Unlock")));
+  expect(submit).toEqual(expect.any(Function));
+  act(()=>replaceField!());
+  expect(submit!(TOKEN)).toBe(false);
+  expect(auth).not.toHaveBeenCalled();
+  expect(mounted.transport).toHaveBeenCalledTimes(1);
  }finally{mounted.screen.unmount();}
 });
 
@@ -190,6 +255,7 @@ it("revokes a buffered auth continuation before the delayed held result settles"
 
 it.each([
  ["accepted", "/hv/settings/", "post",200,"settings-form-panel",'token="" once="true" immediate="true"',true],
+ ["whitespace around clear", "/hv/settings/", "post",200,"settings-form-panel",'token="" once="true" immediate="true"',true],
  ["other endpoint","/hv/tasks/","post",200,"settings-form-panel",'token="" once="true" immediate="true"',false],
  ["GET response","/hv/settings/","get",200,"settings-form-panel",'token="" once="true" immediate="true"',false],
  ["validation failure","/hv/settings/","post",422,"settings-form-panel",'token="" once="true" immediate="true"',false],
@@ -201,8 +267,9 @@ it.each([
  let gate:ReturnType<typeof createRealtimeGate>;const observed:boolean[]=[];const forged:boolean[]=[];let captured:Element|undefined;let authority:NonNullable<ReturnType<typeof gate.bindSource>>|undefined;
  const store:HvBehavior={action:"store-biometric-token",callback:(element,_update,getRoot,updateRoot)=>{captured=element;authority=gate.bindSource(element,{getRoot,updateRoot})!;observed.push(gate.isSettingsClear(element,authority));forged.push(gate.isSettingsClear(element,{...authority}));}};
  const controls=`<view id="settings-form-panel"><text>Settings draft</text></view><view href="${href}" verb="${verb}" action="replace" target="settings-form-panel"><text>Save settings</text></view>`;
+ const gap = _name === "whitespace around clear" ? "\n  " : "";
  const mounted=setup(async()=>({kind:"busy"}),{behaviors:[store]},controls);gate=mounted.gate;
- try{await mounted.screen.findByText("Login");mounted.transport.mockImplementationOnce(async(_u,init)=>({...response(`<view xmlns="${HV}" xmlns:app="${APP}" id="${rootId}"><app:realtime-page request-id="${requestId(init!)}" page="1"/><behavior trigger="load" action="store-biometric-token" ${attributes}/><text>Settings result</text></view>`),status}));
+ try{await mounted.screen.findByText("Login");mounted.transport.mockImplementationOnce(async(_u,init)=>({...response(`<view xmlns="${HV}" xmlns:app="${APP}" id="${rootId}"><app:realtime-page request-id="${requestId(init!)}" page="1"/>${gap}<behavior trigger="load" action="store-biometric-token" ${attributes}/>${gap}<text>Settings result</text></view>`),status}));
   await act(async()=>fireEvent.press(mounted.screen.getByText("Save settings")));await mounted.screen.findByText("Settings result");await waitFor(()=>expect(observed).toEqual([accepted]));expect(forged).toEqual([false]);expect(gate.snapshot().lastTerminal).toMatchObject({outcome:"ack",reason:"remote-layout"});
   act(()=>gate.setRetainedPaused(gate.snapshot().epoch,true));expect(gate.isSettingsClear(captured!,authority!)).toBe(false);
   act(()=>gate.resetEpoch());expect(gate.isSettingsClear(captured!,authority!)).toBe(false);

@@ -182,3 +182,34 @@ it("never rebinds a previously published receiver to a newly authenticated accou
     expect(f.http.mock.calls.filter(([, init]) => init?.method?.toUpperCase() === "POST")).toHaveLength(1);
   } finally { ui.unmount(); f.session.dispose(); }
 });
+
+it("does not create a public recovery presentation while the app is paused", async () => {
+  const f = fixture();
+  try {
+    await f.session.start();
+    f.session.pause();
+    await expect(f.session.beginRecovery()).resolves.toMatchObject({ kind: "busy" });
+    expect(f.session.snapshot().recovery).toBeNull();
+    expect(f.session.captureResources()).toBeNull();
+    await f.session.foreground();
+    const recovery = await f.session.beginRecovery();
+    expect(recovery.kind).toBe("recovery");
+    expect(f.session.snapshot().recovery?.entrypointUrl).toBe("https://app.test/hv/recovery/");
+    expect(f.session.captureResources()).toBeNull();
+  } finally { f.session.dispose(); }
+});
+
+it("revokes a captured recovery presentation on disposal without publishing resources", async () => {
+  const f = fixture();
+  await f.session.start();
+  f.session.supervisor.invalidate();
+  const result = await f.session.beginRecovery();
+  expect(result.kind).toBe("recovery");
+  const captured = f.session.snapshot().recovery!;
+  expect(captured.handle.isAlive()).toBe(true);
+  f.session.dispose();
+  f.session.dispose();
+  expect(captured.handle.isAlive()).toBe(false);
+  expect(f.session.captureResources()).toBeNull();
+  expect(f.receivers.filter(Boolean)).toHaveLength(0);
+});

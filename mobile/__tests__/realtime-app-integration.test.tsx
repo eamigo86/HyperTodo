@@ -218,6 +218,15 @@ it("confirms before initial HTTP and marks startup ready only from the real focu
     ui.unmount();
   }
 });
+it("uses the built-in date formatter when the host supplies no formatter", async () => {
+  const f = fixture();
+  const ui = render(<NavigationContainer><Stack.Navigator screenOptions={{ animationEnabled: false }}><Stack.Screen name="app">{() => <AppSessionSurface session={f.session} hyperviewProps={{}} />}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+  try {
+    await ui.findByText("Login");
+    expect(f.session.snapshot().session.rootReady).toBe(true);
+    expect(f.http.mock.calls[0][0]).toBe(ORIGIN + "/hv/session-state/");
+  } finally { ui.unmount(); f.session.dispose(); }
+});
 it("submits actual password FormData once, awaits storage and resets the whole Root for B", async () => {
   const f = fixture(),
     ui = mount(f.session);
@@ -489,6 +498,40 @@ it.each(['accept','logout','refused'] as const)('defers real Settings credential
   expect(posts).toHaveLength(1);expect(new URLSearchParams(posts[0][1]?.body as string).get('csrfmiddlewaretoken')).toBe('own-csrf');
   expect(f.save).not.toHaveBeenCalled();
  }finally{dialog.mockRestore();ui.unmount();}
+});
+
+it.each(["keep", "dismiss", "dialog-error"] as const)("retains the newer settings draft when discard confirmation ends with %s", async outcome => {
+  const f = fixture(); f.setBinding(A, true);
+  let release!: (result: Response) => void, postId = "";
+  const pending = new Promise<Response>(resolve => { release = resolve; });
+  f.setOverride(async (url, init) => {
+    const id = new Headers(init.headers).get("X-HyperTodo-Request-ID")!;
+    if (url.endsWith("/settings/") && init.method === "POST") { postId = id; return pending; }
+    if (url === ENTRY) return raw(doc(id, true).replace('mode="notice"', 'mode="form"').replace('<text>Account B</text>', '<view id="settings-form-panel"><form><text-field name="display_name" placeholder="Display name" value="initial"/><view href="/hv/settings/" verb="post" action="replace" target="settings-form-panel"><text>Save draft</text></view></form></view>'), A);
+    return undefined;
+  });
+  const dialog = jest.spyOn(Alert, "alert").mockImplementation(() => { if (outcome === "dialog-error") throw new Error("native dialog unavailable"); });
+  const ui = mount(f.session);
+  try {
+    await ui.findByPlaceholderText("Display name");
+    fireEvent.changeText(ui.getByPlaceholderText("Display name"), "submitted");
+    fireEvent.press(ui.getByText("Save draft"));
+    await waitFor(() => expect(postId).not.toBe(""));
+    fireEvent.changeText(ui.getByPlaceholderText("Display name"), "newer local draft");
+    await act(async () => release(raw(`<view xmlns="${HV}" xmlns:app="${NS}" id="settings-form-panel"><app:realtime-page request-id="${postId}" page="1"/><text>Server draft</text></view>`, A)));
+    await ui.findByText("Your newer edits are still here. Discard them to show the server response.");
+    fireEvent.press(ui.getByRole("button", { name: "Update" }));
+    expect(dialog).toHaveBeenCalledTimes(1);
+    if (outcome !== "dialog-error") await act(async () => {
+      const [, , buttons, options] = dialog.mock.calls[0];
+      if (outcome === "keep") buttons!.find(button => button.style === "cancel")!.onPress!();
+      else options!.onDismiss!();
+    });
+    expect(ui.getByPlaceholderText("Display name").props.value).toBe("newer local draft");
+    expect(ui.queryByText("Server draft")).toBeNull();
+    expect(f.http.mock.calls.filter(([url, init]) => String(url).endsWith("/settings/") && init?.method === "POST")).toHaveLength(1);
+    expect(f.clear).not.toHaveBeenCalled();
+  } finally { dialog.mockRestore(); ui.unmount(); f.session.dispose(); }
 });
 it("retains a successful B response in background and publishes only after confirmations and awaited storage", async () => {
   const f = fixture();
