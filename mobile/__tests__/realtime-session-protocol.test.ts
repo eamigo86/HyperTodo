@@ -96,3 +96,23 @@ it("reads a real zone from the runtime when Intl is not mocked",()=>{
  const zone=clientTimeZone();
  expect(zone===null||/^[A-Za-z][A-Za-z0-9_+\-/]{0,63}$/.test(zone)).toBe(true);
 });
+
+it('rejects unpaired UTF-16 surrogates instead of trusting code-unit length',()=>{
+ expect(()=>utf8Bytes('\ud800A')).toThrow('invalid-unicode');
+ expect(()=>utf8Bytes('\udc00')).toThrow('invalid-unicode');
+ expect(utf8Bytes('\ud83d\ude00')).toBe(4);
+});
+
+it('rejects JSON observations that are not a bounded object, even with a matching header',()=>{
+ const headers=new Headers({[SESSION_HEADERS.binding]:A});
+ for(const body of ['null','[]','true','"private"'])expect(()=>parseObservation(body,headers)).toThrow('invalid-observation');
+});
+
+it('rejects unexpected text, namespaces and credential effects in auth transitions',()=>{
+ const text=login.replace(/<\/view>\s*$/,'private text</view>');
+ const wrongNamespace=login.replace('xmlns="https://hyperview.org/hyperview"','xmlns="https://other.test"');
+ const extraLogoutEffect=logout.replace(/<\/view>\s*$/,'<behavior trigger="load" action="store-biometric-token" token="" once="true" immediate="true"/></view>');
+ expect(()=>parseAuthBody('password',200,'password-ok',text)).toThrow('invalid-auth-transition');
+ expect(()=>parseAuthBody('password',200,'password-ok',wrongNamespace)).toThrow('invalid-auth-root');
+ expect(()=>parseAuthBody('logout',200,'logout-ok',extraLogoutEffect)).toThrow('invalid-auth-transition');
+});

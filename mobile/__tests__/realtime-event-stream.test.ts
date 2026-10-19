@@ -173,3 +173,77 @@ it('falls back to v1 when an old server does not confirm the feature',async()=>{
   expect(current.receive).toHaveBeenCalledTimes(1);expect(f.first.cancel).toHaveBeenCalledTimes(1);
   expect(current.onAuthRequired).not.toHaveBeenCalled();f.client.dispose();
 });
+
+it.each([
+  'ftp://app.test',
+  'https://user:secret@app.test',
+  'https://app.test/hv/',
+  'https://app.test/?draft=1',
+  'https://app.test/#fragment',
+])('rejects an unsafe stream origin %s before any request', originUrl => {
+  const fetch = jest.fn();
+  expect(() => createEventStream({origin:originUrl,fetch})).toThrow('unsupported-stream-origin');
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it('rejects malformed owner identity and callbacks without replacing a valid connection', async () => {
+  const f=fixture(), current=owner();f.client.setOwner(current);await tick();
+  const signal=f.fetch.mock.calls[0][1].signal;
+  for(const invalid of [
+    {...owner(B),generation:-1},
+    {...owner(B),binding:'not-a-binding'},
+    {...owner(B),receive:undefined},
+  ]) expect(() => f.client.setOwner(invalid as unknown as StreamOwner)).toThrow('invalid-stream-owner');
+  expect(f.fetch).toHaveBeenCalledTimes(1);
+  expect(signal?.aborted).toBe(false);
+  f.first.push(wire('invalidate',{version:1,resources:['tasks']}));await tick();
+  expect(current.receive).toHaveBeenCalledWith(['tasks'],'invalidate');
+  f.client.dispose();
+});
+
+it('contains a throwing owner check and refuses to start an unauthorised stream', async () => {
+  const f=fixture(), current=owner();current.isCurrent.mockImplementation(() => {throw new Error('owner retired');});
+  f.client.setOwner(current);await tick();
+  expect(f.fetch).not.toHaveBeenCalled();expect(f.pending()).toBe(0);
+  f.client.dispose();
+});
+
+it('drops later events in one chunk when the first delivery retires the owner', async () => {
+  const f=fixture(), current=owner();
+  current.receive.mockImplementation(() => {current.isCurrent.mockReturnValue(false);return true;});
+  f.client.setOwner(current);await tick();
+  f.first.push(wire('invalidate',{version:1,resources:['tasks']})+wire('invalidate',{version:1,resources:['categories']}));await tick();
+  expect(current.receive.mock.calls).toEqual([[['tasks'],'invalidate']]);
+  expect(f.first.cancel).toHaveBeenCalledTimes(1);expect(f.pending()).toBe(0);
+  f.client.dispose();
+});
+
+it('does not count an empty network chunk as activity or extend the watchdog', async () => {
+  const f=fixture(), current=owner();f.client.setOwner(current);await tick();
+  await f.advance(30000);f.first.push('');await tick();
+  await f.advance(15000);
+  expect(f.fetch.mock.calls[0][1].signal?.aborted).toBe(true);
+  expect(current.receive).not.toHaveBeenCalled();
+  f.client.dispose();
+});
+
+it('uses bounded retry timing when a clock returns non-finite jitter', async () => {
+  const f=fixture(), current=owner();f.clock.random=()=>Number.NaN;
+  f.fetch.mockRejectedValue(new Error('network unavailable'));
+  f.client.setOwner(current);await tick();
+  await f.advance(999);expect(f.fetch).toHaveBeenCalledTimes(1);
+  await f.advance(1);expect(f.fetch).toHaveBeenCalledTimes(2);
+  f.client.setOwner(null);await f.advance(30000);
+  expect(f.fetch).toHaveBeenCalledTimes(2);expect(f.pending()).toBe(0);
+  f.client.dispose();
+});
+
+it('accepts negotiated changes without an optional seed listener', async () => {
+  const f=fixture(), current=owner();
+  f.first.response.headers.set('X-HyperTodo-Realtime-Features','changes-v2');
+  f.first.response.headers.set('X-HyperTodo-Mutation-Seed','a'.repeat(32));
+  f.client.setOwner(current);await tick();
+  f.first.push(wire('invalidate',{version:2,resources:['tasks'],mutation_id:null,entities:null}));await tick();
+  expect(current.receive).toHaveBeenCalledWith(['tasks'],'invalidate',{mutationId:null,entities:null});
+  f.client.dispose();
+});

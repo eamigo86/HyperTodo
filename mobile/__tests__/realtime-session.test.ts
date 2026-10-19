@@ -394,3 +394,97 @@ it.each([["a 401",A,401],["a different binding",B,200]] as const)("revokes the o
  await expect(supervisor.request("/hv/tasks/")).rejects.toThrow("untrusted-response");
  expect(supervisor.snapshot()).toMatchObject({availability:"uncertain",reason:"identity-mismatch",identity:null});expect(identity).toHaveBeenLastCalledWith(null);
 });
+
+it("rejects unsupported origins and non-string HXML bodies before transport",async()=>{
+ const f=fixture();
+ expect(()=>createSessionSupervisor({
+  origin:"ftp://app.test",transport:f.transport,
+  storage:{enqueue:async job=>job({save:async()=>{},clear:async()=>{}})},
+  stopStream:()=>{},onIdentity:()=>{},onTheme:()=>{},
+ })).toThrow("unsupported-origin");
+ await f.supervisor.bootstrap();
+ await expect(f.supervisor.request("/hv/tasks/",{method:"POST",body:new FormData()})).rejects.toThrow("unsupported-request-body");
+ expect(f.transport).toHaveBeenCalledTimes(1);
+ expect(f.supervisor.snapshot()).toMatchObject({availability:"foreground",identity:{binding:A}});
+});
+
+it("keeps auth paths explicit and leaves the current identity untouched on an unsupported action",async()=>{
+ const f=fixture();
+ await expect(f.supervisor.authenticate("/hv/login/",{method:"POST"})).resolves.toMatchObject({kind:"stale"});
+ await f.supervisor.bootstrap();
+ await expect(f.supervisor.authenticate("/hv/tasks/",{method:"POST"})).rejects.toThrow("auth-unavailable");
+ await expect(f.supervisor.authenticate("/hv/login/",{method:"GET"})).rejects.toThrow("auth-unavailable");
+ expect(f.transport).toHaveBeenCalledTimes(1);
+ expect(f.supervisor.snapshot()).toMatchObject({availability:"foreground",identity:{binding:A}});
+});
+
+it("retries malformed and unavailable observations before publishing one confirmed identity",async()=>{
+ const f=fixture(), unavailable=response("busy",A,503), malformed=response("not-json",A);
+ f.transport.mockResolvedValueOnce(unavailable).mockResolvedValueOnce(malformed);
+ await expect(f.supervisor.bootstrap()).resolves.toBe("ready");
+ expect(f.transport.mock.calls.filter(([url])=>url.endsWith("/session-state/"))).toHaveLength(3);
+ expect(f.clock.sleep).toHaveBeenNthCalledWith(1,1000);
+ expect(f.clock.sleep).toHaveBeenNthCalledWith(2,2000);
+ expect(unavailable.text).not.toHaveBeenCalled();
+ expect(f.identity).toHaveBeenCalledTimes(1);
+ expect(f.supervisor.snapshot()).toMatchObject({identity:{binding:A,generation:1},availability:"foreground"});
+});
+
+it("never publishes an observation from a redirected response",async()=>{
+ const f=fixture(), redirected={...observation(),redirected:true} as Response;
+ f.transport.mockResolvedValue(redirected);
+ await expect(f.supervisor.bootstrap()).resolves.toBe("uncertain");
+ expect(f.transport).toHaveBeenCalledTimes(3);
+ expect(redirected.text).not.toHaveBeenCalled();
+ expect(f.identity).not.toHaveBeenCalled();
+ expect(f.supervisor.snapshot()).toMatchObject({identity:null,availability:"uncertain"});
+});
+
+it("contains adapter callback failures without granting request authority",async()=>{
+ const f=fixture();
+ f.stop.mockImplementation(()=>{throw new Error("stream adapter failed");});
+ f.identity.mockImplementationOnce(()=>{throw new Error("UI adapter failed");});
+ await f.supervisor.bootstrap();
+ expect(f.supervisor.snapshot()).toMatchObject({identity:{binding:A},availability:"uncertain",reason:"invalid-response"});
+ await expect(f.supervisor.request("/hv/tasks/")).rejects.toThrow("session-unavailable");
+ expect(f.transport).toHaveBeenCalledTimes(1);
+ f.supervisor.pause();
+ expect(f.supervisor.snapshot().availability).toBe("paused");
+});
+
+it("contains a failing optional mutation-seed listener after confirmation",async()=>{
+ const seed=jest.fn(()=>{throw new Error("UI observer failed");});
+ const f=fixture(seed),observed=observation();
+ observed.headers.set("X-HyperTodo-Realtime-Features","changes-v2");
+ observed.headers.set("X-HyperTodo-Mutation-Seed","a".repeat(32));
+ f.transport.mockResolvedValueOnce(observed);
+ await expect(f.supervisor.bootstrap()).resolves.toBe("ready");
+ expect(seed).toHaveBeenCalledTimes(1);
+ await expect(f.supervisor.request("/hv/tasks/")).resolves.toBeDefined();
+ expect(f.supervisor.snapshot()).toMatchObject({availability:"foreground",identity:{binding:A}});
+});
+
+it("unsubscribes a session listener before later pause and invalidation notifications",async()=>{
+ const f=fixture(),listener=jest.fn(),unsubscribe=f.supervisor.subscribe(listener);
+ await f.supervisor.bootstrap();
+ expect(listener).toHaveBeenCalled();
+ const before=listener.mock.calls.length;
+ unsubscribe();f.supervisor.pause();f.supervisor.invalidate();
+ expect(listener).toHaveBeenCalledTimes(before);
+ expect(f.supervisor.snapshot()).toMatchObject({identity:null,availability:"paused",reason:"revoked"});
+});
+
+it("shields a caller-aborted authentication until its real POST settles, without storing credentials",async()=>{
+ const f=fixture(),pending=deferred<Response>(),caller=new AbortController();
+ await f.supervisor.bootstrap();
+ f.transport.mockImplementationOnce(()=>pending.promise);
+ const attempt=f.supervisor.authenticate("/hv/login/",{method:"POST",signal:caller.signal});
+ await tick();expect(f.transport.mock.calls.filter(([url])=>url.endsWith("/login/"))).toHaveLength(1);
+ caller.abort();
+ expect(f.supervisor.snapshot()).toMatchObject({availability:"uncertain",reason:"network-uncertain"});
+ await expect(f.supervisor.authenticate("/hv/login/",{method:"POST"})).resolves.toMatchObject({kind:"busy"});
+ pending.resolve(response(login,B,200,"password-ok"));
+ await expect(attempt).resolves.toMatchObject({kind:"uncertain"});
+ expect(f.store.save).not.toHaveBeenCalled();expect(f.store.clear).not.toHaveBeenCalled();
+ expect(f.transport.mock.calls.filter(([url])=>url.endsWith("/login/"))).toHaveLength(1);
+});
