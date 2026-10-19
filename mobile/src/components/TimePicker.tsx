@@ -37,8 +37,8 @@ function TimePickerComponent({ element, onUpdate, options, stylesheets }: HvComp
   const field = timeField(element);
   const value = field?.getAttribute("value") ?? "";
   const disabled = element.getAttribute("disabled") === "true" || element.getAttribute("editable") === "false";
-  const label = element.getAttribute("accessibilityLabel") ?? "Time";
   // The DOM answers "" for an absent attribute, so these fall back with ||, not ??.
+  const label = element.getAttribute("accessibilityLabel") || "Time";
   const clearLabel = element.getAttribute("clear-label") || "Clear";
   const clearA11yLabel = element.getAttribute("clear-a11y-label") || clearLabel;
   const textStyle = createStyleProp(element, stylesheets, { ...options, styleAttr: "field-text-style" });
@@ -83,7 +83,7 @@ function TimePickerComponent({ element, onUpdate, options, stylesheets }: HvComp
           ...createStyleProp(element, stylesheets, { ...options, styleAttr: "field-style", pressed, focused: open }),
         ]}
       >
-        <Text style={[...textStyle, !value && { color: element.getAttribute("placeholderTextColor") ?? theme.ink_muted_alt }]}>
+        <Text style={[...textStyle, !value && { color: element.getAttribute("placeholderTextColor") || theme.ink_muted_alt }]}>
           {value || element.getAttribute("placeholder") || ""}
         </Text>
       </Pressable>
@@ -98,10 +98,10 @@ function TimePickerComponent({ element, onUpdate, options, stylesheets }: HvComp
             <View style={[styles.sheet, { backgroundColor: theme.surface }, ...modalStyle]}>
               <View style={styles.actions}>
                 <Pressable accessibilityRole="button" onPress={cancel} style={styles.action}>
-                  <Text style={[...actionStyle, { color: theme.brand_ink }]}>{element.getAttribute("cancel-label") ?? "Cancel"}</Text>
+                  <Text style={[...actionStyle, { color: theme.brand_ink }]}>{element.getAttribute("cancel-label") || "Cancel"}</Text>
                 </Pressable>
                 <Pressable accessibilityRole="button" onPress={confirm} style={styles.action}>
-                  <Text style={[...actionStyle, { color: theme.brand_ink }]}>{element.getAttribute("done-label") ?? "Done"}</Text>
+                  <Text style={[...actionStyle, { color: theme.brand_ink }]}>{element.getAttribute("done-label") || "Done"}</Text>
                 </Pressable>
               </View>
               <DateTimePicker display="spinner" locale="en-GB" mode="time" onChange={onNativeChange} themeVariant={themeName} timeZoneName="UTC" value={pending} />

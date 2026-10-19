@@ -1,10 +1,11 @@
 import { DOMParser } from "@instawork/xmldom";
 import React from "react";
 import { fireEvent, render } from "@testing-library/react-native";
-import { Platform } from "react-native";
+import { Platform, StyleSheet } from "react-native";
 import { Registry } from "hyperview/src/services/components";
 import { captureDraft, trackDraft } from "../src/realtime/drafts";
 import TimePicker from "../src/components/TimePicker";
+import { THEME_TOKENS } from "../src/theme";
 
 jest.mock("react-native-webview", () => ({ WebView: () => null }));
 jest.mock("@react-native-community/datetimepicker", () => {
@@ -138,6 +139,33 @@ describe("native task time selection", () => {
     const screen = render(<TimePicker element={data.element} onUpdate={data.onUpdate} options={{}} stylesheets={stylesheets as any} />);
     expect(screen.getByText("Clear")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Clear" }).props.accessibilityLabel).toBe("Clear");
+  });
+
+  describe("when the markup omits its optional attributes", () => {
+    // The DOM answers "" for an absent attribute, so a ?? fallback would never apply.
+    const bare = (...names: string[]) => {
+      platform("ios");
+      const data = fixture();
+      for (const name of names) data.element.removeAttribute(name);
+      return render(<TimePicker element={data.element} onUpdate={data.onUpdate} options={{}} stylesheets={stylesheets as any} />);
+    };
+
+    it("names the field Time", () => {
+      const screen = bare("accessibilityLabel");
+      expect(screen.getByRole("button", { name: "Time" }).props.accessibilityLabel).toBe("Time");
+    });
+
+    it("paints the placeholder with the theme color", () => {
+      const screen = bare("placeholderTextColor");
+      expect(StyleSheet.flatten(screen.getByText("Select due time").props.style).color).toBe(THEME_TOKENS.light.ink_muted_alt);
+    });
+
+    it("labels the iOS sheet actions Cancel and Done", () => {
+      const screen = bare("cancel-label", "done-label");
+      fireEvent.press(screen.getByRole("button", { name: "Due time" }));
+      expect(screen.getByText("Cancel")).toBeTruthy();
+      expect(screen.getByText("Done")).toBeTruthy();
+    });
   });
 
   it("commits Android set and ignores native dismissal", () => {
