@@ -213,3 +213,35 @@ it("revokes a captured recovery presentation on disposal without publishing reso
   expect(f.session.captureResources()).toBeNull();
   expect(f.receivers.filter(Boolean)).toHaveLength(0);
 });
+
+it("routes URL and Request inputs through the confirmed session fetch port", async () => {
+  const f = fixture();
+  try {
+    await f.session.start();
+    for (const input of [new URL("/hv/tasks/", ENTRY), new Request("https://app.test/hv/tasks/")]) {
+      const result = await f.session.fetch(input);
+      expect(result.status).toBe(200);
+      expect(await result.text()).toContain("Private A");
+    }
+    expect(f.http.mock.calls.filter(([url]) => String(url).endsWith("/hv/tasks/"))).toHaveLength(2);
+    expect(f.session.snapshot().session).toMatchObject({availability:"foreground",identity:{binding:A}});
+  } finally { f.session.dispose(); }
+});
+
+it("routes URL and Request inputs only through the active public recovery port", async () => {
+  const f = fixture();
+  try {
+    await f.session.start();
+    f.session.supervisor.invalidate();
+    const result = await f.session.beginRecovery();
+    expect(result.kind).toBe("recovery");
+    const publicFetch = f.session.snapshot().recovery!.fetch;
+    for (const input of [new URL("/hv/recovery/?screen=login", ENTRY), new Request("https://app.test/hv/recovery/?screen=login")]) {
+      const document = await publicFetch(input);
+      expect(document.status).toBe(200);
+      expect(await document.text()).toContain("Public login");
+    }
+    expect(f.http.mock.calls.filter(([url]) => String(url).includes("/hv/recovery/?screen=login"))).toHaveLength(2);
+    expect(f.session.captureResources()).toBeNull();
+  } finally { f.session.dispose(); }
+});

@@ -90,6 +90,53 @@ async function recover(f: ReturnType<typeof setup>): Promise<RecoveryHandle> {
   if (result.kind !== 'recovery') throw new Error('Expected recovery');
   return result.handle;
 }
+
+it('rejects omitted and implicit GET methods on the public recovery authentication capability', async () => {
+  const f = setup(), handle = await recover(f);
+  const before = f.transport.mock.calls.length;
+  await expect(handle.authenticate('/hv/login/')).resolves.toMatchObject({ kind: 'stale' });
+  await expect(handle.authenticate('/hv/login/', {})).resolves.toMatchObject({ kind: 'stale' });
+  expect(f.transport).toHaveBeenCalledTimes(before);
+  expect(handle.isCurrent()).toBe(true);
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it('does not restore neutral recovery after its paused confirmation owner is revoked', async () => {
+  const f = setup(), handle = await recover(f), waiting = deferred<Response>();
+  f.supervisor.pause();
+  f.transport.mockImplementationOnce(() => waiting.promise);
+  const resumed = f.supervisor.foreground();
+  await Promise.resolve();
+  handle.revoke();
+  waiting.resolve(response(JSON.stringify({ version: 1, authenticated: true, binding: B }), B));
+  await expect(resumed).resolves.toMatchObject({ kind: 'stale' });
+  expect(handle.isAlive()).toBe(false);
+  expect(f.supervisor.snapshot()).toMatchObject({ identity: null, reason: 'revoked' });
+});
+
+it('revokes neutral recovery when every foreground confirmation fails', async () => {
+  const f = setup(), handle = await recover(f);
+  f.supervisor.pause();
+  f.transport.mockRejectedValue(new Error('confirmation offline'));
+  await expect(f.supervisor.foreground()).resolves.toMatchObject({ kind: 'uncertain' });
+  expect(handle.isAlive()).toBe(false);
+  expect(f.supervisor.snapshot()).toMatchObject({ identity: null, reason: 'network-uncertain' });
+});
+
+it('keeps neutral recovery paused if the app backgrounds during foreground confirmation', async () => {
+  const f = setup(), handle = await recover(f), waiting = deferred<Response>();
+  f.supervisor.pause();
+  f.transport.mockImplementationOnce(() => waiting.promise);
+  const resumed = f.supervisor.foreground();
+  await Promise.resolve();
+  f.supervisor.pause();
+  waiting.resolve(response(JSON.stringify({ version: 1, authenticated: true, binding: B }), B));
+  await expect(resumed).resolves.toMatchObject({ kind: 'held' });
+  expect(handle.isAlive()).toBe(true);
+  expect(handle.isCurrent()).toBe(false);
+  await expect(f.supervisor.foreground()).resolves.toMatchObject({ kind: 'held' });
+  expect(handle.isCurrent()).toBe(true);
+});
 it('mints only explicit neutral capability without adopting observed B or publishing its metadata', async () => {
   const f = setup(),
     handle = await recover(f);

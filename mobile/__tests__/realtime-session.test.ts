@@ -27,6 +27,258 @@ function fixture(onMutationSeed?: (seed:string,identity:import('../src/realtime/
  return{supervisor,transport,store,identity,theme,stop,clock,timers,setBinding:(next:string)=>{binding=next;},setAuth:(code:number,tag:string,body:string)=>{status=code;outcome=tag;authBody=body;}};
 }
 
+it("rejects an authentication call with no method before sending it", async () => {
+ const f=fixture();
+ await f.supervisor.bootstrap();
+ await expect(f.supervisor.authenticate("/hv/login/", {})).rejects.toThrow("auth-unavailable");
+ expect(f.transport).toHaveBeenCalledTimes(1);
+ expect(f.supervisor.snapshot()).toMatchObject({availability:"foreground",identity:{binding:A}});
+});
+
+it("binds native Response methods to the checked ordinary response", async () => {
+ const f=fixture();
+ await f.supervisor.bootstrap();
+ const original=new Response("<view id=\"cloned\"/>", {headers:{[H.binding]:A}});
+ Object.defineProperty(original,"url",{value:ORIGIN+"/hv/tasks/"});
+ f.transport.mockResolvedValueOnce(original);
+ const checked=await f.supervisor.request("/hv/tasks/");
+ const clone=checked.clone();
+ expect(await clone.text()).toBe('<view id="cloned"/>');
+ expect(await checked.text()).toBe('<view id="cloned"/>');
+ expect(f.supervisor.snapshot()).toMatchObject({availability:"foreground",identity:{binding:A}});
+});
+
+it("rejects an ordinary response body if its owner is revoked while reading", async () => {
+ const f=fixture(),body=deferred<string>();
+ await f.supervisor.bootstrap();
+ const ordinary=response("not exposed");
+ ordinary.text=jest.fn(()=>body.promise);
+ f.transport.mockResolvedValueOnce(ordinary);
+ const checked=await f.supervisor.request("/hv/tasks/");
+ const reading=checked.text();
+ await tick();
+ expect(ordinary.text).toHaveBeenCalledTimes(1);
+ f.supervisor.invalidate();
+ body.resolve("private body");
+ await expect(reading).rejects.toThrow("stale-owner");
+ expect(f.supervisor.snapshot()).toMatchObject({identity:null,reason:"revoked"});
+});
+
+it("shares one foreground confirmation across concurrent callers", async () => {
+ const f=fixture(),pending=deferred<Response>();
+ await f.supervisor.bootstrap();
+ f.supervisor.pause();
+ f.transport.mockImplementationOnce(()=>pending.promise);
+ const first=f.supervisor.foreground(),second=f.supervisor.foreground();
+ await tick();
+ expect(f.transport).toHaveBeenCalledTimes(2);
+ pending.resolve(observation());
+ await expect(Promise.all([first,second])).resolves.toEqual([{kind:"held"},{kind:"held"}]);
+ expect(f.supervisor.snapshot()).toMatchObject({availability:"foreground",identity:{binding:A}});
+});
+
+it("reports initial foreground bootstrap failure without publishing identity", async () => {
+ const f=fixture();
+ f.transport.mockRejectedValue(new Error("offline"));
+ await expect(f.supervisor.foreground()).resolves.toMatchObject({kind:"uncertain"});
+ expect(f.transport).toHaveBeenCalledTimes(3);
+ expect(f.supervisor.snapshot()).toMatchObject({identity:null,availability:"uncertain"});
+ expect(f.identity).not.toHaveBeenCalled();
+});
+
+it("keeps a pre-aborted authentication shielded without sending the POST", async () => {
+ const f=fixture(),caller=new AbortController();
+ await f.supervisor.bootstrap();
+ caller.abort();
+ await expect(f.supervisor.authenticate("/hv/login/",{method:"POST",signal:caller.signal})).resolves.toMatchObject({kind:"uncertain"});
+ expect(f.transport.mock.calls.filter(([url])=>url.endsWith("/login/"))).toHaveLength(0);
+ expect(f.supervisor.snapshot()).toMatchObject({availability:"uncertain",reason:"network-uncertain",identity:{binding:A}});
+ expect(f.store.save).not.toHaveBeenCalled();
+});
+
+it("returns busy from foreground while the submitted authentication is unresolved", async () => {
+ const f=fixture(),pending=deferred<Response>();
+ await f.supervisor.bootstrap();
+ f.transport.mockImplementationOnce(()=>pending.promise);
+ const attempt=f.supervisor.authenticate("/hv/login/",{method:"POST"});
+ await tick();
+ await expect(f.supervisor.foreground()).resolves.toMatchObject({kind:"busy"});
+ expect(f.transport.mock.calls.filter(([url])=>url.endsWith("/login/"))).toHaveLength(1);
+ pending.resolve(response(login,B,200,"password-ok"));
+ await expect(attempt).resolves.toMatchObject({kind:"uncertain"});
+ expect(f.store.save).toHaveBeenCalledTimes(1);
+});
+
+it("returns stale when a submitted authentication is revoked before its response arrives", async () => {
+ const f=fixture(),pending=deferred<Response>();
+ await f.supervisor.bootstrap();
+ f.transport.mockImplementationOnce(()=>pending.promise);
+ const attempt=f.supervisor.authenticate("/hv/login/",{method:"POST"});
+ await tick();
+ f.supervisor.invalidate();
+ pending.resolve(response(login,B,200,"password-ok"));
+ await expect(attempt).resolves.toMatchObject({kind:"stale"});
+ expect(f.store.save).not.toHaveBeenCalled();
+ expect(f.supervisor.snapshot()).toMatchObject({identity:null,reason:"revoked"});
+});
+
+it("stops an initial observation retry when its rejected request belongs to a revoked generation", async () => {
+ const f=fixture(),pending=deferred<Response>();
+ f.transport.mockImplementationOnce(()=>pending.promise);
+ const initial=f.supervisor.bootstrap();
+ await tick();
+ f.supervisor.invalidate();
+ pending.reject(new Error("offline"));
+ await expect(initial).resolves.toBe("stale");
+ expect(f.transport).toHaveBeenCalledTimes(1);
+ expect(f.supervisor.snapshot()).toMatchObject({identity:null,reason:"revoked"});
+});
+
+it("does not reconcile a paused owner after its confirmation is revoked", async () => {
+ const f=fixture(),pending=deferred<Response>();
+ await f.supervisor.bootstrap();
+ f.supervisor.pause();
+ f.transport.mockImplementationOnce(()=>pending.promise);
+ const resumed=f.supervisor.foreground();
+ await tick();
+ f.supervisor.invalidate();
+ pending.resolve(observation());
+ await expect(resumed).resolves.toMatchObject({kind:"stale"});
+ expect(f.supervisor.snapshot()).toMatchObject({identity:null,reason:"revoked"});
+});
+
+it("does not reconcile a rejected authentication transport after revocation", async () => {
+ const f=fixture(),pending=deferred<Response>();
+ await f.supervisor.bootstrap();
+ f.transport.mockImplementationOnce(()=>pending.promise);
+ const attempt=f.supervisor.authenticate("/hv/login/",{method:"POST"});
+ await tick();
+ f.supervisor.invalidate();
+ pending.reject(new Error("connection closed"));
+ await expect(attempt).resolves.toMatchObject({kind:"stale"});
+ expect(f.store.save).not.toHaveBeenCalled();
+ expect(f.transport.mock.calls.filter(([url])=>url.endsWith("/session-state/"))).toHaveLength(1);
+});
+
+it("does not confirm an accepted transition after its generation is revoked", async () => {
+ const f=fixture(),confirmation=deferred<Response>();
+ await f.supervisor.bootstrap();
+ f.transport.mockResolvedValueOnce(response(login,B,200,"password-ok"));
+ f.transport.mockImplementationOnce(()=>confirmation.promise);
+ const attempt=f.supervisor.authenticate("/hv/login/",{method:"POST"});
+ await tick();
+ expect(f.transport).toHaveBeenCalledTimes(3);
+ expect(f.store.save).toHaveBeenCalledTimes(1);
+ f.supervisor.invalidate();
+ confirmation.resolve(observation(B));
+ await expect(attempt).resolves.toMatchObject({kind:"uncertain"});
+ expect(f.supervisor.snapshot()).toMatchObject({identity:null,reason:"revoked"});
+});
+
+it("keeps a successful POST uncertain if all final owner confirmations fail", async () => {
+ const f=fixture();
+ await f.supervisor.bootstrap();
+ f.transport.mockResolvedValueOnce(response(login,B,200,"password-ok"));
+ for(let i=0;i<3;i++)f.transport.mockRejectedValueOnce(new Error("observation offline"));
+ await expect(f.supervisor.authenticate("/hv/login/",{method:"POST"})).resolves.toMatchObject({kind:"uncertain"});
+ expect(f.transport.mock.calls.filter(([url])=>url.endsWith("/session-state/"))).toHaveLength(4);
+ expect(f.store.save).toHaveBeenCalledTimes(1);
+ expect(f.supervisor.snapshot().identity?.binding).toBe(A);
+});
+
+it("keeps an already confirmed owner shielded if repeated bootstrap cannot re-observe it", async () => {
+ const f=fixture();
+ await f.supervisor.bootstrap();
+ f.transport.mockRejectedValue(new Error("observation offline"));
+ await expect(f.supervisor.bootstrap()).resolves.toBe("uncertain");
+ expect(f.transport).toHaveBeenCalledTimes(4);
+ expect(f.supervisor.snapshot()).toMatchObject({identity:{binding:A},availability:"uncertain",reason:"network-uncertain"});
+});
+
+it("returns ready from repeated bootstrap only after confirming the same live owner", async () => {
+ const f=fixture();
+ await expect(f.supervisor.bootstrap()).resolves.toBe("ready");
+ const identity=f.supervisor.snapshot().identity;
+ await expect(f.supervisor.bootstrap()).resolves.toBe("ready");
+ expect(f.transport.mock.calls.filter(([url])=>url.endsWith("/session-state/"))).toHaveLength(2);
+ expect(f.supervisor.snapshot()).toMatchObject({identity,availability:"foreground",reason:null});
+ expect(f.identity).toHaveBeenCalledTimes(1);
+});
+
+it("requires a new owner confirmation before showing an effectless rejected panel after pause", async () => {
+ const f=fixture(),pending=deferred<Response>(),body=panel();
+ await f.supervisor.bootstrap();
+ f.transport.mockImplementationOnce(()=>pending.promise);
+ const attempt=f.supervisor.authenticate("/hv/login/",{method:"POST"});
+ await tick();
+ f.supervisor.pause();
+ pending.resolve(response(body,A,422,"password-invalid"));
+ await expect(attempt).resolves.toMatchObject({kind:"held"});
+ expect(f.store.save).not.toHaveBeenCalled();
+ expect(f.store.clear).not.toHaveBeenCalled();
+ await expect(f.supervisor.foreground()).resolves.toMatchObject({kind:"panel",status:422,body});
+ expect(f.supervisor.snapshot()).toMatchObject({availability:"foreground",identity:{binding:A}});
+});
+
+it("does not expose a held effectless panel if fresh owner confirmation fails", async () => {
+ const f=fixture(),pending=deferred<Response>(),body=panel();
+ await f.supervisor.bootstrap();
+ f.transport.mockImplementationOnce(()=>pending.promise);
+ const attempt=f.supervisor.authenticate("/hv/login/",{method:"POST"});
+ await tick();
+ f.supervisor.pause();
+ pending.resolve(response(body,A,422,"password-invalid"));
+ await expect(attempt).resolves.toMatchObject({kind:"held"});
+ for(let i=0;i<3;i++)f.transport.mockRejectedValueOnce(new Error("confirmation offline"));
+ await expect(f.supervisor.foreground()).resolves.toMatchObject({kind:"uncertain"});
+ expect(f.supervisor.snapshot()).toMatchObject({availability:"uncertain",identity:{binding:A}});
+ expect(f.store.clear).not.toHaveBeenCalled();
+});
+
+it("does not submit authentication after a prior ordinary request settles under a revoked owner", async () => {
+ const f=fixture(),ordinary=deferred<Response>();
+ await f.supervisor.bootstrap();
+ f.transport.mockImplementationOnce(()=>ordinary.promise);
+ const request=f.supervisor.request("/hv/settings/",{method:"POST",body:"theme=dark"});
+ await tick();
+ const attempt=f.supervisor.authenticate("/hv/login/",{method:"POST"});
+ await tick();
+ expect(f.transport.mock.calls.filter(([url])=>url.endsWith("/login/"))).toHaveLength(0);
+ f.supervisor.invalidate();
+ ordinary.resolve(response("<view/>"));
+ await expect(request).rejects.toThrow("stale-owner");
+ await expect(attempt).resolves.toMatchObject({kind:"stale"});
+ expect(f.transport.mock.calls.filter(([url])=>url.endsWith("/login/"))).toHaveLength(0);
+});
+
+it("does not accept an authentication body after its deadline", async () => {
+ const f=fixture(),body=deferred<string>();
+ await f.supervisor.bootstrap();
+ const raw=response("",B,200,"password-ok");
+ raw.text=jest.fn(()=>body.promise);
+ f.transport.mockResolvedValueOnce(raw);
+ const attempt=f.supervisor.authenticate("/hv/login/",{method:"POST"});
+ await tick();
+ expect(raw.text).toHaveBeenCalledTimes(1);
+ f.timers.find(timer=>timer.active&&timer.ms===30000)!.run();
+ expect(f.supervisor.snapshot()).toMatchObject({availability:"uncertain",reason:"network-uncertain"});
+ body.resolve(login);
+ await expect(attempt).resolves.toMatchObject({kind:"uncertain"});
+ expect(f.store.save).not.toHaveBeenCalled();
+});
+
+it("never applies an old effect receipt to a newly published identity", async () => {
+ const f=fixture();
+ await f.supervisor.bootstrap();
+ const receipt={};
+ await expect(f.supervisor.lease(()=>true).clearCredential(receipt)).resolves.toBe("cleared");
+ await expect(f.supervisor.authenticate("/hv/login/",{method:"POST"})).resolves.toMatchObject({kind:"transition",identity:{binding:B}});
+ const newLease=f.supervisor.lease(()=>true);
+ expect(newLease.isCurrent()).toBe(true);
+ await expect(newLease.clearCredential(receipt)).resolves.toBe("retired");
+ expect(f.store.clear).toHaveBeenCalledTimes(1);
+});
+
 it("bootstraps only the bounded observation and configures same-origin credentialed requests",async()=>{
  const {supervisor,transport,identity}=fixture();await expect(supervisor.bootstrap()).resolves.toBe("ready");
  expect(supervisor.snapshot()).toMatchObject({availability:"foreground",identity:{binding:A,authenticated:true,generation:1},rootReady:false});
