@@ -133,3 +133,38 @@ it('accepts at most32 distinct entities and keeps the existing4KiB JSON bound', 
   expect(events.mock.calls[0][0].change.entities.items).toHaveLength(32);
   expect(()=>createStreamDecoder(jest.fn(),{changesV2:true}).push(bytes(`event: invalidate\ndata: ${JSON.stringify(value)}${' '.repeat(4096)}\n\n`))).toThrow('invalid-stream');
 });
+
+it.each([false, 0, 'not-an-object', []])('rejects malformed entity metadata before reading fields: %p', value => {
+  const decoder=createStreamDecoder(jest.fn(),{changesV2:true});
+  expect(()=>decoder.push(bytes(frame('invalidate',rich(value))))).toThrow('invalid-stream');
+});
+
+it('rejects a frame with data but no event and never emits it',()=>{
+  const events=jest.fn(),decoder=createStreamDecoder(events);
+  expect(()=>decoder.push(bytes('data: {"version":1}\n\n'))).toThrow('invalid-stream');
+  expect(events).not.toHaveBeenCalled();
+});
+
+it('accepts SSE fields without a colon or optional space, but requires their values',()=>{
+  const events=jest.fn(),decoder=createStreamDecoder(events);
+  decoder.push(bytes('event:resync\ndata:{"version":1}\n\n'));
+  expect(events).toHaveBeenCalledWith({type:'resync'});
+  expect(()=>decoder.push(bytes('event\n\n'))).toThrow('invalid-stream');
+});
+
+it('refuses a second push after a completed stream and any non-byte chunk',()=>{
+  const events=jest.fn(),complete=createStreamDecoder(events);
+  complete.push(bytes(frame('resync',{version:1})));
+  complete.end();
+  expect(()=>complete.push(bytes(frame('resync',{version:1})))).toThrow('invalid-stream');
+  expect(events).toHaveBeenCalledTimes(1);
+  expect(()=>createStreamDecoder(jest.fn()).push('not bytes' as never)).toThrow('invalid-stream');
+});
+
+it('accepts a leading CRLF and rejects an oversized CRLF-delimited frame',()=>{
+  const events=jest.fn(),decoder=createStreamDecoder(events);
+  decoder.push(bytes('\r\n'+frame('resync',{version:1}).replaceAll('\n','\r\n')));
+  expect(events).toHaveBeenCalledWith({type:'resync'});
+  const oversized=createStreamDecoder(jest.fn());
+  expect(()=>oversized.push(bytes(':'+ 'x'.repeat(8190)+'\r\n'))).toThrow('invalid-stream');
+});
