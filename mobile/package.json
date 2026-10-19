@@ -19,7 +19,7 @@
     "@react-navigation/bottom-tabs": "6.6.1",
     "@react-navigation/native": "6.1.18",
     "@react-navigation/stack": "6.4.1",
-    "expo": "~57.0.28",
+    "expo": "~57.0.30",
     "expo-build-properties": "~57.0.22",
     "expo-dev-client": "~57.0.20",
     "expo-image-manipulator": "~57.0.21",

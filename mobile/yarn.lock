@@ -655,10 +655,10 @@
   dependencies:
     "@types/hammerjs" "^2.0.36"
 
-"@expo/cli@^57.0.29":
-  version "57.0.29"
-  resolved "https://registry.yarnpkg.com/@expo/cli/-/cli-57.0.29.tgz#4de90b5f9d85c181a702f72aa4875b532c1d7439"
-  integrity sha512-OBmtg+74j6dEEQjKTgRDjQBvLSkKyP2cDTuGIrJTdgG4gZ1HCEBZj18Kyk9UfdYRXgJdixSVAQMCZK6/Q6l2QQ==
+"@expo/cli@^57.0.31":
+  version "57.0.31"
+  resolved "https://registry.npmjs.org/@expo/cli/-/cli-57.0.31.tgz#46090a634ad0e4efb65bec911f111fab67a13280"
+  integrity sha512-NPTMPGQ9i3KzULyP1bzp8hMggoe3QlkfICw388zJuj0UhqfGHEZURkJFuHBksb/ndTjfrCrCBOO0HQz/9QzXIw==
   dependencies:
     "@expo/code-signing-certificates" "^0.0.6"
     "@expo/config" "~57.0.10"
@@ -675,9 +675,9 @@
     "@expo/osascript" "^2.7.1"
     "@expo/package-manager" "^1.13.1"
     "@expo/plist" "^0.8.1"
-    "@expo/prebuild-config" "^57.0.18"
+    "@expo/prebuild-config" "^57.0.19"
     "@expo/require-utils" "^57.0.6"
-    "@expo/router-server" "^57.0.12"
+    "@expo/router-server" "^57.0.13"
     "@expo/schema-utils" "^57.0.2"
     "@expo/spawn-async" "^1.8.0"
     "@expo/ws-tunnel" "^2.0.0"
@@ -951,10 +951,10 @@
     base64-js "^1.5.1"
     xmlbuilder "^15.1.1"
 
-"@expo/prebuild-config@^57.0.18":
-  version "57.0.18"
-  resolved "https://registry.yarnpkg.com/@expo/prebuild-config/-/prebuild-config-57.0.18.tgz#53df03877334d9863899dc2dd9bbea3a50bd22f2"
-  integrity sha512-q/Jijt1H2GT1TlD+C9UOLmErjujjieUs+Rpdo6+L5IBRaW+gXJY0oFqlpyKvOwziQIv4AYL7vZFn6I+OyRgRXQ==
+"@expo/prebuild-config@^57.0.19":
+  version "57.0.19"
+  resolved "https://registry.npmjs.org/@expo/prebuild-config/-/prebuild-config-57.0.19.tgz#307fb2de44e22af5a85e736997c56d16f2f1d747"
+  integrity sha512-trBpySOP8Pv/xtMSb5ASAL5y8h6kbZTinakZ5cUbu0lX5iDpiB3Cg3ANYc3coriH7jpl3cJecG4e0PzUMced8g==
   dependencies:
     "@expo/config" "~57.0.10"
     "@expo/config-plugins" "~57.0.10"
@@ -963,7 +963,7 @@
     "@expo/json-file" "^11.0.1"
     "@react-native/normalize-colors" "0.86.3"
     debug "^4.3.1"
-    expo-modules-autolinking "~57.0.15"
+    expo-modules-autolinking "~57.0.16"
     resolve-from "^5.0.0"
     semver "^7.6.0"
 
@@ -976,10 +976,10 @@
     "@babel/core" "^7.25.2"
     "@babel/plugin-transform-modules-commonjs" "^7.24.8"
 
-"@expo/router-server@^57.0.12":
-  version "57.0.12"
-  resolved "https://registry.yarnpkg.com/@expo/router-server/-/router-server-57.0.12.tgz#54b579aa8d00d4f6cf7b143a7efd682ffa4a3d0d"
-  integrity sha512-afP8Lu+ozEP/6qvLuxeBKoBVSeU+e0zwk+iYBUM6fBxGRniJQyG1HqpHQFr0ZEocuVxRjmq9eoCnspFuuzDQoA==
+"@expo/router-server@^57.0.13":
+  version "57.0.13"
+  resolved "https://registry.npmjs.org/@expo/router-server/-/router-server-57.0.13.tgz#a5ff4817b1a37ef541e908aea833051e10f16acc"
+  integrity sha512-A25869lSp6916GiYjz1y1S/Kfi5qn7S1xepycFv8x8VOrulLBbv0byXl6o3BSLh5nLBx5RiMTjBFM2u+K7JsrA==
   dependencies:
     debug "^4.3.4"
 
@@ -1968,10 +1968,10 @@ babel-preset-current-node-syntax@^1.0.0:
     "@babel/plugin-syntax-private-property-in-object" "^7.14.5"
     "@babel/plugin-syntax-top-level-await" "^7.14.5"
 
-babel-preset-expo@~57.0.15:
-  version "57.0.15"
-  resolved "https://registry.yarnpkg.com/babel-preset-expo/-/babel-preset-expo-57.0.15.tgz#24111e6191c14ff76e59364f56cc1ae61406cf94"
-  integrity sha512-GIJZeeBlDAO753yBaslD5wkElbB1//D0oRanc7ncahXDD0cBizIznJDNm1cKgVxcMaVZFacdozSa8jFHV1YJfQ==
+babel-preset-expo@~57.0.16:
+  version "57.0.16"
+  resolved "https://registry.npmjs.org/babel-preset-expo/-/babel-preset-expo-57.0.16.tgz#37997abeae93e038b705423c34ad3f0434471a68"
+  integrity sha512-hGsVNbgxYchVyvBiFAVf+uHVMVIGObiWzAsnv8GsM/ZZRnrhGJLD8x/BLtNNycEYSIb23wPPlSqTGiw0iwwJvQ==
   dependencies:
     "@babel/generator" "^7.20.5"
     "@babel/helper-module-imports" "^7.25.9"
@@ -2834,13 +2834,13 @@ expect@^29.0.0, expect@^29.7.0:
     jest-message-util "^29.7.0"
     jest-util "^29.7.0"
 
-expo-asset@~57.0.19:
-  version "57.0.19"
-  resolved "https://registry.yarnpkg.com/expo-asset/-/expo-asset-57.0.19.tgz#a51157b9a6a3137ea1010aa6a7c61b8230768973"
-  integrity sha512-y9ymKidyPBDUFXljbvo7LNgivQvMhEJEoEXi6aLRugUxRDUvAKoZsy+KB5UXSjLMS7l7JNDwYKk5thovI0MLog==
+expo-asset@~57.0.20:
+  version "57.0.20"
+  resolved "https://registry.npmjs.org/expo-asset/-/expo-asset-57.0.20.tgz#04251edfb8fdb52ee5cb64f5517060a19f4e8359"
+  integrity sha512-xm1p3Squ/dCzipISO1TE5+kDsIFEUc6DxEtRe2rRgPMDLPi6AumLlrNorFxetiP6zrvxK23xzVlNng/g7o/+aA==
   dependencies:
     "@expo/image-utils" "^0.11.6"
-    expo-constants "~57.0.21"
+    expo-constants "~57.0.22"
 
 expo-build-properties@~57.0.22:
   version "57.0.22"
@@ -2851,10 +2851,10 @@ expo-build-properties@~57.0.22:
     resolve-from "^5.0.0"
     semver "^7.6.0"
 
-expo-constants@~57.0.21:
-  version "57.0.21"
-  resolved "https://registry.yarnpkg.com/expo-constants/-/expo-constants-57.0.21.tgz#44867d264bec85147c808eba1d4635aad1e11d52"
-  integrity sha512-D5fV2GELYGbNkoiEVZZp5zrUXZDaAx6ZzErDzGirm3jCjOhaE8iU/GyJiB0ZQE+K4Bg8gY82nIQ/RZR8CJLVjA==
+expo-constants@~57.0.22:
+  version "57.0.22"
+  resolved "https://registry.npmjs.org/expo-constants/-/expo-constants-57.0.22.tgz#cdf2ac117fbb53996229ff8a64af53f8e916ea43"
+  integrity sha512-+mBjnzMWMKIrQa7BP7LTDRC0W7cI+q12/sZns4HzVQJGzgGoAdRJSTEKiObxIw/3EswKXlESkRob8upiL95Q4A==
   dependencies:
     "@expo/env" "~2.4.3"
 
@@ -2950,20 +2950,20 @@ expo-manifests@~57.0.2:
   dependencies:
     expo-json-utils "~57.0.2"
 
-expo-modules-autolinking@~57.0.15:
-  version "57.0.15"
-  resolved "https://registry.yarnpkg.com/expo-modules-autolinking/-/expo-modules-autolinking-57.0.15.tgz#6d78dee6b2b8a583bd2666b9d6bc1d2d0e347e08"
-  integrity sha512-TY7Sy7MaIBFNMTTsmNtrkdyFwG3abE4gU2WJ6B4Qh9zXOMhtghHvVYTPh9bujHOY/2bscj8dOTqXnZ8iTVtwmg==
+expo-modules-autolinking@~57.0.16:
+  version "57.0.16"
+  resolved "https://registry.npmjs.org/expo-modules-autolinking/-/expo-modules-autolinking-57.0.16.tgz#f1e4ca25c185ddac5218ae792cff9a631e69ef51"
+  integrity sha512-OJh6rMMIIZ/dfwOk2FufJjjsUSw5Boy1Y5Tl+zbBmua/FcD03eEg097dkYIf3iBHVkQ6q9eR08qT88qxvnelow==
   dependencies:
     "@expo/require-utils" "^57.0.6"
     "@expo/spawn-async" "^1.8.0"
     chalk "^4.1.0"
     commander "^7.2.0"
 
-expo-modules-core@~57.0.22:
-  version "57.0.22"
-  resolved "https://registry.yarnpkg.com/expo-modules-core/-/expo-modules-core-57.0.22.tgz#741b0fef77f2e2f9bbc5bc2abb299490d3f6dc48"
-  integrity sha512-IQTSHU690fleLZ6b36OCqt04KFStxA/k7El2vweOWhlFZ58hpNSQMK2Fosc1nIvlOnqqVRDcTAq+prJEOHLmBg==
+expo-modules-core@~57.0.23:
+  version "57.0.23"
+  resolved "https://registry.npmjs.org/expo-modules-core/-/expo-modules-core-57.0.23.tgz#6abb5cf49b0c9aee0d165d50944c504979ad7d9a"
+  integrity sha512-vZQoSlhqU6me5K4KCl42yXB0x3zqAiG2FAjzHmbuez77CslJJQ+82cmJoHC3tN5X8o/KxRArJejKNQIeciyoXA==
   dependencies:
     "@expo/expo-modules-macros-plugin" "0.6.1"
     expo-modules-jsi "~57.1.2"
@@ -3003,13 +3003,13 @@ expo-updates-interface@~57.0.2:
   resolved "https://registry.npmjs.org/expo-updates-interface/-/expo-updates-interface-57.0.2.tgz#b3d357aee2a618e6e38b275d7de9886776338fd3"
   integrity sha512-x3SA5toiHZEkW+5oeNdUM1Rvt6M3ExegQsSwS3Z1+S9gn9utGYTGBkb8MBQivhjIZiRlQYDIhauxA8kySQEWtQ==
 
-expo@~57.0.28:
-  version "57.0.28"
-  resolved "https://registry.yarnpkg.com/expo/-/expo-57.0.28.tgz#75d6232f69524cd26fd6382aa21c542f8fcb1c0b"
-  integrity sha512-Bh9PgT1wLdcSOi8uXvUtHYh12zz9kx3zjD8Pm7O8EAsZW0W42dVog3/UhY2qJnlOkSDpTQJTnX8jsi2J5xn2OA==
+expo@~57.0.30:
+  version "57.0.30"
+  resolved "https://registry.npmjs.org/expo/-/expo-57.0.30.tgz#240d2e35d0317b6ad1b37edfb347ec87bfcbec35"
+  integrity sha512-dpNWbsqiAHkgInOBClv5PxKCSMAly1n0oBVoIjS/yv8LQtRgDqSkWAnJq16cExndKrgONxdItY+O3J8u6MNYlw==
   dependencies:
     "@babel/runtime" "^7.20.0"
-    "@expo/cli" "^57.0.29"
+    "@expo/cli" "^57.0.31"
     "@expo/config" "~57.0.10"
     "@expo/config-plugins" "~57.0.10"
     "@expo/devtools" "~57.0.1"
@@ -3020,14 +3020,14 @@ expo@~57.0.28:
     "@expo/metro" "~56.0.2"
     "@expo/metro-config" "~57.0.13"
     "@ungap/structured-clone" "^1.3.0"
-    babel-preset-expo "~57.0.15"
-    expo-asset "~57.0.19"
-    expo-constants "~57.0.21"
+    babel-preset-expo "~57.0.16"
+    expo-asset "~57.0.20"
+    expo-constants "~57.0.22"
     expo-file-system "~57.0.7"
     expo-font "~57.0.4"
     expo-keep-awake "~57.0.2"
-    expo-modules-autolinking "~57.0.15"
-    expo-modules-core "~57.0.22"
+    expo-modules-autolinking "~57.0.16"
+    expo-modules-core "~57.0.23"
     pretty-format "^29.7.0"
     react-refresh "^0.14.2"
     whatwg-url-minimum "^0.1.2"
