@@ -53,7 +53,13 @@ def test_project_schema_extends_the_admin_completion_catalog():
     elements = get_hyperview_catalog()["elements"]
     namespace = "https://hypertodo.app/components"
 
-    for name in ("side-menu", "swipe-row", "swipe-action", "edge-menu-opener"):
+    for name in (
+        "side-menu",
+        "swipe-row",
+        "swipe-action",
+        "edge-menu-opener",
+        "time-picker",
+    ):
         assert f"{{{namespace}}}{name}" in elements
     categories = (
         settings.BASE_DIR / "hyperview" / "screens" / "categories.xml"

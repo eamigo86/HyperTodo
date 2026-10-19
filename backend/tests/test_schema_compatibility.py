@@ -8,6 +8,8 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
+from dj_hyperview.exceptions import TemplateValidationError
+from dj_hyperview.validation import validate_hxml
 from django.conf import settings
 
 from tests.test_preferences import FLAGS, HOSTS, option_of, switcher
@@ -121,6 +123,34 @@ def test_configuration_declares_only_owned_extensions():
             "realtime-entity-epoch": {"TYPE": "string"},
         },
     }
+
+
+def test_the_schema_declares_the_time_picker_and_rejects_an_invented_attribute():
+    # Undeclared, the element was unchecked: any attribute passed, as none would on an
+    # unknown tag. It is rejected on <app:swipe-row>, and now here too.
+    document = (
+        '<doc xmlns="https://hyperview.org/hyperview"'
+        ' xmlns:app="https://hypertodo.app/components"><screen><body><view><form>'
+        "<app:time-picker {attributes}>{child}</app:time-picker>"
+        "</form></view></body></screen></doc>"
+    )
+    child = '<text-field name="due_time" value="" hide="true" />'
+    declared = (
+        'id="due-time" hide="false" accessibilityLabel="Due time" placeholder="Pick"'
+        ' placeholderTextColor="#6A6F86" field-style="field" field-text-style="t"'
+        ' modal-style="m" modal-text-style="a" cancel-label="Cancel"'
+        ' done-label="Done" clear-label="Clear" disabled="true" editable="false"'
+    )
+
+    validate_hxml(document.format(attributes=declared, child=child))
+    for attributes in (
+        'invented="1"',
+        'disabled="maybe"',
+        'editable="maybe"',
+        'hide="maybe"',
+    ):
+        with pytest.raises(TemplateValidationError):
+            validate_hxml(document.format(attributes=attributes, child=child))
 
 
 @pytest.mark.django_db

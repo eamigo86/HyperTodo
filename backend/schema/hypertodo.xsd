@@ -73,6 +73,30 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- The native time selector (mobile/src/components/TimePicker.tsx). Its hidden child
+       text-field is the only value the form posts, as HH:MM or empty. -->
+  <xs:element name="time-picker">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="https://hyperview.org/hyperview" processContents="lax" minOccurs="0" maxOccurs="unbounded" />
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:ID" />
+      <xs:attribute name="hide" type="xs:boolean" />
+      <xs:attribute name="disabled" type="xs:boolean" />
+      <xs:attribute name="editable" type="xs:boolean" />
+      <xs:attribute name="accessibilityLabel" type="xs:string" />
+      <xs:attribute name="placeholder" type="xs:string" />
+      <xs:attribute name="placeholderTextColor" type="xs:string" />
+      <xs:attribute name="field-style" type="xs:string" />
+      <xs:attribute name="field-text-style" type="xs:string" />
+      <xs:attribute name="modal-style" type="xs:string" />
+      <xs:attribute name="modal-text-style" type="xs:string" />
+      <xs:attribute name="cancel-label" type="xs:string" />
+      <xs:attribute name="done-label" type="xs:string" />
+      <xs:attribute name="clear-label" type="xs:string" />
+    </xs:complexType>
+  </xs:element>
+
   <!-- Realtime boundary markup. These declarations only validate the HXML: the mobile
        host registers app:realtime and app:realtime-page (mobile/src/realtime/gate.tsx),
        and the backend serves SSE through HYPERVIEW["REALTIME"]. -->
