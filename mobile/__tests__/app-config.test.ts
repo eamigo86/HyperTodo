@@ -296,7 +296,7 @@ describe("app.config cleartext and ATS gating", () => {
     // Not cosmetic: todo/views.py MIN_AVATAR_UPLOAD_VERSION reads this exact
     // string off X-App-Version to decide whether to render a control this binary
     // can actually handle. Ship the feature without the bump and nobody sees it.
-    expect(resolve(REMOTE).version).toBe("1.2.1");
+    expect(resolve(REMOTE).version).toBe("1.3.0");
   });
 
   it("leaves the photo permission keys to the plugin instead of hand-writing them", () => {

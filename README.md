@@ -162,7 +162,12 @@ ownership and CSRF. See the [contextual-update policy](mobile/docs/realtime-cont
 
 ## Database-backed templates
 
-Every backend command uses `config.settings`: active database templates take precedence, with filesystem fallback when no active override exists. Startup never rewrites stored templates. A fresh demo seed creates About and Categories overrides.
+Every backend command uses `config.settings`: active database templates take
+precedence, with filesystem fallback when no active override exists. Startup
+never rewrites stored templates. A fresh demo seed creates About and Categories
+overrides. The About screen displays the validated version sent by each client,
+so existing 1.2.1 and new 1.3.0 clients show their own versions. Review active
+overrides before deployment rather than reseeding them.
 
 Sign into `/admin/` as an authorized superuser, open **Hyperview database templates → Hyperview templates**, edit a template and save. With Redis available, committed changes send a `ui` hint to connected clients; the next authenticated HTTP refresh resolves the updated DB template without rebuilding the app. The stored screen must retain its realtime boundary for automatic refresh; older overrides need review. For existing data, follow [override adoption](backend/docs/installed-adoption.md#adopt-database-overrides-explicitly) instead of seeding or overwriting deliberate Admin edits.
 
