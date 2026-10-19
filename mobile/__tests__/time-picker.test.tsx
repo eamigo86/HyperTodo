@@ -121,16 +121,13 @@ describe("native task time selection", () => {
   });
 
   describe("spring DST gap with a deadline on another date", () => {
-    const originalZone = process.env.TZ;
+    const frozenInstant = new Date("2026-03-08T16:00:00Z");
     beforeEach(() => {
-      process.env.TZ = "America/New_York";
       jest.useFakeTimers();
-      jest.setSystemTime(new Date("2026-03-08T16:00:00Z"));
+      jest.setSystemTime(frozenInstant);
     });
     afterEach(() => {
       jest.useRealTimers();
-      if (originalZone === undefined) delete process.env.TZ;
-      else process.env.TZ = originalZone;
     });
 
     it("shows and reconfirms 02:30 without silently normalizing it on iOS", () => {
@@ -165,8 +162,8 @@ describe("native task time selection", () => {
       const blank = mount();
       fireEvent.press(blank.screen.getByRole("button", { name: "Due time" }));
       expect(blank.screen.getByTestId("native-time-picker").props.timeZoneName).toBe("UTC");
-      expect(blank.screen.getByTestId("native-time-picker").props.value.getUTCHours()).toBe(12);
-      expect(blank.screen.getByTestId("native-time-picker").props.value.getUTCMinutes()).toBe(0);
+      const selected = blank.screen.getByTestId("native-time-picker").props.value;
+      expect(selected.getTime()).toBe(Date.UTC(2000, 0, 1, frozenInstant.getHours(), frozenInstant.getMinutes()));
       choose(blank.screen, 2, 30, "dismissed");
       expect(blank.posted().get("due_time")).toBe("");
       fireEvent.press(blank.screen.getByRole("button", { name: "Due time" }));
