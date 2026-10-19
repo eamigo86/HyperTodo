@@ -86,9 +86,9 @@ it.each(["before-headers","during-body","after-parse"])("C2 replaces sync work %
 });
 
 
-it.each(["success","failure"])("C2 preserves show/hide indicators through %s",async(outcome)=>{
+it.each(["success","failure"])("C2 preserves show/hide indicators despite unknown IDs through %s",async(outcome)=>{
  const request=deferred<Response>();let id="";
- const {gate,screen,errors}=setup('<text id="loading" hide="true">Loading rows</text><text id="idle">Ready rows</text><view href="/hv/tasks/indicators/" action="append" target="rows" show-during-load="loading" hide-during-load="idle"><text>Load</text></view>',async(_n,value)=>{id=value;return request.promise;});
+ const {gate,screen,errors}=setup('<text id="loading" hide="true">Loading rows</text><text id="idle">Ready rows</text><view href="/hv/tasks/indicators/" action="append" target="rows" show-during-load="unknown loading" hide-during-load="unknown idle"><text>Load</text></view>',async(_n,value)=>{id=value;return request.promise;});
  await screen.findByText("Initial row");fireEvent.press(screen.getByText("Load"));
  await screen.findByText("Loading rows");expect(screen.queryByText("Ready rows")).toBeNull();
  if(outcome==="success")await act(async()=>request.resolve(response(items(id))));
@@ -124,6 +124,27 @@ it("C2 cancels a removed delayed origin without a document ACK",async()=>{
   expect(transport).toHaveBeenCalledTimes(1);
   fireEvent.press(screen.getByText("Next"));await screen.findByText("Added row");
  } finally {screen.unmount();jest.useRealTimers();}
+});
+
+it("C2 cancels a delayed request when its target and origin disappear before transport",async()=>{
+ jest.useFakeTimers({doNotFake:["queueMicrotask"]});
+ const remove={action:"remove-target",callback:(_element:Element,_update:import("hyperview").HvComponentOnUpdate,getRoot:import("hyperview").HvGetRoot,updateRoot:import("hyperview").HvUpdateRoot)=>{
+  const root=getRoot()!;
+  for(const id of ["rows","delayed-origin"]){
+   const node=Array.from(root.getElementsByTagName("*")).find(item=>item.getAttribute("id")===id)!;
+   node.parentNode!.removeChild(node);
+  }
+  updateRoot(root);
+ }};
+ const {gate,screen,transport}=setup('<view id="delayed-origin"><behavior trigger="press" href="/hv/tasks/delayed/" action="append" target="rows" delay="1000"/><text>Delay</text></view><view><behavior trigger="press" action="remove-target"/><text>Remove target</text></view>',async(_n,id)=>response(items(id)),{behaviors:[remove]});
+ try{
+  await screen.findByText("Initial row");
+  await act(async()=>fireEvent.press(screen.getByText("Delay")));
+  await act(async()=>fireEvent.press(screen.getByText("Remove target")));
+  await act(async()=>jest.advanceTimersByTime(1000));
+  expect(gate.snapshot()).toMatchObject({operations:0,pending:0,lastTerminal:{outcome:"cancelled",reason:"missing-target"}});
+  expect(transport).toHaveBeenCalledTimes(1);
+ }finally{screen.unmount();jest.useRealTimers();}
 });
 
 it("C2 cleans up even if the caller error callback throws, preserving uncertainty notice",async()=>{

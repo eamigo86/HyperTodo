@@ -57,6 +57,65 @@ it("does not interpret a completed fetch as a committed ACK", async () => {
   expect(gate.snapshot().pending).toBe(1);
 });
 
+it("shields a bare initial load after transport failure until a confirmed replacement epoch", async () => {
+  const gate = createRealtimeGate();
+  const failed = jest.fn(async () => { throw new Error("network unavailable"); });
+  await expect(gate.wrapFetch(failed)(BASE)).rejects.toThrow("network unavailable");
+  expect(gate.snapshot()).toMatchObject({ blocked: true, pending: 0 });
+  const epoch = gate.resetEpoch();
+  expect(gate.resumeEpoch(epoch)).toBe(true);
+  const successful = jest.fn(async () => response(document("new-attempt")));
+  const result = await gate.wrapFetch(successful)(new URL(BASE));
+  expect(await result.text()).toContain("new-attempt");
+  expect(gate.snapshot()).toMatchObject({ blocked: false, pending: 1 });
+});
+
+it("removes a failed bare response body without interpreting headers as XML acknowledgment", async () => {
+  const gate = createRealtimeGate();
+  const result = response("unread");
+  result.text = jest.fn(async () => { throw new Error("body transfer failed"); });
+  const wrapped = await gate.wrapFetch(async () => result)(BASE);
+  expect(gate.snapshot()).toMatchObject({ pending: 1, blocked: false });
+  await expect(wrapped.text()).rejects.toThrow("body transfer failed");
+  expect(gate.snapshot()).toMatchObject({ pending: 0, blocked: true });
+});
+
+it("does not expose a retained response after a paused root is replaced", async () => {
+  const gate = createRealtimeGate();
+  const raw = new Response(document("uncommitted"), { headers: { "Content-Type": "application/vnd.hyperview+xml" } });
+  Object.defineProperty(raw, "url", { value: BASE });
+  const transport = jest.fn(async () => raw);
+  const fetch = gate.wrapFetch(transport);
+  const result = await fetch(new Request(BASE));
+  expect(result.clone().status).toBe(200);
+  expect(gate.snapshot().pending).toBe(1);
+  expect(gate.setRetainedPaused(gate.snapshot().epoch, true)).toBe(true);
+  await expect(fetch(BASE)).rejects.toThrow("Paused realtime root");
+  const body = result.text();
+  const epoch = gate.resetEpoch();
+  await expect(body).rejects.toThrow("Stale retained response");
+  expect(gate.resumeEpoch(epoch)).toBe(true);
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect(gate.snapshot()).toMatchObject({ pending: 0, blocked: false });
+});
+
+it("rejects invalid resource hints before changing the live route", async () => {
+  const labels = { changed: "Updates available", resync: "Check current state", update: "Update", dismiss: "Dismiss", csrf: "Form expired", error: "Update failed" };
+  const gate = createRealtimeGate({ noticeLabels: () => labels });
+  const transport = jest.fn(async (_url: RequestInfo | URL, init?: RequestInit) =>
+    response(document(new Headers(init?.headers).get("X-HyperTodo-Request-ID")!).replace('mode="list"', 'mode="list" resources="tasks"')));
+  const screen = mount(gate, gate.wrapFetch(transport));
+  try {
+    await screen.findByText("Task one");
+    const before = gate.snapshot();
+    expect(gate.invalidateResources(before.epoch, ["tasks"], "unexpected" as "invalidate")).toBe(false);
+    expect(gate.invalidateResources(before.epoch - 1, ["tasks"])).toBe(false);
+    expect(gate.snapshot()).toEqual(before);
+    act(() => expect(gate.invalidateResources(before.epoch, ["tasks"], "resync")).toBe(true));
+    expect(transport).toHaveBeenCalledTimes(2);
+  } finally { screen.unmount(); }
+});
+
 it("contains failing observation and readiness listeners after a real layout", async () => {
   const observe = jest.fn(() => { throw new Error("diagnostics unavailable"); });
   const ready = jest.fn(() => { throw new Error("readiness listener unavailable"); });
@@ -436,6 +495,78 @@ it.each([null, "#missing-local-source"])("terminates a no-fetch action without i
   await screen.findByText("Page 2");
 });
 
+it("retires a received fragment when a public swap removes its target and origin", async () => {
+  const gate = createRealtimeGate();
+  const pending = deferred<Response>();
+  let requestId = "";
+  const RemoveZone = Object.assign(({onUpdate,options}: import("hyperview").HvComponentProps) =>
+    <Text onPress={() => {
+      const root = options.onUpdateCallbacks!.getDoc()!;
+      const zone = Array.from(root.getElementsByTagName("*")).find(node => node.getAttribute("id") === "zone")!;
+      onUpdate(null, "swap", zone, {newElement:zone.cloneNode(false) as Element});
+    }}>Remove request zone</Text>, {localName:"remove-zone",namespaceURI:NS});
+  const transport = jest.fn(async (_url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const id = new Headers(init?.headers).get("X-HyperTodo-Request-ID")!;
+    if (transport.mock.calls.length === 1) {
+      const body = withControls(id)
+        .replace('<list id="task-list">', '<view id="zone"><list id="task-list">')
+        .replace('<form id="edit-form">', '</view><app:remove-zone/><form id="edit-form">');
+      return response(body);
+    }
+    requestId = id;
+    return pending.promise;
+  });
+  const screen = mount(gate, gate.wrapFetch(transport), {components:[...gate.components,RemoveZone]});
+  try {
+    await screen.findByText("Task one");
+    fireEvent.press(screen.getByText("More"));
+    await waitFor(() => expect(transport).toHaveBeenCalledTimes(2));
+    fireEvent.press(screen.getByText("Remove request zone"));
+    expect(screen.queryByText("More")).toBeNull();
+    await act(async () => pending.resolve(response(list(requestId, 2, "items", "Should not appear"))));
+    await waitFor(() => expect(gate.snapshot()).toMatchObject({operations:0,lastTerminal:{outcome:"cancelled",reason:"missing-target"}}));
+    expect(screen.queryByText("Should not appear")).toBeNull();
+    expect(gate.snapshot()).toMatchObject({pending:0,blocked:false});
+  } finally { screen.unmount(); pending.resolve(response(list(requestId, 2, "items"))); }
+});
+
+it("retires a queued local action after its source is removed through the public update callback", async () => {
+  const gate = createRealtimeGate();
+  const refresh = deferred<Response>();
+  let refreshId = "";
+  const QueueLocal = Object.assign(({element,onUpdate}: import("hyperview").HvComponentProps) =>
+    <Text onPress={() => onUpdate("#local-source", "replace", element, {targetId:"task-list"})}>Queue local</Text>,
+    {localName:"queue-local",namespaceURI:NS});
+  const RemoveSource = Object.assign(({onUpdate,options}: import("hyperview").HvComponentProps) =>
+    <Text onPress={() => {
+      const root = options.onUpdateCallbacks!.getDoc()!;
+      const source = Array.from(root.getElementsByTagName("*")).find(node => node.getAttribute("id") === "local-source")!;
+      const replacement = source.cloneNode(false) as Element;
+      replacement.removeAttribute("id");
+      onUpdate(null, "swap", source, {newElement:replacement});
+    }}>Remove local source</Text>, {localName:"remove-source",namespaceURI:NS});
+  const transport = jest.fn(async (_url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const id = new Headers(init?.headers).get("X-HyperTodo-Request-ID")!;
+    if (transport.mock.calls.length === 1) return response(document(id).replace('</app:realtime>', '<view id="local-source"><text>Local content</text></view><app:queue-local/><app:remove-source/></app:realtime>'));
+    refreshId = id;
+    return refresh.promise;
+  });
+  const screen = mount(gate, gate.wrapFetch(transport), {components:[...gate.components,QueueLocal,RemoveSource]});
+  try {
+    await screen.findByText("Task one");
+    act(() => gate.invalidate());
+    await waitFor(() => expect(transport).toHaveBeenCalledTimes(2));
+    fireEvent.press(screen.getByText("Queue local"));
+    expect(gate.snapshot()).toMatchObject({operations:2,queued:1});
+    fireEvent.press(screen.getByText("Remove local source"));
+    await act(async () => refresh.resolve(response(list(refreshId, 1, "list", "Updated list"))));
+    await screen.findByText("Updated list");
+    await waitFor(() => expect(gate.snapshot()).toMatchObject({operations:0,lastTerminal:{outcome:"no-document",reason:"missing-local-source"}}));
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Local content")).toBeNull();
+  } finally { screen.unmount(); refresh.resolve(response(list(refreshId, 1, "list"))); }
+});
+
 it("serializes a public custom behavior's nested append behind a refresh", async () => {
   const gate = createRealtimeGate();
   const refresh = deferred<Response>();
@@ -460,6 +591,35 @@ it("serializes a public custom behavior's nested append behind a refresh", async
     await act(async () => refresh.resolve(response(list(refreshId, 1, "list", "Refreshed first page"))));
     screen.unmount();
   }
+});
+
+it("replaces queued work with the same SDK sync identity before it reaches HTTP", async () => {
+  const gate = createRealtimeGate(), refresh = deferred<Response>();
+  let refreshId = "";
+  const Queue = Object.assign(({element,onUpdate}: import("hyperview").HvComponentProps) => <>
+    <Text onPress={() => onUpdate("/hv/tasks/?page=2", "append", element, {targetId:"task-list",syncId:"task-refresh"})}>Queue first</Text>
+    <Text onPress={() => onUpdate("/hv/tasks/?page=2", "append", element, {targetId:"task-list",syncId:"task-refresh",syncMethod:"replace"})}>Queue replacement</Text>
+  </>, {localName:"queue-replacement",namespaceURI:NS});
+  const transport = jest.fn(async (_url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const id = new Headers(init?.headers).get("X-HyperTodo-Request-ID")!;
+    if (transport.mock.calls.length === 1) return response(withControls(id).replace('</app:realtime>', '<app:queue-replacement/></app:realtime>'));
+    if (transport.mock.calls.length === 2) { refreshId = id; return refresh.promise; }
+    return response(list(id, 2, "items", "Replacement page"));
+  });
+  const screen = mount(gate, gate.wrapFetch(transport), {components:[...gate.components,Queue]});
+  try {
+    await screen.findByText("Task one");
+    act(() => gate.invalidate());
+    await waitFor(() => expect(transport).toHaveBeenCalledTimes(2));
+    fireEvent.press(screen.getByText("Queue first"));
+    expect(gate.snapshot()).toMatchObject({operations:2,queued:1});
+    fireEvent.press(screen.getByText("Queue replacement"));
+    expect(gate.snapshot()).toMatchObject({operations:2,queued:1,lastTerminal:{outcome:"cancelled",reason:"sync-replaced"}});
+    await act(async () => refresh.resolve(response(list(refreshId, 1, "list", "Refreshed page"))));
+    await screen.findByText("Replacement page");
+    expect(transport).toHaveBeenCalledTimes(3);
+    expect(gate.snapshot()).toMatchObject({operations:0,pending:0});
+  } finally { screen.unmount(); refresh.resolve(response(list(refreshId, 1, "list"))); }
 });
 
 it("denies a retained fetch callback during suspended authentication without starting transport", async () => {
