@@ -66,7 +66,7 @@ describe("owned shell screens", () => {
       "show-snackbar",
       "store-biometric-token",
     ]);
-    expect((mockHyperviewProps.components as Array<{localName:string}>).map(value=>value.localName)).toEqual(expect.arrayContaining(["realtime","realtime-page","swipe-row"]));
+    expect((mockHyperviewProps.components as Array<{localName:string}>).map(value=>value.localName)).toEqual(expect.arrayContaining(["realtime","realtime-page","swipe-row","time-picker"]));
     expect(mockHyperviewProps.loadingScreen).toBe(LoadingScreen);
     expect(mockHyperviewProps.errorScreen).toBe(ErrorScreen);
     expect(mockHyperviewProps.elementErrorComponent).toBe(ElementErrorBanner);

@@ -278,7 +278,7 @@ def test_anonymous_private_route_returns_session_expired_hxml():
     assert root.find(".//hv:screen[@id='session-expired-screen']", NS) is not None
 
 
-def test_task_form_has_back_action_visible_categories_and_time_keypad(user):
+def test_task_form_has_back_action_visible_categories_and_native_time_picker(user):
     client = Client()
     client.force_login(user)
     Category.objects.create(user=user, name="Work", color=Category.Color.LAVENDER)
@@ -286,7 +286,8 @@ def test_task_form_has_back_action_visible_categories_and_time_keypad(user):
     root = assert_hxml(client.get(reverse("todo:task-new")))
     back = root.find(".//hv:view[@id='task-back']", NS)
     due_date = root.find(".//hv:date-field[@name='due_date']", NS)
-    due_time = root.find(".//hv:text-field[@name='due_time']", NS)
+    picker = root.find(".//app:time-picker", NS)
+    due_time = root.find(".//app:time-picker/hv:text-field[@name='due_time']", NS)
     category = root.find(".//hv:picker-field[@name='category']", NS)
 
     assert back is not None
@@ -304,8 +305,11 @@ def test_task_form_has_back_action_visible_categories_and_time_keypad(user):
     assert overlay is not None
     assert overlay.attrib["backgroundColor"] == "#161A35"
     assert due_time is not None
-    assert due_time.attrib["keyboard-type"] == "number-pad"
-    assert due_time.attrib["mask"] == "99:99"
+    assert picker is not None
+    assert picker.attrib["done-label"] == "Done"
+    assert picker.attrib["clear-label"] == "Clear"
+    assert due_time.attrib["hide"] == "true"
+    assert "keyboard-type" not in due_time.attrib
     assert category is not None
     labels = [node.attrib["label"] for node in category.findall("./hv:picker-item", NS)]
     assert labels == ["No category", "Work"]
@@ -1020,7 +1024,10 @@ def test_invalid_task_form_returns_422_hxml(user):
     assert title is not None
     assert "field-invalid" in title.attrib["style"]
     assert due_time is not None
-    assert "field-invalid" in due_time.attrib["style"]
+    picker = root.find(".//app:time-picker", NS)
+    assert picker is not None
+    assert "field-invalid" in picker.attrib["field-style"]
+    assert due_time.attrib["value"] == "09:00"
     assert_snackbar(root, "Please review the highlighted task details.", tone="error")
 
 

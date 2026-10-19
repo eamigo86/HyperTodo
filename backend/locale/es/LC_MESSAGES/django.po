@@ -322,6 +322,14 @@ msgstr "Fecha límite"
 msgid "Select due date"
 msgstr "Elegir fecha límite"
 
+#: hyperview/fragments/task_form_panel.xml
+msgid "Select due time"
+msgstr "Elegir hora límite"
+
+#: hyperview/fragments/task_form_panel.xml
+msgid "Clear"
+msgstr "Borrar"
+
 #: hyperview/fragments/task_form_panel.xml:26
 #: hyperview/fragments/task_form_panel.xml:27
 msgid "Due time"

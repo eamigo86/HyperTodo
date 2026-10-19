@@ -103,7 +103,7 @@ provides the native behavior. Adding a schema declaration alone installs nothing
 
 ### HXML components
 
-Five registered elements use `https://hypertodo.app/components` (`app:` below).
+Six registered elements use `https://hypertodo.app/components` (`app:` below).
 [App](mobile/App.tsx) registers the visual components;
 [AppSessionSurface](mobile/src/realtime/app-session.tsx) adds the realtime pair.
 
@@ -112,10 +112,11 @@ Five registered elements use `https://hypertodo.app/components` (`app:` below).
 | [`app:side-menu`](mobile/src/components/AnimatedSideMenu.tsx) | Animated drawer/backdrop with HXML-provided contents. |
 | [`app:edge-menu-opener`](mobile/src/components/EdgeMenuOpener.tsx) | Edge gesture that fetches the menu without replacing the screen. |
 | [`app:swipe-row`](mobile/src/components/SwipeRow.tsx) | Task/category action tray with equivalent screen-reader actions and optional destructive confirmation. |
+| [`app:time-picker`](mobile/src/components/TimePicker.tsx) | Native task deadline time selection. Its hidden child `text-field` remains the sole serialized `due_time` value; opening or cancelling never changes the draft. |
 | [`app:realtime`](mobile/src/realtime/gate.tsx) | Coordinates resource dependencies, safe refresh, forms and route/session ownership. |
 | [`app:realtime-page`](mobile/src/realtime/gate.tsx) | Invisible request/page marker for correlating actual layout; adds no row. |
 
-`app:swipe-action` is child data read by `SwipeRow`, **not a sixth component**.
+`app:swipe-action` is child data read by `SwipeRow`, **not a seventh component**.
 Keep its normal form/CSRF context for mutations. See real
 [task rows](backend/hyperview/partials/task_items.xml) and
 [side-menu markup](backend/hyperview/fragments/side_menu.xml).

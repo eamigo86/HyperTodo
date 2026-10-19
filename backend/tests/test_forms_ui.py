@@ -360,7 +360,13 @@ def test_task_form_fields_are_legible_and_reachable(user):
         for node in root.findall(".//hv:text-field", NS)
         if node.attrib.get("hide") != "true"
     ]
-    assert len(text_fields) == 3
+    assert len(text_fields) == 2
+    time_picker = root.find(".//app:time-picker", NS)
+    assert time_picker is not None
+    assert time_picker.attrib["accessibilityLabel"] == "Due time"
+    hidden_time = time_picker.find("./hv:text-field[@name='due_time']", NS)
+    assert hidden_time is not None
+    assert hidden_time.attrib["hide"] == "true"
     for node in text_fields:
         assert node.attrib.get("accessibilityLabel"), node.attrib.get("name")
     for tag in ("date-field", "picker-field"):

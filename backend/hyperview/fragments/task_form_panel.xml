@@ -33,7 +33,9 @@
       <date-field name="due_date" value="{% if form.is_bound %}{{ form.due_date.value|default:'' }}{% else %}{{ form.due_date.value|date:'Y-m-d'|default:'' }}{% endif %}" field-style="field{% if form.due_date.errors %} field-invalid{% endif %}" field-text-style="field-text" label-format="DD/MM/YYYY" modal-style="date-modal" modal-overlay-style="date-modal-overlay" modal-text-style="date-modal-action" cancel-label="{% translate "Cancel" %}" done-label="{% translate "Done" %}" placeholder="{% translate "Select due date" %}" placeholderTextColor="{{ theme.ink_muted }}" />
       {% if form.due_date.errors %}<text style="field-error">{{ form.due_date.errors|join:', ' }}</text>{% endif %}
       <text style="label">{% translate "Due time" %}</text>
-      <text-field name="due_time" value="{% if form.is_bound %}{{ form.due_time.value|default:'' }}{% else %}{{ form.due_time.value|time:'H:i'|default:'' }}{% endif %}" placeholder="HH:MM" placeholderTextColor="{{ theme.ink_muted }}" keyboard-type="number-pad" mask="99:99" accessibilityLabel="{% translate "Due time" %}" style="field{% if form.due_time.errors %} field-invalid{% endif %}" />
+      <app:time-picker xmlns:app="https://hypertodo.app/components" accessibilityLabel="{% translate "Due time" %}" placeholder="{% translate "Select due time" %}" placeholderTextColor="{{ theme.ink_muted }}" field-style="field{% if form.due_time.errors %} field-invalid{% endif %}" field-text-style="field-text" modal-style="date-modal" modal-text-style="date-modal-action" cancel-label="{% translate "Cancel" %}" done-label="{% translate "Done" %}" clear-label="{% translate "Clear" %}">
+        <text-field name="due_time" value="{% if form.is_bound %}{{ form.due_time.value|default:'' }}{% else %}{{ form.due_time.value|time:'H:i'|default:'' }}{% endif %}" hide="true" />
+      </app:time-picker>
       {% if form.due_time.errors %}<text style="field-error">{{ form.due_time.errors|join:', ' }}</text>{% endif %}
     </view>
     {% comment %}The date and time the form showed, as drawn in the zone of this request.

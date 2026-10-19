@@ -107,6 +107,7 @@ def test_custom_inventory_matches_native_registration_and_backend_schema():
         "mobile/src/components/AnimatedSideMenu.tsx",
         "mobile/src/components/EdgeMenuOpener.tsx",
         "mobile/src/components/SwipeRow.tsx",
+        "mobile/src/components/TimePicker.tsx",
         "mobile/src/realtime/gate.tsx",
     )
     registered = {
@@ -115,8 +116,8 @@ def test_custom_inventory_matches_native_registration_and_backend_schema():
         for name in re.findall(r'localName:\s*"([^"]+)"', (ROOT / source).read_text())
     }
     documented = set(re.findall(r"^\| \[`(app:[^`]+)`\]", components, re.MULTILINE))
-    assert len(registered) == 5 and documented == registered
-    assert "not a sixth component" in components
+    assert len(registered) == 6 and documented == registered
+    assert "not a seventh component" in components
     actions = section(readme, "### Behavior actions")
     documented_actions = set(re.findall(r"^\| `([^`]+)` \|", actions, re.MULTILINE))
     native = (ROOT / "mobile/src/behaviors/owned.ts").read_text()

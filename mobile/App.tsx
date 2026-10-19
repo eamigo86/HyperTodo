@@ -21,6 +21,7 @@ import { FAILURE_COPY, classifyFailure } from "./src/feedback/failure";
 import { hyperviewLogger, reportHyperviewError } from "./src/feedback/logging";
 import AnimatedSplash from "./src/components/AnimatedSplash";
 import SwipeRow from "./src/components/SwipeRow";
+import TimePicker from "./src/components/TimePicker";
 import SnackbarHost from "./src/components/SnackbarHost";
 import { createAppSession, AppSessionSurface, type AppSessionOptions } from "./src/realtime/app-session";
 import { createOwnedNativePorts } from "./src/behaviors/owned-native";
@@ -59,7 +60,7 @@ export function ErrorScreen({ error, onPressReload }: ErrorScreenProps): React.J
   );
 }
 
-const components = [AnimatedSideMenu, EdgeMenuOpener, SwipeRow];
+const components = [AnimatedSideMenu, EdgeMenuOpener, SwipeRow, TimePicker];
 const formatDate = (date?: Date | null, format?: string) =>
   date && format ? moment(date).format(format) : undefined;
 
