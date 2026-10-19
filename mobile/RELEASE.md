@@ -116,10 +116,11 @@ this same file. So localhost and cleartext are an explicit developer opt-in inst
 
 9. **The 1.2.0 avatar release needed a NEW NATIVE BUILD.** `expo-image-picker` and `expo-image-manipulator` are
    native modules, and there is no `expo-updates` dependency and no OTA channel anywhere in the tree,
-   so an over-the-air push could not deliver them. `app.config.ts` now declares `1.2.1`; the server
-   reads that off `X-App-Version` (`MIN_AVATAR_UPLOAD_VERSION` in `backend/todo/views.py`) to decide
-   whether to render the "Change photo" row at all — `pick-avatar` is a custom action, and Hyperview
-   ignores an unregistered action silently, so a 1.1.0 binary would otherwise show a dead control.
+   so an over-the-air push could not deliver them. The server reads the version `app.config.ts`
+   declares off `X-App-Version` and compares it with `MIN_AVATAR_UPLOAD_VERSION` (1.2.0, in
+   `backend/todo/views.py`) to decide whether to render the "Change photo" row at all —
+   `pick-avatar` is a custom action, and Hyperview ignores an unregistered action silently, so a
+   1.1.0 binary would otherwise show a dead control.
    **Keep the server gate until 1.2.0 is the installed floor.**
 
 10. **Before the first build**, confirm what EAS uploads: this is a single git repo with `backend/` and
