@@ -16,8 +16,8 @@ jest.mock("@react-native-community/datetimepicker", () => {
 const HV = "https://hyperview.org/hyperview";
 const APP = "https://hypertodo.app/components";
 const stylesheets = { regular: { field: { minHeight: 48 }, "field-text": { color: "#161A35" } }, selected: {}, pressed: {}, focused: {}, pressedSelected: {} };
-function fixture(value = "", disabled = false) {
-  const doc = new DOMParser().parseFromString(`<view xmlns="${HV}" xmlns:app="${APP}"><form><date-field name="due_date" value="2026-10-20"/><app:time-picker accessibilityLabel="Due time" placeholder="Select due time" cancel-label="Cancel" done-label="Done" clear-label="Clear" field-style="field" field-text-style="field-text"${disabled ? ' disabled="true"' : ""}><text-field name="due_time" value="${value}" hide="true"/></app:time-picker></form></view>`, "application/xml") as Document;
+function fixture(value = "", disabled = false, placeholder = true) {
+  const doc = new DOMParser().parseFromString(`<view xmlns="${HV}" xmlns:app="${APP}"><form><date-field name="due_date" value="2026-10-20"/><app:time-picker accessibilityLabel="Due time"${placeholder ? ' placeholder="Select due time"' : ""} cancel-label="Cancel" done-label="Done" clear-label="Clear" field-style="field" field-text-style="field-text"${disabled ? ' disabled="true"' : ""}><text-field name="due_time" value="${value}" hide="true"/></app:time-picker></form></view>`, "application/xml") as Document;
   const element = doc.getElementsByTagNameNS(APP, "time-picker").item(0)!;
   const registry = new Registry([TimePicker]);
   const form = doc.getElementsByTagNameNS(HV, "form").item(0)!;
@@ -27,8 +27,8 @@ function fixture(value = "", disabled = false) {
   });
   return { element, form, registry, onUpdate, boundary: doc.documentElement };
 }
-function mount(value = "", disabled = false) {
-  const data = fixture(value, disabled);
+function mount(value = "", disabled = false, placeholder = true) {
+  const data = fixture(value, disabled, placeholder);
   const screen = render(<TimePicker element={data.element} onUpdate={data.onUpdate} options={{}} stylesheets={stylesheets as any} />);
   const posted = () => new URLSearchParams(data.registry.getFormData(data.form) as any);
   return { ...data, screen, posted };
@@ -43,6 +43,17 @@ describe("native task time selection", () => {
   const originalPlatform = Platform.OS;
   afterEach(() => { Object.defineProperty(Platform, "OS", { value: originalPlatform }); });
   const platform = (os: "ios" | "android") => Object.defineProperty(Platform, "OS", { value: os });
+
+  it("exposes an empty accessible value when both time and optional placeholder are absent",()=>{
+    platform("ios");
+    const form=mount("",false,false);
+    expect(form.screen.getByRole("button",{name:"Due time"}).props.accessibilityValue).toEqual({text:""});
+    expect(form.posted().get("due_time")).toBe("");
+    fireEvent.press(form.screen.getByRole("button",{name:"Due time"}));
+    expect(form.screen.getByTestId("native-time-picker")).toBeTruthy();
+    fireEvent.press(form.screen.getByRole("button",{name:"Cancel"}));
+    expect(form.posted().get("due_time")).toBe("");
+  });
 
   it("leaves a blank field and draft untouched when opened then cancelled on iOS", () => {
     platform("ios");

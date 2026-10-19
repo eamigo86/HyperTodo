@@ -60,6 +60,15 @@ it.each(["user_cancel","system_cancel","app_cancel","user_fallback"])("keeps int
  const f=await fixture();f.native.unlock.mockResolvedValueOnce({success:false,error} as {success:boolean});await f.run("biometric-unlock");expect(f.notice).not.toHaveBeenCalled();expect(f.native.readToken).not.toHaveBeenCalled();
 });
 
+it("reports a native unlock refusal without an optional platform error code",async()=>{
+ const f=await fixture();
+ f.native.unlock.mockResolvedValueOnce({success:false});
+ await f.run("biometric-unlock");
+ expect(warn).toHaveBeenCalledWith("biometric unlock refused","unknown");
+ expect(f.notice).toHaveBeenCalledWith({message:"Biometric unlock isn't available right now. Sign in with your password.",tone:"error"});
+ expect(f.native.readToken).not.toHaveBeenCalled();
+});
+
 it("clears a missing credential only with the current lease and reports safe current failures",async()=>{
  const f=await fixture();f.native.readToken.mockResolvedValueOnce(null);await f.run("biometric-unlock");expect(f.clear).toHaveBeenCalledTimes(1);expect(f.submit).not.toHaveBeenCalled();
  f.native.unlock.mockRejectedValueOnce(new Error("native secret"));await f.run("biometric-unlock");expect(f.notice).toHaveBeenCalledWith({message:"Biometric unlock isn't available right now. Sign in with your password.",tone:"error"});
@@ -70,6 +79,17 @@ it("collects probe results before one public DOM update without opting in",async
  expect(f.doc().getElementById("available")!.getAttribute("hide")).toBe("true");types.resolve([2]);await task;
  expect(f.updateRoot).toHaveBeenCalledTimes(1);expect(f.doc().getElementById("available")!.getAttribute("hide")).toBe("false");expect(f.doc().getElementById("token")!.getAttribute("hide")).toBe("false");expect(f.doc().getElementsByTagName("switch")[0].getAttribute("value")).toBe("off");
  expect(Array.from(f.doc().getElementsByTagName("image")).filter(e=>e.getAttribute("variant")).map(e=>e.getAttribute("hide"))).toEqual(["false","true"]);
+});
+
+it.each(["token","both"])("preserves the available probe nodes when %s targets are absent",async(missing)=>{
+ const f=await fixture();
+ f.doc().getElementById("token")!.parentNode!.removeChild(f.doc().getElementById("token")!);
+ if(missing==="both")f.doc().getElementById("available")!.parentNode!.removeChild(f.doc().getElementById("available")!);
+ await f.run("probe-biometrics");
+ expect(f.native.supportedTypes).toHaveBeenCalledTimes(1);
+ expect(f.doc().getElementById("token")).toBeNull();
+ if(missing==="both")expect(f.updateRoot).not.toHaveBeenCalled();
+ else {expect(f.updateRoot).toHaveBeenCalledTimes(1);expect(f.doc().getElementById("available")!.getAttribute("hide")).toBe("false");}
 });
 
 it.each([["has no biometric hardware","hasHardware"],["has no strong biometric enrolled","isEnrolled"]] as const)("offers nothing when the device %s",async(_label,port)=>{

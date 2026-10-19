@@ -65,6 +65,21 @@ it('rejects oversized JSON/buffers, malformed UTF8 and incomplete EOF without fa
   expect(events).not.toHaveBeenCalled();
 });
 
+it('rejects a CRLF continuation that alone takes a bounded frame past 8192 bytes',()=>{
+ const events=jest.fn(),decoder=createStreamDecoder(events);
+ decoder.push(bytes(':'+ 'x'.repeat(8190)+'\r'));
+ expect(()=>decoder.push(bytes('\n'))).toThrow('invalid-stream');
+ expect(events).not.toHaveBeenCalled();
+});
+
+it('accepts a bare CR line break before the next event field',()=>{
+ const events=jest.fn(),decoder=createStreamDecoder(events);
+ decoder.push(bytes(': heartbeat\revent: resync\ndata: {"version":1}\n\n'));
+ decoder.end();
+ expect(events).toHaveBeenCalledTimes(1);
+ expect(events).toHaveBeenCalledWith({type:'resync'});
+});
+
 it('uses the installed Expo57 decoder fatal/BOM semantics, not just the Node implementation', () => {
   // Test-only source compatibility control; production uses Expo's installed global.
   const {TextDecoder: ExpoDecoder} = jest.requireActual('expo/src/winter/TextDecoder');

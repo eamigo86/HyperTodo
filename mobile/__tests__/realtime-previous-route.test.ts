@@ -22,6 +22,10 @@ it('resolves the focused leaf of a previous nested route without choosing a rout
  const n=navigator([{key:'tabs',name:'root',state:{index:1,routes:[{key:'other'},{key:'selected-list'}]}},{key:'form',name:'card'}]);
  expect(previousRoute(n as unknown as NavigationHandle,'form')?.key).toBe('selected-list');
 });
+it('uses the first nested route when a public navigation state omits its index',()=>{
+ const n=navigator([{key:'tabs',name:'root',state:{routes:[{key:'first-tab'},{key:'second-tab'}]}},{key:'form',name:'card'}]);
+ expect(previousRoute(n as unknown as NavigationHandle,'form')?.key).toBe('first-tab');
+});
 it('can find the owning parent stack but rejects missing history or a nonfocused source',()=>{
  const parent=navigator([{key:'list'},{key:'nested',state:{index:0,routes:[{key:'form'}]}}]);
  const child=navigator([{key:'form'}],0,parent);

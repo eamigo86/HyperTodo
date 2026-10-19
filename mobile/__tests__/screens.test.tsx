@@ -158,6 +158,16 @@ describe("the shell follows the palette the server named", () => {
     );
   });
 
+  it("hands Hyperview a date formatter that requires both a date and a format",async()=>{
+    render(<App />);
+    await waitFor(()=>expect(mockHyperviewProps.formatDate).toEqual(expect.any(Function)));
+    const formatDate=mockHyperviewProps.formatDate as (date?:Date|null,format?:string)=>string|undefined;
+    const date=new Date(2026,9,20,15,4);
+    expect(formatDate(date,"YYYY-MM-DD")).toBe("2026-10-20");
+    expect(formatDate(date)).toBeUndefined();
+    expect(formatDate(null,"YYYY-MM-DD")).toBeUndefined();
+  });
+
   it("repaints the loading state, spinner included", () => {
     const screen = render(<LoadingScreen />);
 

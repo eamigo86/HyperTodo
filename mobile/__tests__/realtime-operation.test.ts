@@ -1,4 +1,4 @@
-import { decorateOperationHref, readOperationUrl, nextCounter } from "../src/realtime/operation";
+import { decorateOperationHref, readOperationUrl, hasReservedBody, nextCounter } from "../src/realtime/operation";
 
 const token = "g0-1-0-1";
 
@@ -17,6 +17,15 @@ it.each(["https://hypertodo.test/path", "https://hypertodo.test/path?", "https:/
 
 it.each(["", "g0-0-0-1", "g0-1--1-1", "g0-1-01-1", "g0-1-0-0", "g0-1000000000-0-1", "g0-1-0-1000000000", "false"])("rejects malformed operation tokens: %s", value => {
   expect(() => readOperationUrl("https://hypertodo.test/?__djhv_op=" + value)).toThrow("invalid-operation-token");
+});
+
+it("rejects an invalid token at decoration rather than placing it on a request",()=>{
+ expect(()=>decorateOperationHref("/hv/tasks/?status=active","not-an-operation-token")).toThrow("invalid-operation-token");
+});
+
+it("does not interpret ordinary binary request bodies as reserved form fields",()=>{
+ expect(hasReservedBody(new Blob(["__djhv_op=not-a-form"]))).toBe(false);
+ expect(hasReservedBody(new TextEncoder().encode("__djhv_op=not-a-form").buffer)).toBe(false);
 });
 
 it.each(["__djhv_op", "%5f%5fdjhv_op"])("rejects an existing reserved key without overwriting it: %s", key => {

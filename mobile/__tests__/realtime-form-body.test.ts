@@ -30,6 +30,12 @@ it("preserves strings, empty bodies, signals, metadata and GET URL serialization
  expect(raw.mock.calls[0][0]).toContain("filter=x");expect(raw.mock.calls[0][0]).toContain("tag=a%20b");expect(raw.mock.calls[0][1].body).toBeUndefined();
 });
 
+it("treats an omitted request initializer as an empty immutable form snapshot",()=>{
+ const result=snapshotFormRequest();
+ expect(result.body).toBeUndefined();
+ expect(Array.from(new Headers(result.headers).entries())).toEqual([]);
+});
+
 it("supports standard string FormData entries without dropping duplicate values",()=>{
  const body={entries:function*(){yield ["a","1"];yield ["a","é+"];}} as unknown as FormData;
  expect(snapshotFormRequest({body}).body).toBe("a=1&a=%C3%A9%2B");

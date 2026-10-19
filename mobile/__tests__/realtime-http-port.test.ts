@@ -60,3 +60,15 @@ it("defaults Accept, keeps an explicit Origin and omits the version header when 
  const headers=transport.mock.calls[0][1].headers as Headers;
  expect(headers.get("Accept")).toBe("application/vnd.hyperview+xml");expect(headers.get("Origin")).toBe("https://mobile.test");expect(headers.get("X-App-Version")).toBeNull();
 });
+
+it("uses the platform fetch when no transport is injected",async()=>{
+ const raw=response("<doc/>");
+ const platform=jest.spyOn(globalThis,"fetch").mockResolvedValueOnce(raw);
+ try{
+  const http=createHyperviewHttpPort(BASE);
+  await expect(http("tasks/")).resolves.toBe(raw);
+  expect(platform).toHaveBeenCalledTimes(1);
+  expect(platform.mock.calls[0][0]).toBe(BASE+"tasks/");
+  expect(platform.mock.calls[0][1]).toMatchObject({credentials:"include",redirect:"error",cache:"no-store"});
+ }finally{platform.mockRestore();}
+});

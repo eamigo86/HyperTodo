@@ -85,6 +85,18 @@ it("clears a failed current save but never claims ownership if it expires during
  expect(store.clear).toHaveBeenCalledTimes(1);
 });
 
+it("does not attribute a failed compensating clear to a revoked owner",async()=>{
+ const {store,effects}=fixture(),pending=deferred<void>();let current=true;
+ store.save.mockRejectedValueOnce(new Error("save failed"));
+ store.clear.mockImplementationOnce(()=>pending.promise);
+ const result=effects.apply({},()=>current,{kind:"store",token:"A"});
+ await Promise.resolve();await Promise.resolve();
+ expect(store.clear).toHaveBeenCalledTimes(1);
+ current=false;pending.reject(new Error("clear failed after revocation"));
+ await expect(result).resolves.toBe("stale");
+ expect(store.save).toHaveBeenCalledTimes(1);
+});
+
 it("reports a failed compensation when both current native writes fail",async()=>{
  const {store,effects}=fixture();
  store.save.mockRejectedValueOnce(new Error("save failed"));

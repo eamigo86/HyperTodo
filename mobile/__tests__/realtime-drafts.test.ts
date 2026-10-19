@@ -1,5 +1,7 @@
 import {DOMParser} from '@instawork/xmldom';
 import {captureDraft,trackDraft} from '../src/realtime/drafts';
+import {Registry} from 'hyperview/src/services/components';
+jest.mock('react-native-webview',()=>({WebView:()=>null}));
 
 const parse=(value:string)=>new DOMParser().parseFromString(value,'application/xml').documentElement;
 it('tracks actual serialized form values, not focus attributes or resource versions',()=>{
@@ -45,6 +47,14 @@ it('serializes a form boundary itself, not only descendant forms',()=>{
  const form=parse('<form><text-field name="title" value="Current title"/></form>');
  const registry={getFormData:()=>{const body=new FormData();body.append('title','Current title');return body;}};
  expect(captureDraft(form,registry)).toBe('["title=Current+title"]');
+});
+
+it('treats an empty form from the real Hyperview registry as a clean empty draft',()=>{
+ const form=parse('<form xmlns="https://hyperview.org/hyperview"/>');
+ const registry=new Registry();
+ expect(registry.getFormData(form)).toBeNull();
+ expect(captureDraft(form,registry)).toBe('[]');
+ expect(trackDraft(undefined,captureDraft(form,registry))).toMatchObject({dirty:false});
 });
 
 it('protects drafts whose form serialization contains unsupported file data',()=>{

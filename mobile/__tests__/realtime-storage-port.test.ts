@@ -37,6 +37,12 @@ it("isolates fixture credential reads/writes on its captured namespace while sha
  for(const mock of [SecureStore.getItemAsync,SecureStore.setItemAsync,SecureStore.deleteItemAsync])expect(jest.mocked(mock).mock.calls.every(call=>call[0]!=="hypertodo.biometric.token")).toBe(true);
 });
 
+it("rejects an empty credential namespace before native storage can be read",()=>{
+ expect(()=>createSessionCredentialPort("")).toThrow("missing-credential-key");
+ expect(SecureStore.getItemAsync).not.toHaveBeenCalled();
+ expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+});
+
 it("does not turn a failed modern credential read into a destructive missing-token clear",async()=>{
  const fixture=createSessionCredentialPort("fixture.synthetic.run-unique");jest.mocked(SecureStore.getItemAsync).mockRejectedValue(new Error("locked"));await expect(fixture.read()).rejects.toThrow("locked");expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
 });

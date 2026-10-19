@@ -103,6 +103,22 @@ it('rejects unpaired UTF-16 surrogates instead of trusting code-unit length',()=
  expect(utf8Bytes('\ud83d\ude00')).toBe(4);
 });
 
+it('counts a non-surrogate BMP character as three UTF-8 bytes',()=>{
+ expect(utf8Bytes('漢')).toBe(3);
+ expect(utf8Bytes('A漢')).toBe(4);
+});
+
+it('allows whitespace-only behavior content but rejects text in a successful transition',()=>{
+ const whitespace=login.replace(/(<behavior[^>]*?)\s*\/>/,'$1> \n </behavior>');
+ const text=login.replace(/(<behavior[^>]*?)\s*\/>/,'$1> private </behavior>');
+ expect(parseAuthBody('password',200,'password-ok',whitespace)).toMatchObject({kind:'success',effect:{kind:'store',token}});
+ expect(()=>parseAuthBody('password',200,'password-ok',text)).toThrow('invalid-credential-effect');
+});
+
+it('rejects a success transition with the wrong root panel identity',()=>{
+ expect(()=>parseAuthBody('password',200,'password-ok',login.replace('id="login-transition"','id="other-panel"'))).toThrow('invalid-auth-transition');
+});
+
 it('rejects JSON observations that are not a bounded object, even with a matching header',()=>{
  const headers=new Headers({[SESSION_HEADERS.binding]:A});
  for(const body of ['null','[]','true','"private"'])expect(()=>parseObservation(body,headers)).toThrow('invalid-observation');

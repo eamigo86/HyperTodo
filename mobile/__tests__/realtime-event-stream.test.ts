@@ -101,6 +101,50 @@ it('backs off network failures with bounded jitter and cancels scheduled reconne
   f.client.dispose();f.client.setOwner(current);expect(f.fetch).toHaveBeenCalledTimes(3);
 });
 
+it('does not retry a transport failure after its owner becomes ineligible',async()=>{
+ const f=fixture(),current=owner();let reject!:(error:Error)=>void;
+ f.fetch.mockImplementationOnce(()=>new Promise<Response>((_resolve,no)=>{reject=no;}));
+ f.client.setOwner(current);await tick();
+ current.isCurrent.mockReturnValue(false);reject(new Error('connection lost'));
+ await tick();expect(f.fetch).toHaveBeenCalledTimes(1);expect(f.pending()).toBe(0);
+ await f.advance(120000);expect(f.fetch).toHaveBeenCalledTimes(1);
+ f.client.dispose();
+});
+
+it('does not reopen a scheduled retry after its owner loses foreground authority',async()=>{
+ const f=fixture(),current=owner();f.fetch.mockRejectedValueOnce(new Error('offline'));
+ f.client.setOwner(current);await tick();expect(f.pending()).toBe(1);
+ current.isCurrent.mockReturnValue(false);await f.advance(1000);
+ expect(f.fetch).toHaveBeenCalledTimes(1);expect(f.pending()).toBe(0);
+ f.client.dispose();
+});
+
+it('closes a stream whose owner expires before its inactivity watchdog fires',async()=>{
+ const f=fixture(),current=owner();f.client.setOwner(current);await tick();
+ current.isCurrent.mockReturnValue(false);await f.advance(45000);
+ expect(f.fetch).toHaveBeenCalledTimes(1);expect(f.fetch.mock.calls[0][1].signal?.aborted).toBe(true);
+ expect(current.receive).not.toHaveBeenCalled();expect(f.pending()).toBe(0);
+ f.client.dispose();
+});
+
+it('ignores a rejected old fetch after a replacement owner opens its own stream',async()=>{
+ const f=fixture(),old=owner(),next=owner(B,2),replacement=stream(200,B);let reject!:(error:Error)=>void;
+ f.fetch.mockImplementationOnce(()=>new Promise<Response>((_resolve,no)=>{reject=no;})).mockResolvedValueOnce(replacement.response);
+ f.client.setOwner(old);f.client.setOwner(next);await tick();
+ reject(new Error('old connection failed'));await tick();
+ replacement.push(wire('resync',{version:1}));await tick();
+ expect(next.receive).toHaveBeenCalledWith(['tasks','categories','ui'],'resync');
+ expect(f.fetch).toHaveBeenCalledTimes(2);expect(f.pending()).toBe(2);
+ f.client.dispose();expect(f.pending()).toBe(0);
+});
+
+it('allows repeated disposal without reopening transport or replaying callbacks',async()=>{
+ const f=fixture(),current=owner();f.client.setOwner(current);await tick();
+ f.client.dispose();f.client.dispose();await f.advance(120000);
+ expect(f.fetch).toHaveBeenCalledTimes(1);expect(f.pending()).toBe(0);
+ expect(current.receive).not.toHaveBeenCalled();
+});
+
 it('bounds retry jitter at both extremes and resets backoff only after a valid resync',async()=>{
   for(const sample of [0,1]) {
     const f=fixture(), current=owner(), times:number[]=[];

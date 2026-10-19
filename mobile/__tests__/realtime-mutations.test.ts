@@ -1,6 +1,12 @@
 import {createMutationLedger} from '../src/realtime/mutations';
 
 const A='a'.repeat(32),B='b'.repeat(32);
+it.each([{counterLimit:0},{counterLimit:1.5},{operationLimit:0},{operationLimit:257}])('rejects invalid mutation limits: %j',limits=>{
+ expect(()=>createMutationLedger(limits)).toThrow('invalid-mutation-limits');
+ const ledger=createMutationLedger({counterLimit:1,operationLimit:1});
+ expect(ledger.acceptSeed(A)).toBe(true);
+ expect(ledger.admit({})).toBe(A+'00000001');
+});
 it('keeps correlating normal operations after more than32 fresh response seeds',()=>{
  const ledger=createMutationLedger();let latest='';
  for(let index=1;index<=40;index++){latest=index.toString(16).padStart(32,'0');expect(ledger.acceptSeed(latest)).toBe(true);}
