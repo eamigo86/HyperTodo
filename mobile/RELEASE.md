@@ -123,11 +123,19 @@ this same file. So localhost and cleartext are an explicit developer opt-in inst
    1.1.0 binary would otherwise show a dead control.
    **Keep the server gate until 1.2.0 is the installed floor.**
 
-10. **Before the first build**, confirm what EAS uploads: this is a single git repo with `backend/` and
+10. **The 1.3.0 time picker is gated the same way.** `@react-native-community/datetimepicker` is a native
+   module, so, as in item 9, no over-the-air push can deliver it. The server compares `X-App-Version`
+   with `MIN_TIME_PICKER_VERSION` (1.3.0, in `backend/todo/views.py`) to decide between
+   `<app:time-picker>` and the plain `HH:MM` text field the task form used before: a 1.2.x binary has no
+   `TimePicker` component, and Hyperview renders an unregistered component as nothing, which would leave
+   the "Due time" label over an empty row. Both markups post `due_time` as `HH:MM`.
+   **Keep the legacy due-time field until 1.3.0 is the installed floor.**
+
+11. **Before the first build**, confirm what EAS uploads: this is a single git repo with `backend/` and
    `mobile/` as siblings. Check the reported archive size on the first `eas build`, and see
    `cli.requireCommit` if committed-only state is wanted.
 
-11. **Known and accepted: OS chrome stays light while the app is dark.** The theme this app draws
+12. **Known and accepted: OS chrome stays light while the app is dark.** The theme this app draws
     follows the SERVER preference (`todo/theme.py` → the stylesheet, `X-HyperTodo-Theme` → the native
     shell), not the OS appearance. Two surfaces cannot be reached from there, and both are deliberate,
     not oversights:
