@@ -40,3 +40,22 @@ it('does not treat appended request-only row forms or CSRF token rotation as uns
  const changed=parseRows(400,'another');Array.from(changed.getElementsByTagName('text-field')).find(field=>field.getAttribute('name')==='query')!.setAttribute('value','unsent');
  expect(trackDraft(trackDraft(undefined,first),captureDraft(changed,registry))).toMatchObject({dirty:true,revision:1});
 });
+
+it('serializes a form boundary itself, not only descendant forms',()=>{
+ const form=parse('<form><text-field name="title" value="Current title"/></form>');
+ const registry={getFormData:()=>{const body=new FormData();body.append('title','Current title');return body;}};
+ expect(captureDraft(form,registry)).toBe('["title=Current+title"]');
+});
+
+it('protects drafts whose form serialization contains unsupported file data',()=>{
+ const form=parse('<form/>');
+ const registry={getFormData:()=>{const body=new FormData();body.append('avatar',new Blob(['bytes']),'photo.jpg');return body;}};
+ expect(captureDraft(form,registry)).toBeNull();
+});
+
+it('bounds distinct user-entered forms before comparing a large screen draft',()=>{
+ const boundary=parse('<view>'+Array.from({length:33},(_,index)=>`<form><text-field name="value" value="${index}"/></form>`).join('')+'</view>');
+ const registry={getFormData:(form:Element)=>{const body=new FormData();body.append('value',form.getElementsByTagName('text-field')[0].getAttribute('value')!);return body;}};
+ expect(captureDraft(boundary,registry)).toBeNull();
+ expect(trackDraft(undefined,captureDraft(boundary,registry)).dirty).toBe(true);
+});

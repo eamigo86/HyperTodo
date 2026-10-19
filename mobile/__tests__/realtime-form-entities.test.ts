@@ -47,3 +47,25 @@ it.each(['missing','mismatched','foreign','unknown'])('uses generic form copy fo
  const doc=new DOMParser().parseFromString(`<doc xmlns="https://hyperview.org/hyperview">${shape==='missing'?body:`<screen${shape==='foreign'?' xmlns="https://example.test/foreign"':''} id="${screen}">${body}</screen>`}</doc>`,'application/xml');
  expect(formObjectKind(doc.getElementsByTagNameNS('https://hypertodo.app/components','realtime')[0])).toBe('form');
 });
+
+it('treats oversized local metadata as unknown rather than trusting a truncated entity set',()=>{
+ const root=form();root.setAttribute('entities','x'.repeat(4097));
+ expect(affectsForm(root,['tasks'],change('tasks',Y))).toBe(true);
+});
+
+it('ignores unrelated picker fields when checking the selected category entity',()=>{
+ const root=form();
+ const unrelated=root.ownerDocument.createElement('picker-field');
+ unrelated.setAttribute('name','sort-order');unrelated.setAttribute('value','recent');
+ root.appendChild(unrelated);
+ expect(affectsForm(root,['categories'],change('categories',X))).toBe(true);
+ expect(affectsForm(root,['categories'],change('categories',Y))).toBe(false);
+});
+
+it('fails safe when one selected category value maps to two rows',()=>{
+ const root=form();
+ const picker=root.getElementsByTagName('picker-field')[0];
+ const duplicate=picker.getElementsByTagName('picker-item')[0].cloneNode(true);
+ picker.appendChild(duplicate);
+ expect(affectsForm(root,['categories'],change('categories',Y))).toBe(true);
+});

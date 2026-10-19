@@ -58,6 +58,71 @@ it("rejects foreign origins and auth POSTs on the ordinary port before transport
  await expect(supervisor.request("/hv/login/",{method:"POST"})).rejects.toThrow();expect(transport).toHaveBeenCalledTimes(1);
 });
 
+it("rejects fragments and out-of-scope paths before admitting an ordinary request",async()=>{
+ const {supervisor,transport}=fixture();await supervisor.bootstrap();
+ for(const url of ["/hv/tasks/#private","/hv/../admin/","https://user@app.test/hv/tasks/"]){
+  await expect(supervisor.request(url)).rejects.toThrow("unsupported-request");
+ }
+ expect(transport).toHaveBeenCalledTimes(1);
+});
+
+it("preserves caller Origin and Accept while still enforcing the session headers",async()=>{
+ const {supervisor,transport}=fixture();await supervisor.bootstrap();
+ await supervisor.request("/hv/tasks/",{headers:{Origin:ORIGIN,Accept:"application/custom+xml"}});
+ const headers=new Headers(transport.mock.calls[1][1].headers);
+ expect(headers.get("Origin")).toBe(ORIGIN);
+ expect(headers.get("Accept")).toBe("application/custom+xml");
+ expect(headers.get(H.expected)).toBe(A);
+ expect(headers.get("Cache-Control")).toBe("no-store");
+});
+
+it("forwards a signal that was already aborted before a request starts",async()=>{
+ const {supervisor,transport}=fixture();await supervisor.bootstrap();
+ const controller=new AbortController();controller.abort();
+ transport.mockImplementationOnce(async(_url,init)=>{
+  expect(init.signal?.aborted).toBe(true);
+  throw new Error("caller cancelled");
+ });
+ await expect(supervisor.request("/hv/tasks/",{signal:controller.signal})).rejects.toThrow("caller cancelled");
+ expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it("rejects a response without its final URL before exposing its body or theme",async()=>{
+ const {supervisor,transport,theme}=fixture();await supervisor.bootstrap();
+ const invalid={...response("private"),url:""} as Response;
+ transport.mockResolvedValueOnce(invalid);
+ await expect(supervisor.request("/hv/tasks/")).rejects.toThrow("untrusted-response");
+ expect(invalid.text).not.toHaveBeenCalled();
+ expect(theme).not.toHaveBeenCalled();
+});
+
+it("does not publish an initial identity if the app pauses while observation is in flight",async()=>{
+ const {supervisor,transport,identity}=fixture();
+ const pending=deferred<Response>();transport.mockImplementationOnce(()=>pending.promise);
+ const bootstrap=supervisor.bootstrap();await tick();supervisor.pause();
+ pending.resolve(observation());
+ await expect(bootstrap).resolves.toBe("uncertain");
+ expect(supervisor.snapshot()).toMatchObject({identity:null,availability:"paused"});
+ expect(identity).not.toHaveBeenCalled();
+});
+
+it("does not let a throwing source predicate authorize a native lease",async()=>{
+ const {supervisor,store}=fixture();await supervisor.bootstrap();
+ const lease=supervisor.lease(()=>{throw new Error("source removed");});
+ expect(lease.isCurrent()).toBe(false);
+ await expect(lease.clearCredential({})).resolves.toBe("stale");
+ expect(store.clear).not.toHaveBeenCalled();
+});
+
+it("returns a retired effect for unknown receipts and a stale lease before bootstrap",async()=>{
+ const {supervisor,store}=fixture();
+ await expect(supervisor.consumeEffect({})).resolves.toBe("retired");
+ const lease=supervisor.lease(()=>true);
+ expect(lease.isCurrent()).toBe(false);
+ await expect(lease.clearCredential({})).resolves.toBe("stale");
+ expect(store.clear).not.toHaveBeenCalled();
+});
+
 it("checks response ownership before body or theme, preserving request metadata",async()=>{
  const {supervisor,transport,theme}=fixture();await supervisor.bootstrap();const wrong=response("private B",B);transport.mockResolvedValueOnce(wrong);
  await expect(supervisor.request("/hv/tasks/?tag=a&tag=b",{method:"POST",body:"csrf=kept&a=%2B",headers:{"X-App-Version":"v","X-CSRFToken":"csrf",[H.expected]:B}})).rejects.toThrow();

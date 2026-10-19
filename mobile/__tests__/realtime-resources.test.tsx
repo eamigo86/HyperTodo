@@ -6,7 +6,7 @@ import {NavigationContainer,createNavigationContainerRef} from "@react-navigatio
 import {createStackNavigator} from "@react-navigation/stack";
 import type {HvComponentProps} from "hyperview";
 import {createRealtimeGate} from "../src/realtime/gate";
-import {parseResources,resourceReloadUrl} from "../src/realtime/resources";
+import {dependencies,neededVersion,parseResources,readNoticeLabels,resourceReloadUrl} from "../src/realtime/resources";
 
 jest.mock("react-native-webview",()=>({WebView:()=>null}));
 const Stack=createStackNavigator(),HV="https://hyperview.org/hyperview",NS="https://hypertodo.app/components";
@@ -391,3 +391,48 @@ it("defers an in-flight automatic refresh on real blur and honors automatic poli
 
 
 it.each([['tasks'],['categories'],['ui'],['tasks','categories'],['tasks','ui'],['categories','ui'],['tasks','categories','ui']].map(value=>[value]))("accepts and snapshots canonical resource combination %p",value=>{const copied=parseResources(value);expect(copied).toEqual(value);expect(copied).not.toBe(value);expect(Object.isFrozen(copied)).toBe(true);});
+
+it.each([undefined,"tasks",[],["ui","tasks"],["tasks","tasks"],["tasks","unknown"]])
+ ("rejects noncanonical resource declarations: %p",value=>{
+  expect(parseResources(value)).toBeNull();
+ });
+
+it("uses only an element's declared resource dependencies and their newer versions",()=>{
+ const element={getAttribute:(name:string)=>name==="resources"?"tasks ui":null} as Element;
+ expect(dependencies(element)).toEqual(["tasks","ui"]);
+ expect(neededVersion(dependencies(element),{tasks:3,categories:9,ui:2},{tasks:1,categories:0,ui:2})).toBe(3);
+ expect(neededVersion([], {tasks:3,categories:9,ui:2},{tasks:1,categories:0,ui:2})).toBe(0);
+ expect(dependencies({getAttribute:()=>null} as unknown as Element)).toEqual([]);
+});
+
+it("leaves a non-list resource URL's ordinary query intact except for its fragment selector",()=>{
+ expect(resourceReloadUrl("/hv/settings/?tab=profile&fragment=panel",BASE,"form"))
+  .toBe("https://hypertodo.test/hv/settings/?tab=profile");
+});
+
+it("removes stale pagination keys when a contextual prefix exceeds twenty pages",()=>{
+ const pages=Array.from({length:21},(_,index)=>index+1);
+ expect(resourceReloadUrl(BASE+"&through_page=21&fragment=list",BASE,"list",pages,true))
+  .toBe(PAGE1);
+});
+
+it.each(["", "#panel", "https://other.test/hv/tasks/", "javascript:alert(1)"])
+ ("rejects an unsafe resource refresh href: %s",href=>{
+  expect(()=>resourceReloadUrl(href,BASE,"list")).toThrow("invalid-resource-refresh");
+ });
+
+it("returns an independent copy of complete translated notice labels",()=>{
+ const labels={...en,conflict:{messages:{task:"Task changed",category:"Category changed",settings:"Settings changed",form:"Form changed"},goBack:"Go back",backUnavailable:"Stay here"}};
+ const copy=readNoticeLabels(()=>labels);
+ expect(copy).toEqual(labels);
+ expect(copy).not.toBe(labels);
+ expect(copy?.conflict).not.toBe(labels.conflict);
+ expect(copy?.conflict?.messages).not.toBe(labels.conflict.messages);
+});
+
+it.each([
+ {...en,conflict:{messages:{task:"",category:"Category",settings:"Settings",form:"Form"},goBack:"Go back",backUnavailable:"Stay"}},
+ {...en,conflict:{messages:{task:"Task",category:"Category",settings:"Settings",form:"Form"},goBack:"",backUnavailable:"Stay"}},
+])("rejects incomplete conflict labels rather than exposing partial choices",labels=>{
+ expect(readNoticeLabels(()=>labels)).toBeNull();
+});

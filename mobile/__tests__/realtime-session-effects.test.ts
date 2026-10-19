@@ -55,3 +55,49 @@ it("bounds live receipts without eviction and refuses replay of retired receipts
  const next=effects.apply({},()=>true,{kind:"clear"});await jobs[64](store);completions[64].resolve();await next;
  await expect(effects.apply(first,()=>true,{kind:"clear"})).resolves.toBe("retired");expect(jobs).toHaveLength(65);
 });
+
+it("reports a current clear and retires its receipt after completion",async()=>{
+ const {store,effects}=fixture(),receipt={};
+ await expect(effects.apply(receipt,()=>true,{kind:"clear"})).resolves.toBe("cleared");
+ expect(store.clear).toHaveBeenCalledTimes(1);
+ expect(store.save).not.toHaveBeenCalled();
+ await expect(effects.apply(receipt,()=>true,{kind:"clear"})).resolves.toBe("retired");
+});
+
+it("treats an ownership callback that throws as stale before touching credentials",async()=>{
+ const {store,effects}=fixture();
+ await expect(effects.apply({},()=>{throw new Error("owner unavailable");},{kind:"store",token:"secret"})).resolves.toBe("stale");
+ expect(store.save).not.toHaveBeenCalled();expect(store.clear).not.toHaveBeenCalled();
+});
+
+it("reports stale when ownership disappears after a successful native write",async()=>{
+ const {store,effects}=fixture();let current=true;
+ store.save.mockImplementationOnce(async()=>{current=false;});
+ await expect(effects.apply({},()=>current,{kind:"store",token:"A"})).resolves.toBe("stale");
+ expect(store.save).toHaveBeenCalledWith("A");expect(store.clear).not.toHaveBeenCalled();
+});
+
+it("clears a failed current save but never claims ownership if it expires during clear",async()=>{
+ const {store,effects}=fixture();let current=true;
+ store.save.mockRejectedValueOnce(new Error("save failed"));
+ store.clear.mockImplementationOnce(async()=>{current=false;});
+ await expect(effects.apply({},()=>current,{kind:"store",token:"A"})).resolves.toBe("stale");
+ expect(store.clear).toHaveBeenCalledTimes(1);
+});
+
+it("reports a failed compensation when both current native writes fail",async()=>{
+ const {store,effects}=fixture();
+ store.save.mockRejectedValueOnce(new Error("save failed"));
+ store.clear.mockRejectedValueOnce(new Error("clear failed"));
+ await expect(effects.apply({},()=>true,{kind:"store",token:"A"})).resolves.toBe("failed");
+ expect(store.clear).toHaveBeenCalledTimes(1);
+});
+
+it.each(["reject","throw"])("retires a receipt after queue %s without leaking credential work",async(kind)=>{
+ const store={save:jest.fn(async()=>{}),clear:jest.fn(async()=>{})};
+ const queue:StorageQueue={enqueue:()=>{if(kind==="throw")throw new Error("queue unavailable");return Promise.reject(new Error("queue unavailable"));}};
+ const effects=createSessionEffects(queue),receipt={};
+ await expect(effects.apply(receipt,()=>true,{kind:"clear"})).resolves.toBe("failed");
+ await expect(effects.apply(receipt,()=>true,{kind:"clear"})).resolves.toBe("retired");
+ expect(store.clear).not.toHaveBeenCalled();
+});

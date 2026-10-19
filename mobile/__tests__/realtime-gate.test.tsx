@@ -57,6 +57,52 @@ it("does not interpret a completed fetch as a committed ACK", async () => {
   expect(gate.snapshot().pending).toBe(1);
 });
 
+it("contains failing observation and readiness listeners after a real layout", async () => {
+  const observe = jest.fn(() => { throw new Error("diagnostics unavailable"); });
+  const ready = jest.fn(() => { throw new Error("readiness listener unavailable"); });
+  const gate = createRealtimeGate({ onObservation: observe, onReady: ready });
+  const transport = jest.fn(async (_url: RequestInfo | URL, init?: RequestInit) =>
+    response(document(new Headers(init?.headers).get("X-HyperTodo-Request-ID")!)));
+  const screen = mount(gate, gate.wrapFetch(transport));
+  try {
+    await screen.findByText("Task one");
+    expect(gate.snapshot().routes[0]).toMatchObject({ focused: true, pages: [1] });
+    expect(ready).toHaveBeenCalledTimes(1);
+    expect(observe).toHaveBeenCalledWith(expect.objectContaining({ kind: "ready" }));
+    expect(transport).toHaveBeenCalledTimes(1);
+  } finally { screen.unmount(); }
+});
+
+it("keeps a resource change visible when the server's refresh href is unsafe", async () => {
+  const labels = { changed: "Updates available", resync: "Check current state", update: "Update", dismiss: "Dismiss", csrf: "Form expired", error: "Update failed" };
+  const gate = createRealtimeGate({ noticeLabels: () => labels });
+  const transport = jest.fn(async (_url: RequestInfo | URL, init?: RequestInit) =>
+    response(document(new Headers(init?.headers).get("X-HyperTodo-Request-ID")!)
+      .replace('mode="list"', 'mode="list" resources="tasks"')
+      .replace('refresh-href="/hv/tasks/?status=active&amp;category=7&amp;fragment=list"', 'refresh-href="https://foreign.test/hv/tasks/"')));
+  const screen = mount(gate, gate.wrapFetch(transport));
+  try {
+    await screen.findByText("Task one");
+    act(() => expect(gate.invalidateResources(gate.snapshot().epoch, ["tasks"])).toBe(true));
+    await screen.findByText("Updates available");
+    expect(gate.snapshot().routes[0].notice).toBe(true);
+    expect(transport).toHaveBeenCalledTimes(1);
+  } finally { screen.unmount(); }
+});
+
+it("ignores malformed page numbers while still acknowledging the matching request", async () => {
+  const gate = createRealtimeGate();
+  const transport = jest.fn(async (_url: RequestInfo | URL, init?: RequestInit) =>
+    response(document(new Headers(init?.headers).get("X-HyperTodo-Request-ID")!, 0)));
+  const screen = mount(gate, gate.wrapFetch(transport));
+  try {
+    await screen.findByText("Task one");
+    await waitFor(() => expect(gate.snapshot().pending).toBe(0));
+    expect(gate.snapshot().routes[0].pages).toEqual([]);
+    expect(gate.snapshot().routes[0].focused).toBe(true);
+  } finally { screen.unmount(); }
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: Error) => void;
