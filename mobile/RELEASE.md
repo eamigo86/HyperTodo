@@ -1,7 +1,12 @@
 # Store release checklist
 
-Everything in this file is an account or infrastructure action. None of it can live in the repo,
-and the build is intentionally impossible to complete until items 1 and 2 are done.
+The HyperTodo 1.3.1 GitHub source release includes the six time-picker compatibility,
+schema, accessibility and documentation fixes since 1.3.0, together with the
+published dj-hyperview 0.1.0b4 dependency. It does not submit a store binary.
+The 1.3.0 capability gate and legacy due-time field remain for older installed clients.
+
+The store checklist below covers account and infrastructure actions that cannot be
+completed in this repo. A store build remains blocked until items 1 and 2 are done.
 
 ## How the build guard works
 

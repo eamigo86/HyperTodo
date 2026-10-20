@@ -1,7 +1,7 @@
 # HyperTodo
 
 [![CI](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml/badge.svg)](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml)
-[![dj-hyperview](https://img.shields.io/badge/dj--hyperview-0.1.0b3-278CFF)](https://pypi.org/project/dj-hyperview/0.1.0b3/)
+[![dj-hyperview](https://img.shields.io/badge/dj--hyperview-0.1.0b4-278CFF)](https://pypi.org/project/dj-hyperview/0.1.0b4/)
 [![Hyperview](https://img.shields.io/badge/Hyperview-0.112.0-171A2F)](https://www.npmjs.com/package/hyperview/v/0.112.0)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -25,7 +25,7 @@ Automated checks and manual device acceptance are separate; a passing XML or
 Jest test does not prove every native flow. Hyperview 0.112.0 keeps the 0.111.0
 fragment-fetch cleanup (covered by mounted regressions) and, replacing
 `createTestProps`, maps XML `id` to `testID`, as HyperTodo's custom components
-already did. The backend pins the published dj-hyperview 0.1.0b3, whose
+already did. The backend pins the published dj-hyperview 0.1.0b4, whose
 corrected 0.111.0 XSD is byte-identical to upstream's 0.112.0 one and stays the
 contract. None of this changes the SSE wire protocol or needs a Navigation 7
 migration.
@@ -34,7 +34,7 @@ migration.
 
 | Path | Purpose |
 | --- | --- |
-| [`backend/`](backend/) | Python 3.14 / Django 6.1.1, pinned to `dj-hyperview[editor,realtime]==0.1.0b3`. |
+| [`backend/`](backend/) | Python 3.14 / Django 6.1.1, pinned to `dj-hyperview[editor,realtime]==0.1.0b4`. |
 | [`mobile/`](mobile/) | Expo SDK 57, React Native 0.86 and Hyperview 0.112.0 host. |
 | [`Makefile`](Makefile) | Install, run and quality commands for both applications. |
 
@@ -166,7 +166,7 @@ Every backend command uses `config.settings`: active database templates take
 precedence, with filesystem fallback when no active override exists. Startup
 never rewrites stored templates. A fresh demo seed creates About and Categories
 overrides. The About screen displays the validated version sent by each client,
-so existing 1.2.1 and new 1.3.0 clients show their own versions. Review active
+so 1.2.1, 1.3.0 and 1.3.1 clients each show their own version. Review active
 overrides before deployment rather than reseeding them.
 
 Sign into `/admin/` as an authorized superuser, open **Hyperview database templates → Hyperview templates**, edit a template and save. With Redis available, committed changes send a `ui` hint to connected clients; the next authenticated HTTP refresh resolves the updated DB template without rebuilding the app. The stored screen must retain its realtime boundary for automatic refresh; older overrides need review. For existing data, follow [override adoption](backend/docs/installed-adoption.md#adopt-database-overrides-explicitly) instead of seeding or overwriting deliberate Admin edits.

@@ -20,7 +20,7 @@ def test_release_declares_required_extras_and_asgi_server():
     dependencies = tomllib.loads((BACKEND / "pyproject.toml").read_text())["project"][
         "dependencies"
     ]
-    assert "dj-hyperview[editor,realtime]==0.1.0b3" in dependencies
+    assert "dj-hyperview[editor,realtime]==0.1.0b4" in dependencies
     assert any(value.split("=")[0].split(">")[0] == "uvicorn" for value in dependencies)
 
 

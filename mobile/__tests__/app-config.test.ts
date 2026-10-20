@@ -292,11 +292,10 @@ describe("app.config cleartext and ATS gating", () => {
     expect(plugin[1].microphonePermission).toBe(false);
   });
 
-  it("ships the version the server gates the pick-avatar action on", () => {
-    // Not cosmetic: todo/views.py MIN_AVATAR_UPLOAD_VERSION reads this exact
-    // string off X-App-Version to decide whether to render a control this binary
-    // can actually handle. Ship the feature without the bump and nobody sees it.
-    expect(resolve(REMOTE).version).toBe("1.3.0");
+  it("ships the version the server uses for native capability gates", () => {
+    // Not cosmetic: todo/views.py reads X-App-Version to gate native avatar
+    // and time-picker controls. The declared version must match this binary.
+    expect(resolve(REMOTE).version).toBe("1.3.1");
   });
 
   it("leaves the photo permission keys to the plugin instead of hand-writing them", () => {
