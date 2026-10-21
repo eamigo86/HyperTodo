@@ -35,6 +35,11 @@ const DEV = { ...NO_EAS, EXPO_PUBLIC_ALLOW_LOCAL_API: "1" };
 const PROD_EAS = { ...NO_EAS, EAS_BUILD: "true", EAS_BUILD_PROFILE: "production" };
 
 describe("app.config API URL guard", () => {
+  it("configures visible notifications without headless background execution", () => {
+    expect(resolve({...NO_EAS, EXPO_PUBLIC_API_URL: "https://example.com/hv/"}).plugins).toContainEqual([
+      "expo-notifications", {defaultChannel: "default", enableBackgroundRemoteNotifications: false},
+    ]);
+  });
   it("uses the local URL when a developer opts in explicitly", () => {
     expect(resolve(DEV).extra!.apiUrl).toBe(LOCAL_URL);
   });
@@ -273,6 +278,7 @@ describe("app.config cleartext and ATS gating", () => {
       "expo-image-picker",
       "expo-local-authentication",
       "expo-secure-store",
+      "expo-notifications",
       "expo-splash-screen"
     ]);
   });

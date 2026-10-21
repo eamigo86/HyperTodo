@@ -27,6 +27,7 @@ import { createAppSession, AppSessionSurface, type AppSessionOptions } from "./s
 import { createOwnedNativePorts } from "./src/behaviors/owned-native";
 import { sessionCredentials } from "./src/biometrics/store";
 import { publishSnackbar } from "./src/feedback/snackbar";
+import {createExpoPushPorts} from "./src/push/expo";
 import { THEME_TOKENS, useThemeName, ThemeProvider, defaultThemeStore, type ThemeStore, type ThemeTokens } from "./src/theme";
 
 void SplashScreen.preventAutoHideAsync();
@@ -141,6 +142,7 @@ const DefaultApp = createSessionApp({
   native: createOwnedNativePorts(sessionCredentials.read, Platform.OS === "ios" ? "ios" : "android"),
   onNotice: publishSnackbar,
   stream: {fetch: expoFetch},
+  push: createExpoPushPorts(),
   // Kept as the optional external cleanup observer; the session owns its stream.
   stopStream: () => {},
 }, defaultThemeStore);

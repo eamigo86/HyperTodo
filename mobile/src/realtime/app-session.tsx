@@ -14,6 +14,7 @@ import type { SnackbarNotice } from "../feedback/snackbar";
 import { createEventStream, type StreamClock, type StreamOwner } from "./event-stream";
 import {createMutationLedger} from './mutations';
 import type {ResourceChange} from './stream-protocol';
+import {createPushCoordinator, type PushPorts} from '../push/coordinator';
 type PublicPresentation = {
   handle: RecoveryHandle;
   gate: ReturnType<typeof createRealtimeGate>;
@@ -37,6 +38,7 @@ export type AppSessionOptions = {
   stopStream(): void;
   /** Internal transport DI; normal App supplies the explicit expo/fetch export. */
   stream?: { fetch(url: string, init: RequestInit): Promise<Response>; clock?: StreamClock };
+  push?: PushPorts;
   onGateObservation?: (event: Readonly<GateObservation>) => void;
   onResourceReceiver?: (receive: CapturedResourceReceiver | null) => void;
 };
@@ -186,6 +188,15 @@ export function createAppSession(options: AppSessionOptions) {
     const state = supervisor.snapshot();
     return !disposed && state.identity && state.rootReady && state.availability === "foreground" ? resources : null;
   }
+  const push = options.push ? createPushCoordinator({
+    snapshot: supervisor.snapshot,
+    subscribe: supervisor.subscribe,
+    request: supervisor.request,
+    captureResources: () => {
+      const receiver = captureResources();
+      return receiver ? names => receiver(names) : null;
+    },
+  }, options.push) : null;
   function publishReceiver(): void {
     const receiver = captureResources();
     if (receiver === publishedReceiver) return;
@@ -291,13 +302,17 @@ export function createAppSession(options: AppSessionOptions) {
         listeners.delete(listener);
       };
     },
-    start: () => started ?? (started = supervisor.bootstrap()),
+    start: () => started ?? (started = supervisor.bootstrap().then(result => {
+      void push?.start();
+      return result;
+    })),
     pause: () => supervisor.pause(),
     foreground,
     retry: foreground,
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      push?.dispose();
       held = null;
       supervisor.invalidate();
       stream?.dispose();

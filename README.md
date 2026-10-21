@@ -76,6 +76,27 @@ both with the same reachable private computer address, scan the QR and sign in.
 No native build is needed. Use only trusted development networks, not real data
 or publicly exposed demo credentials; stop both terminals with Ctrl+C.
 
+## Task-owner push alerts
+
+Task edits can produce a generic **Task updated** alert for the current owner
+while the app is in the background. It contains no Task title, account name,
+credential, or URL. Tapping opens HyperTodo and asks its existing Tasks resource
+gate to reconcile through the authenticated API **after** the current session is
+confirmed. It does not deep-link to a Task or discard an open draft. Foreground
+alerts are suppressed; the existing SSE update path remains responsible there.
+
+Push is optional and disabled on the server by default. To test it on a physical
+device, configure an Expo project ID and the platform's APNs/FCM credentials,
+build a development client with `expo-notifications`, grant OS permission after
+sign-in, then enable `HYPERTODO_PUSH_ENABLED=1` for the backend and run its
+explicit `dispatch_push --send` worker. Registration requires the normal Django
+session and CSRF token; logging out revokes that session's device registration.
+Expo Go or a build without a project ID keeps the rest of the app working but
+does not register for remote push. No native build, credentials setup, or real
+delivery is claimed by repository tests. Verify a background edit, a foreground
+edit without a duplicate banner, a cold-start tap, and an account switch on an
+actual device before enabling this for users.
+
 ## Screenshots
 
 <table>

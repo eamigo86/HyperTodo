@@ -141,6 +141,7 @@ export default (): ExpoConfig => {
       ],
       ["expo-local-authentication", { faceIDPermission: "Sign in to HyperTodo with Face ID instead of typing your password." }],
       ["expo-secure-store", { faceIDPermission: "Sign in to HyperTodo with Face ID instead of typing your password." }],
+      ["expo-notifications", {defaultChannel: "default", enableBackgroundRemoteNotifications: false}],
       [
         "expo-splash-screen",
         {
