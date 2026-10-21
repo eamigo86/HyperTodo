@@ -32,3 +32,6 @@ class TodoConfig(AppConfig):
         from .realtime_signals import connect_realtime_signals
 
         connect_realtime_signals()
+        from .push_signals import connect_push_signals
+
+        connect_push_signals()

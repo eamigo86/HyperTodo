@@ -4,8 +4,9 @@ import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, router, transaction
 from django.db.models.functions import Lower
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from .validators import xml_safe_text
@@ -94,6 +95,19 @@ class Task(models.Model):
         """
         return self.title
 
+    def save(self, *args: object, **kwargs: object) -> None:
+        """Keep post-save outbox inserts in the same transaction as the Task write."""
+        using = (
+            kwargs.get("using")
+            or self._state.db
+            or router.db_for_write(Task, instance=self)
+        )
+        if not settings.PUSH_NOTIFICATIONS_ENABLED:
+            super().save(*args, **kwargs)
+            return
+        with transaction.atomic(using=using):
+            super().save(*args, **kwargs)
+
     @property
     def is_completed(self) -> bool:
         """Report whether the task has a completion timestamp.
@@ -135,6 +149,43 @@ class PushDevice(models.Model):
     def __str__(self) -> str:
         """Describe the owner without exposing session or push token material."""
         return f"Push destination for user {self.user_id}"
+
+
+class PushDelivery(models.Model):
+    """A durable, per-device Task update awaiting Expo ticket and receipt."""
+
+    class Status(models.TextChoices):
+        """Bounded delivery states; a ticket is not delivery."""
+
+        PENDING = "pending", "Pending"
+        RECEIPT = "receipt", "Awaiting receipt"
+        DONE = "done", "Completed"
+        DROPPED = "dropped", "Dropped"
+
+    task = models.ForeignKey(
+        Task, on_delete=models.CASCADE, related_name="push_deliveries"
+    )
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    device = models.ForeignKey(
+        PushDevice, on_delete=models.SET_NULL, null=True, related_name="deliveries"
+    )
+    registration_version = models.UUIDField()
+    status = models.CharField(max_length=8, choices=Status, default=Status.PENDING)
+    ticket_id = models.CharField(max_length=128, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now)
+    lease_id = models.UUIDField(null=True, blank=True)
+    lease_until = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=("status", "next_attempt_at"), name="todo_push_due")
+        ]
+
+    def __str__(self) -> str:
+        """Describe the delivery without private Task or token content."""
+        return f"Task push delivery {self.pk} ({self.status})"
 
 
 class BiometricCredential(models.Model):

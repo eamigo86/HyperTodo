@@ -211,3 +211,6 @@ CSRF_FAILURE_VIEW = "todo.views.csrf_failure"
 HYPERTODO_SOURCE_PROBE = (
     os.environ.get("HYPERTODO_SOURCE_PROBE", "1" if DEBUG else "0") == "1"
 )
+
+# Explicit operator opt-in: registration works, but dispatch is disabled by default.
+PUSH_NOTIFICATIONS_ENABLED = os.environ.get("HYPERTODO_PUSH_ENABLED", "0") == "1"
