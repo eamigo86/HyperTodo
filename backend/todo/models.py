@@ -116,6 +116,27 @@ class Task(models.Model):
             )
 
 
+class PushDevice(models.Model):
+    """One current Expo destination owned by one authenticated installation."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="push_devices"
+    )
+    session = models.ForeignKey(
+        "sessions.Session", on_delete=models.CASCADE, related_name="todo_push_devices"
+    )
+    installation_id = models.UUIDField(unique=True)
+    expo_token = models.CharField(max_length=256, unique=True)
+    registration_version = models.UUIDField(default=uuid.uuid4)
+    auth_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        """Describe the owner without exposing session or push token material."""
+        return f"Push destination for user {self.user_id}"
+
+
 class BiometricCredential(models.Model):
     """A single device credential that unlocks one account by biometrics.
 

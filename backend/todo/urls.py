@@ -3,12 +3,15 @@
 from django.conf import settings
 from django.urls import path
 
-from . import recovery_views, session_views, views
+from . import push_views, recovery_views, session_views, views
 
 app_name = "todo"
 urlpatterns = [
     path("recovery/", recovery_views.recovery_view, name="recovery"),
     path("session-state/", session_views.session_state, name="session-state"),
+    path(
+        "push-registrations/", push_views.push_registrations, name="push-registrations"
+    ),
     path("", views.root, name="root"),
     path("login/", views.login_view, name="login"),
     path("logout/", views.logout_view, name="logout"),
