@@ -25,10 +25,11 @@ Automated checks and manual device acceptance are separate; a passing XML or
 Jest test does not prove every native flow. Hyperview 0.112.0 keeps the 0.111.0
 fragment-fetch cleanup (covered by mounted regressions) and, replacing
 `createTestProps`, maps XML `id` to `testID`, as HyperTodo's custom components
-already did. The backend pins the published dj-hyperview 0.1.0b4, whose
-corrected 0.111.0 XSD is byte-identical to upstream's 0.112.0 one and stays the
-contract. None of this changes the SSE wire protocol or needs a Navigation 7
-migration.
+already did. The original upstream 0.111.0 and 0.112.0 XSD files are
+byte-identical. The backend pins the published dj-hyperview 0.1.0b4 and uses its
+distinct corrected 0.111.0 `r4` schema as the validation contract; `r4` is not
+byte-identical to those upstream originals. None of this changes the SSE wire
+protocol or needs a Navigation 7 migration.
 
 ## Repository layout
 
