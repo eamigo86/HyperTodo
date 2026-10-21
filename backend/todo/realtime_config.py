@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from dj_hyperview.conf import RealtimeSettings as RealtimeConfig
 from dj_hyperview.conf import get_settings
 from django.conf import settings
+from django.core.checks import Error, register
 from django.core.exceptions import ImproperlyConfigured
 
 if TYPE_CHECKING:
@@ -29,13 +30,30 @@ def get_realtime_config() -> RealtimeConfig | None:
         )
     configured = get_settings().realtime
     if (
-        configured is not None
-        and settings.SESSION_ENGINE != "django.contrib.sessions.backends.db"
-    ):
+        configured is not None or getattr(settings, "PUSH_NOTIFICATIONS_ENABLED", False)
+    ) and settings.SESSION_ENGINE != "django.contrib.sessions.backends.db":
         raise ImproperlyConfigured(
             "HYPERVIEW['REALTIME'] requires database sessions in HyperTodo."
+            if configured is not None
+            else "Task push requires database sessions in HyperTodo."
         )
     return configured
+
+
+@register()
+def check_push_sessions(app_configs: object = None, **kwargs: object) -> list[Error]:
+    """Reject a push-enabled deployment that cannot revalidate session rows."""
+    if (
+        getattr(settings, "PUSH_NOTIFICATIONS_ENABLED", False)
+        and settings.SESSION_ENGINE != "django.contrib.sessions.backends.db"
+    ):
+        return [
+            Error(
+                "Task push requires database sessions in HyperTodo.",
+                id="todo.E001",
+            )
+        ]
+    return []
 
 
 @cache

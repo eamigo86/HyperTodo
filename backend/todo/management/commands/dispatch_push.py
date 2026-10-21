@@ -27,24 +27,30 @@ class Command(BaseCommand):
             "--limit", type=int, default=20, help="Rows per cycle (1–100)"
         )
         parser.add_argument(
-            "--watch", action="store_true", help="Repeat bounded cycles"
+            "--watch", action="store_true", help="Run bounded batches until Ctrl+C"
         )
-        parser.add_argument("--cycles", type=int, default=1, help="Watch cycles (1–20)")
+        parser.add_argument("--cycles", type=int, help="Optional watch cycles (1–20)")
         parser.add_argument(
             "--interval", type=int, default=30, help="Seconds between cycles (1–60)"
         )
 
     def handle(self, *args: object, **options: Any) -> None:
-        """Preview rows or send one to twenty bounded cycles."""
+        """Preview rows or send bounded batches until stopped."""
         limit = options["limit"]
         cycles = options["cycles"]
         interval = options["interval"]
-        if not 1 <= limit <= 100 or not 1 <= cycles <= 20 or not 1 <= interval <= 60:
+        if (
+            not 1 <= limit <= 100
+            or (cycles is not None and not 1 <= cycles <= 20)
+            or not 1 <= interval <= 60
+        ):
             raise CommandError(
                 "limit, cycles or interval is outside its documented bound"
             )
         if options["watch"] and not options["send"]:
             raise CommandError("--watch requires explicit --send")
+        if cycles is not None and not options["watch"]:
+            raise CommandError("--cycles requires --watch")
         if not options["send"]:
             now = timezone.now()
             due = (
@@ -63,8 +69,13 @@ class Command(BaseCommand):
         if not settings.PUSH_NOTIFICATIONS_ENABLED:
             raise CommandError("Task push dispatch is disabled by configuration")
         repeats = cycles if options["watch"] else 1
-        for cycle in range(repeats):
-            processed = dispatch_due(limit=limit)
-            self.stdout.write(f"Processed {processed} Task alerts")
-            if cycle + 1 < repeats:
-                time.sleep(interval)
+        cycle = 0
+        try:
+            while repeats is None or cycle < repeats:
+                processed = dispatch_due(limit=limit)
+                self.stdout.write(f"Processed {processed} Task alerts")
+                cycle += 1
+                if repeats is None or cycle < repeats:
+                    time.sleep(interval)
+        except KeyboardInterrupt:
+            self.stdout.write("Task push worker stopped")

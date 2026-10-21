@@ -169,15 +169,19 @@ Push registration is tied to the current Django session and installation. With
 outbox row per registered destination **in the same transaction** as the Task
 write. Creation, no-op saves, raw fixture saves, and direct `QuerySet.update()`
 do not enqueue; bulk/SQL writers must use an explicit supported mutation path.
-This works even when the optional Redis/SSE transport is disabled. No push HTTPS
-request occurs during a Task write or at commit.
+This works even when the optional Redis/SSE transport is disabled, but push
+still requires database-backed Django sessions for dispatch-time revalidation.
+No push HTTPS request occurs during a Task write or at commit.
 
-The dispatcher is opt-in and bounded. `uv run python manage.py dispatch_push`
+The dispatcher is opt-in and processes bounded batches. `uv run python manage.py dispatch_push`
 only previews due rows. After configuring the backend and Expo project, run
 `uv run python manage.py dispatch_push --send --limit 20` for one batch, or
-`uv run python manage.py dispatch_push --send --watch --cycles 20 --interval 30`
-for at most twenty cycles. The environment flag is **off by default**; `--send`
-is also required. Never run this against a live database as a test. HTTPS calls
+`uv run python manage.py dispatch_push --send --watch --interval 30`
+as a continuous worker until Ctrl+C. Every cycle remains limited to 1–100 rows;
+`--cycles 20` optionally bounds a supervised/manual run, but an unattended
+twenty-cycle run can exit before the first fifteen-minute receipt poll. The
+environment flag is **off by default**; `--send` is also required. Never run
+this against a live database as a test. HTTPS calls
 use Expo's fixed push endpoints, a five-second timeout, a 64 KiB response cap,
 and no redirects. No push token is printed by the command.
 
@@ -187,8 +191,11 @@ contains only a `tasks` kind and opaque registration revision, never Task text,
 credentials, or a navigation URL. The client must make an authenticated fetch
 for current details after opening. A ticket records Expo acceptance only;
 receipts are checked no sooner than fifteen minutes later. Invalid devices are
-revoked by registration-version comparison; network/429/5xx failures retry at
-most five times and rows expire after 24 hours. A worker crash after Expo accepts
+revoked by registration-version comparison; a receipt-level rate rejection
+clears that failed ticket and retries a new send with backoff. Network/429/5xx
+failures consume a five-claim total budget (including receipt checks); rows
+expire after 24 hours. An expired final lease is retired without another send.
+A worker crash after Expo accepts
 a send can produce a duplicate on retry; clients must treat alerts as hints.
 Terminal outbox rows are retained for seven days of operator inspection and
 pruned by subsequent dispatcher cycles. Expo projects requiring push access-

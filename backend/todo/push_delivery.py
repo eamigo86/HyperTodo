@@ -120,6 +120,17 @@ class ExpoTransport:
 def _claim_once() -> PushDelivery | None:
     now = timezone.now()
     with transaction.atomic():
+        # A crashed worker's expired fifth lease has exhausted its send budget.
+        # Retire it before selecting a new claim, rather than issuing attempt six.
+        PushDelivery.objects.filter(
+            status__in=(PushDelivery.Status.PENDING, PushDelivery.Status.RECEIPT),
+            next_attempt_at__lte=now,
+            attempts__gte=_MAX_ATTEMPTS,
+        ).filter(Q(lease_until__isnull=True) | Q(lease_until__lte=now)).update(
+            status=PushDelivery.Status.DROPPED,
+            lease_id=None,
+            lease_until=None,
+        )
         row = (
             PushDelivery.objects.select_for_update()
             .filter(
@@ -170,16 +181,21 @@ def _finish(
     PushDelivery.objects.filter(pk=row.pk, lease_id=row.lease_id).update(**updates)
 
 
-def _retry(row: PushDelivery, *, receipt: bool = False) -> None:
+def _retry(row: PushDelivery, *, receipt: bool = False, resend: bool = False) -> None:
     if row.attempts >= _MAX_ATTEMPTS or timezone.now() - row.created_at >= _MAX_AGE:
         _finish(row, status=PushDelivery.Status.DROPPED)
         return
     delay = (
         _RECEIPT_DELAY
-        if receipt
+        if receipt and not resend
         else timedelta(seconds=min(30 * 2 ** (row.attempts - 1), 3600))
     )
-    _finish(row, status=row.status, ticket_id=row.ticket_id, delay=delay)
+    _finish(
+        row,
+        status=PushDelivery.Status.PENDING if resend else row.status,
+        ticket_id="" if resend else row.ticket_id,
+        delay=delay,
+    )
 
 
 def _authorized_device(row: PushDelivery) -> PushDevice | None:
@@ -233,13 +249,17 @@ def _handle_result(row: PushDelivery, result: dict) -> None:
     if error == "DeviceNotRegistered":
         _invalid_token(row)
     elif error == "MessageRateExceeded":
-        _retry(row, receipt=row.status == PushDelivery.Status.RECEIPT)
+        _retry(
+            row,
+            receipt=row.status == PushDelivery.Status.RECEIPT,
+            resend=row.status == PushDelivery.Status.RECEIPT,
+        )
     else:
         _finish(row, status=PushDelivery.Status.DROPPED)
 
 
 def dispatch_due(*, transport: PushTransport | None = None, limit: int = 20) -> int:
-    """Claim and process at most ``limit`` due deliveries; never run in a signal."""
+    """Claim and process at most limit due deliveries; never run in a signal."""
     if not settings.PUSH_NOTIFICATIONS_ENABLED:
         return 0
     if not 1 <= limit <= 100:
