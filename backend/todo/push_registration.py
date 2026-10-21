@@ -52,11 +52,18 @@ def register_device(
     Returns:
         A created flag and new opaque registration version.
     """
-    user = get_user_model().objects.select_for_update().get(pk=request.user.pk)
+    user_model = get_user_model()
+    try:
+        user = user_model.objects.select_for_update().get(pk=request.user.pk)
+    except user_model.DoesNotExist as error:
+        raise StaleSession from error
     session = _current_session(request, user)
-    PushDevice.objects.filter(
-        user=user, session__expire_date__lte=timezone.now()
-    ).delete()
+    # A password reset can invalidate sessions without deleting their rows. Prune
+    # those dormant registrations before the bounded per-account quota is counted.
+    for prior in PushDevice.objects.filter(user=user).only("pk", "session_id"):
+        identity = fresh_identity(prior.session_id)
+        if identity is None or identity.user_id != str(user.pk):
+            prior.delete()
     device = (
         PushDevice.objects.select_for_update()
         .filter(installation_id=installation_id)

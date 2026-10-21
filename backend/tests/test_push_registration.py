@@ -354,3 +354,50 @@ def test_bootstrap_can_recover_current_session_revision(user):
         ).status_code
         == 400
     )
+
+
+def test_password_change_prunes_ten_old_sessions_before_new_device(user):
+    old_clients = []
+    for index in range(10):
+        old_client, binding, bootstrap = _bootstrap(user)
+        assert (
+            _register(
+                old_client,
+                binding,
+                bootstrap.json()["csrfToken"],
+                token=f"ExpoPushToken[prior_{index}]",
+            ).status_code
+            == 201
+        )
+        old_clients.append(old_client)
+    assert PushDevice.objects.count() == 10
+    user.set_password("rotated-secret")
+    user.save(update_fields=["password"])
+    current, binding, bootstrap = _bootstrap(user)
+    response = _register(
+        current, binding, bootstrap.json()["csrfToken"], token="ExpoPushToken[fresh]"
+    )
+    assert response.status_code == 201
+    assert PushDevice.objects.count() == 1
+    assert PushDevice.objects.get().session_id == current.session.session_key
+
+
+def test_deleted_user_between_middleware_and_registration_is_closed(user, monkeypatch):
+    client, binding, bootstrap = _bootstrap(user)
+
+    class DeletedManager:
+        def select_for_update(self):
+            return self
+
+        def get(self, **_kwargs):
+            raise type(user).DoesNotExist
+
+    class DeletedUser:
+        DoesNotExist = type(user).DoesNotExist
+        objects = DeletedManager()
+
+    monkeypatch.setattr("todo.push_registration.get_user_model", lambda: DeletedUser)
+    response = _register(client, binding, bootstrap.json()["csrfToken"])
+    assert response.status_code == 409
+    assert response.json() == {"error": "session-binding-mismatch"}
+    assert not PushDevice.objects.exists()
