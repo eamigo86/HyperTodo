@@ -197,7 +197,7 @@ function fixture() {
 const Stack = createStackNavigator();
 function mount(session: ReturnType<typeof createAppSession>, components:React.ComponentProps<typeof Hyperview>["components"]=[]) {
   return render(<NavigationContainer><Stack.Navigator screenOptions={{
-      animationEnabled: false
+      animation: "none"
     }}><Stack.Screen name="app">{() => <AppSessionSurface session={session} hyperviewProps={{
           formatDate: () => undefined,components
         }} />}</Stack.Screen></Stack.Navigator></NavigationContainer>);
@@ -220,7 +220,7 @@ it("confirms before initial HTTP and marks startup ready only from the real focu
 });
 it("uses the built-in date formatter when the host supplies no formatter", async () => {
   const f = fixture();
-  const ui = render(<NavigationContainer><Stack.Navigator screenOptions={{ animationEnabled: false }}><Stack.Screen name="app">{() => <AppSessionSurface session={f.session} hyperviewProps={{}} />}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+  const ui = render(<NavigationContainer><Stack.Navigator screenOptions={{ animation: "none" }}><Stack.Screen name="app">{() => <AppSessionSurface session={f.session} hyperviewProps={{}} />}</Stack.Screen></Stack.Navigator></NavigationContainer>);
   try {
     await ui.findByText("Login");
     expect(f.session.snapshot().session.rootReady).toBe(true);

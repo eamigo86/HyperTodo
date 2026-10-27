@@ -18,7 +18,7 @@ jest.mock("expo-secure-store", () => ({getItem: () => null, setItem: () => undef
 
 const Stack = createStackNavigator();
 function Host({ children }: { children: React.ReactNode }) {
-  return <NavigationContainer><Stack.Navigator screenOptions={{ animationEnabled: false }}><Stack.Screen name="fixture">{() => children}</Stack.Screen></Stack.Navigator></NavigationContainer>;
+  return <NavigationContainer><Stack.Navigator screenOptions={{ animation: "none" }}><Stack.Screen name="fixture">{() => children}</Stack.Screen></Stack.Navigator></NavigationContainer>;
 }
 
 const NS = "https://hypertodo.app/components";
@@ -266,7 +266,7 @@ it("does not refresh hidden mounted routes, and refreshes the same instance on f
     return response(transport.mock.calls.length === 1 ? document(id) : list(id, 1, "list", "After focus"));
   });
   const fetch = gate.wrapFetch(transport);
-  const screen = render(<NavigationContainer ref={navigation}><Stack.Navigator screenOptions={{ animationEnabled: false }}><Stack.Screen name="fixture">{() => <Hyperview formatDate={() => undefined} entrypointUrl={BASE} fetch={fetch} components={gate.components}/>}</Stack.Screen><Stack.Screen name="other">{() => <Text>Other screen</Text>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+  const screen = render(<NavigationContainer ref={navigation}><Stack.Navigator screenOptions={{ animation: "none" }}><Stack.Screen name="fixture">{() => <Hyperview formatDate={() => undefined} entrypointUrl={BASE} fetch={fetch} components={gate.components}/>}</Stack.Screen><Stack.Screen name="other">{() => <Text>Other screen</Text>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
   await screen.findByText("Task one");
   const key = gate.snapshot().routes[0].key;
   act(() => navigation.navigate("other" as never));
@@ -442,7 +442,7 @@ it("preserves an admitted delayed POST across blur while another route commits i
     return response(document(id).replace('</app:realtime>', '<view id="delayed-origin"><behavior trigger="press" href="/hv/tasks/delayed-post/" action="append" target="task-list" verb="post" delay="100000"/><text>Delayed POST</text></view></app:realtime>'));
   });
   const fetch = gate.wrapFetch(transport);
-  const screen = render(<NavigationContainer ref={navigation}><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="first">{() => <gate.Root formatDate={() => undefined} entrypointUrl={BASE} fetch={fetch} components={gate.components}/>}</Stack.Screen><Stack.Screen name="second">{() => <gate.Root formatDate={() => undefined} entrypointUrl="https://hypertodo.test/hv/other/" fetch={fetch} components={gate.components}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+  const screen = render(<NavigationContainer ref={navigation}><Stack.Navigator screenOptions={{animation: "none"}}><Stack.Screen name="first">{() => <gate.Root formatDate={() => undefined} entrypointUrl={BASE} fetch={fetch} components={gate.components}/>}</Stack.Screen><Stack.Screen name="second">{() => <gate.Root formatDate={() => undefined} entrypointUrl="https://hypertodo.test/hv/other/" fetch={fetch} components={gate.components}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
   await screen.findByText("Task one");
   const firstKey=gate.snapshot().routes[0].key;
   jest.useFakeTimers({doNotFake:["queueMicrotask"]});
@@ -746,7 +746,7 @@ it("does not let an unrelated initial load block a fragment or ACK its copied at
     return refresh.promise;
   });
   const fetch = gate.wrapFetch(transport);
-  const screen = render(<NavigationContainer ref={navigation}><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="waiting">{() => <gate.Root formatDate={() => undefined} entrypointUrl="https://hypertodo.test/waiting/" fetch={fetch} components={gate.components}/>}</Stack.Screen><Stack.Screen name="active">{() => <gate.Root formatDate={() => undefined} entrypointUrl={BASE} fetch={fetch} components={gate.components}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+  const screen = render(<NavigationContainer ref={navigation}><Stack.Navigator screenOptions={{animation: "none"}}><Stack.Screen name="waiting">{() => <gate.Root formatDate={() => undefined} entrypointUrl="https://hypertodo.test/waiting/" fetch={fetch} components={gate.components}/>}</Stack.Screen><Stack.Screen name="active">{() => <gate.Root formatDate={() => undefined} entrypointUrl={BASE} fetch={fetch} components={gate.components}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
   await waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
   act(() => navigation.navigate("active" as never));
   await screen.findByText("Active route");
@@ -813,7 +813,7 @@ it("does not poison a ready route when an unrelated initial document request fai
     return String(url).includes("/waiting/") ? first.promise : response(document(id));
   });
   const fetch = gate.wrapFetch(transport);
-  const screen = render(<NavigationContainer ref={navigation}><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="waiting">{() => <gate.Root formatDate={() => undefined} entrypointUrl="https://hypertodo.test/waiting/" fetch={fetch} components={gate.components} onError={jest.fn()}/>}</Stack.Screen><Stack.Screen name="active">{() => <gate.Root formatDate={() => undefined} entrypointUrl={BASE} fetch={fetch} components={gate.components}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+  const screen = render(<NavigationContainer ref={navigation}><Stack.Navigator screenOptions={{animation: "none"}}><Stack.Screen name="waiting">{() => <gate.Root formatDate={() => undefined} entrypointUrl="https://hypertodo.test/waiting/" fetch={fetch} components={gate.components} onError={jest.fn()}/>}</Stack.Screen><Stack.Screen name="active">{() => <gate.Root formatDate={() => undefined} entrypointUrl={BASE} fetch={fetch} components={gate.components}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
   await waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
   act(() => navigation.navigate("active" as never));
   await screen.findByText("Task one");
@@ -931,7 +931,7 @@ const fragment=(id:string,tag="items",label="Updated")=>`<${tag} xmlns="https://
 const response=(body:string):Response=>({status:200,ok:true,url:BASE,headers:new Headers({"Content-Type":"application/vnd.hyperview+xml"}),text:async()=>body} as Response);
 const idOf=(init?:RequestInit)=>new Headers(init?.headers).get("X-HyperTodo-Request-ID")!;
 function deferred<T>(){let resolve!:(value:T)=>void;let reject!:(error:Error)=>void;const promise=new Promise<T>((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
-function mount(gate:ReturnType<typeof createRealtimeGate>,fetch:ReturnType<ReturnType<typeof createRealtimeGate>["wrapFetch"]>,behaviors:import("hyperview").HvBehavior[]=[]){return render(<NavigationContainer><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="only">{()=> <gate.Root entrypointUrl={BASE} fetch={fetch} formatDate={()=>undefined} components={gate.components} behaviors={behaviors} onError={jest.fn()}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);}
+function mount(gate:ReturnType<typeof createRealtimeGate>,fetch:ReturnType<ReturnType<typeof createRealtimeGate>["wrapFetch"]>,behaviors:import("hyperview").HvBehavior[]=[]){return render(<NavigationContainer><Stack.Navigator screenOptions={{animation: "none"}}><Stack.Screen name="only">{()=> <gate.Root entrypointUrl={BASE} fetch={fetch} formatDate={()=>undefined} components={gate.components} behaviors={behaviors} onError={jest.fn()}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);}
 
 it("C1 admitted GET cannot become POST through retained mutable options while queued",async()=>{
  const gate=createRealtimeGate();const refresh=deferred<Response>();let refreshId="";
@@ -965,7 +965,7 @@ it("C1 failed unrelated initial load before another initial commit cannot poison
   return response(fragment(idOf(init)));
  });
  const fetch=gate.wrapFetch(transport);
- const screen=render(<NavigationContainer ref={navigation}><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="waiting">{()=> <gate.Root entrypointUrl="https://hypertodo.test/waiting/" fetch={fetch} formatDate={()=>undefined} components={gate.components} onError={jest.fn()}/>}</Stack.Screen><Stack.Screen name="active">{()=> <gate.Root entrypointUrl={BASE} fetch={fetch} formatDate={()=>undefined} components={gate.components} onError={jest.fn()}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+ const screen=render(<NavigationContainer ref={navigation}><Stack.Navigator screenOptions={{animation: "none"}}><Stack.Screen name="waiting">{()=> <gate.Root entrypointUrl="https://hypertodo.test/waiting/" fetch={fetch} formatDate={()=>undefined} components={gate.components} onError={jest.fn()}/>}</Stack.Screen><Stack.Screen name="active">{()=> <gate.Root entrypointUrl={BASE} fetch={fetch} formatDate={()=>undefined} components={gate.components} onError={jest.fn()}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
  try{
   await waitFor(()=>expect(transport).toHaveBeenCalledTimes(1));act(()=>navigation.navigate("active" as never));
   await waitFor(()=>expect(transport).toHaveBeenCalledTimes(2));
@@ -1100,7 +1100,7 @@ it.each(["same-owner","blur","remove"])("keeps captured callback ownership after
     return response(String(url).includes("page=2") ? list(id,2,"items") : String(url).includes("/other/") ? document(id).replaceAll("Task one","Other owner") : withControls(id).replace('</app:realtime>','<view><behavior trigger="press" action="after-clone"/><text>Keep owner</text></view></app:realtime>'));
   });
   const fetch=gate.wrapFetch(transport);
-  const screen=render(<NavigationContainer ref={navigation}><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="first">{()=> <gate.Root entrypointUrl={BASE} fetch={fetch} formatDate={()=>undefined} components={gate.components} behaviors={[behavior]}/>}</Stack.Screen><Stack.Screen name="other">{()=> <gate.Root entrypointUrl="https://hypertodo.test/other/" fetch={fetch} formatDate={()=>undefined} components={gate.components}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+  const screen=render(<NavigationContainer ref={navigation}><Stack.Navigator screenOptions={{animation: "none"}}><Stack.Screen name="first">{()=> <gate.Root entrypointUrl={BASE} fetch={fetch} formatDate={()=>undefined} components={gate.components} behaviors={[behavior]}/>}</Stack.Screen><Stack.Screen name="other">{()=> <gate.Root entrypointUrl="https://hypertodo.test/other/" fetch={fetch} formatDate={()=>undefined} components={gate.components}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
   try {
     await screen.findByText("Task one");await act(async()=>fireEvent.press(screen.getByText("Keep owner")));
     fireEvent.changeText(screen.getByDisplayValue("seed"),"preserved draft");await screen.findByDisplayValue("preserved draft");

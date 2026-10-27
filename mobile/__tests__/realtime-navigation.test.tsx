@@ -17,7 +17,7 @@ const response=(body:string,url=BASE)=>({status:200,ok:true,url,headers:new Head
 const items=(id:string)=>`<items xmlns="${HV}" xmlns:app="${NS}"><item key="two"><app:realtime-page request-id="${id}" page="2"/><text>Added task</text></item></items>`;
 function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(yes=>{resolve=yes;});return{promise,resolve};}
 function mount(gate:ReturnType<typeof createRealtimeGate>,transport:Parameters<ReturnType<typeof createRealtimeGate>["wrapFetch"]>[0],components:React.ComponentProps<ReturnType<typeof createRealtimeGate>["Root"]>["components"]=[],entrypointUrl=BASE){
- return render(<NavigationContainer><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="fixture">{()=> <gate.Root entrypointUrl={entrypointUrl} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={jest.fn()} components={[...gate.components,...(components??[])]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+ return render(<NavigationContainer><Stack.Navigator screenOptions={{animation: "none"}}><Stack.Screen name="fixture">{()=> <gate.Root entrypointUrl={entrypointUrl} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={jest.fn()} components={[...gate.components,...(components??[])]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
 }
 
 it("owns canonical screen reload through actual supplied callbacks and waits for real layout",async()=>{

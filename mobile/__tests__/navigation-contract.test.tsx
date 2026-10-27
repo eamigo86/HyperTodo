@@ -1,6 +1,6 @@
 import HvList from "hyperview/src/elements/hv-list";
 import { Navigator } from "hyperview/src/services/navigator/navigator";
-import { CommonActions, StackRouter } from "@react-navigation/native";
+import { StackRouter } from "@react-navigation/native";
 import * as DomHelpers from "hyperview/src/services/dom/helpers";
 import HvView from "hyperview/src/elements/hv-view";
 import * as NavigatorHelpers from "hyperview/src/services/navigator/helpers";
@@ -206,17 +206,25 @@ describe("what the Home tab does to the stack", () => {
     },
   };
 
-  const nav = { getParent: () => undefined, getState: () => ({ index: 0, routes: [] }) };
-
   const tap = (router: never, state: never, href: string) => {
-    const [, , routeId, params] = NavigatorHelpers.buildRequest(
-      nav as never,
-      "navigate",
-      { behaviorElementId: null, preloadScreen: null, url: href },
-    );
-    const next = (router as unknown as {
-      getStateForAction: (s: unknown, a: unknown, o: unknown) => unknown;
-    }).getStateForAction(state, CommonActions.navigate(routeId, params), options);
+    let next: unknown = null;
+    const nav = {
+      getParent: () => undefined,
+      getState: () => state,
+      dispatch: (action: unknown) => {
+        next = (router as unknown as {
+          getStateForAction: (s: unknown, a: unknown, o: unknown) => unknown;
+        }).getStateForAction(state, action, options);
+      },
+    };
+    const current = state as { index: number; routes: { key: string; name: string }[] };
+    new Navigator({
+      entrypointUrl: "/hv/",
+      navigation: nav as never,
+      rootNavigation: undefined,
+      route: current.routes[current.index] as never,
+      setElement: jest.fn(),
+    }).sendRequest("navigate", { behaviorElementId: null, preloadScreen: null, url: href });
     expect(next).not.toBeNull();
     return next as never;
   };
@@ -236,8 +244,8 @@ describe("what the Home tab does to the stack", () => {
 
   it("truncates back to the declared root route when Home is a fragment href", () => {
     // getRouteId returns cleanHrefFragment for a fragment (helpers.ts:211-218), so the
-    // dispatch names the DECLARED route; StackRouter NAVIGATE finds it at index 0 and
-    // returns routes.slice(0, 0) plus that route, i.e. a real truncation.
+    // The real Hyperview Navigator must ask Navigation 7 to pop to an existing
+    // route; plain NAVIGATE would leave duplicate Home screens behind.
     expect(walk("#root-route").map(route => route.name)).toEqual(["root-route"]);
   });
 
@@ -253,8 +261,8 @@ describe("what the Home tab does to the stack", () => {
     // getRouteId collapses a real url to the literal name `card`, and the declared
     // Home route is NOT named card, so the very first Home tap appends a SECOND
     // dashboard instead of returning to the one already at index 0. Later Home taps
-    // do truncate back to that duplicate, so the stack settles at depth 2 with the
-    // dashboard rendered twice: Back from Home shows Home again.
+    // do truncate back to that duplicate with pop:true. The stack settles at
+    // depth 2, with the dashboard rendered twice: Back from Home shows Home again.
     expect(walk(HOME_URL).map(route => route.name)).toEqual(["root-route", "card"]);
     expect(walk(HOME_URL).map(route => route.params.url)).toEqual([
       HOME_URL,

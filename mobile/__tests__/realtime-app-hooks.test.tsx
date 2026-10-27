@@ -76,7 +76,7 @@ function fixture(hooks: Partial<AppSessionOptions> = {}) {
 }
 const Stack = createStackNavigator();
 function mount(f: ReturnType<typeof fixture>) {
-  return render(<ThemeProvider store={createThemeStore({ read: () => null, write: () => {} })}><NavigationContainer><Stack.Navigator screenOptions={{ animationEnabled: false }}><Stack.Screen name="host">{() => <AppSessionSurface session={f.session} hyperviewProps={{ formatDate: () => undefined }} />}</Stack.Screen></Stack.Navigator></NavigationContainer></ThemeProvider>);
+  return render(<ThemeProvider store={createThemeStore({ read: () => null, write: () => {} })}><NavigationContainer><Stack.Navigator screenOptions={{ animation: "none" }}><Stack.Screen name="host">{() => <AppSessionSurface session={f.session} hyperviewProps={{ formatDate: () => undefined }} />}</Stack.Screen></Stack.Navigator></NavigationContainer></ThemeProvider>);
 }
 
 it("publishes only committed ready/terminal observations and exposes no ACK authority", async () => {

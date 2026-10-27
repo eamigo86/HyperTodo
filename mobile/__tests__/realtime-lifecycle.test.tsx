@@ -21,7 +21,7 @@ function setup(controls:string,run:(number:number,id:string,url:string)=>Promise
   const id=new Headers(init?.headers).get("X-HyperTodo-Request-ID")!;
   return transport.mock.calls.length===1?response(doc(id,controls)):run(transport.mock.calls.length,id,String(input));
  });
- const screen=render(<NavigationContainer><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="main">{()=> <gate.Root entrypointUrl={BASE} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={errors} {...props} components={[...gate.components,...(props.components??[])]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+ const screen=render(<NavigationContainer><Stack.Navigator screenOptions={{animation: "none"}}><Stack.Screen name="main">{()=> <gate.Root entrypointUrl={BASE} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={errors} {...props} components={[...gate.components,...(props.components??[])]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
  return{gate,transport,screen,errors};
 }
 
@@ -225,7 +225,7 @@ it.each([['remote','replace'],['remote','drop'],['local','replace'],['local','dr
   if(source==="remote"&&transport.mock.calls.length===2)return response(items(id,"A remote row").replace('</item>','<app:successor-watch/></item>'));
   events.push("B-http");atHttp.push({events:[...events],state:gate.snapshot()});nextId=id;return next.promise;
  });
- const screen=render(<NavigationContainer><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="main">{()=> <gate.Root entrypointUrl={BASE} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={jest.fn()} components={[...gate.components,Control,Watch]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+ const screen=render(<NavigationContainer><Stack.Navigator screenOptions={{animation: "none"}}><Stack.Screen name="main">{()=> <gate.Root entrypointUrl={BASE} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={jest.fn()} components={[...gate.components,Control,Watch]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
  try {
   await screen.findByText("Initial row");events.length=0;
   await act(async()=>fireEvent.press(screen.getByText("Start successor")));
@@ -252,7 +252,7 @@ it("C2 denies an onEnd successor whose origin was actually removed",async()=>{
   const id=new Headers(init?.headers).get("X-HyperTodo-Request-ID")!;
   return response(transport.mock.calls.length===1?doc(id,'<view id="origin-wrapper"><app:remove-origin/></view>'):`<view xmlns="${HV}" xmlns:app="${NS}" id="origin-wrapper"><app:realtime-page request-id="${id}" page="1"/><text>Origin removed</text></view>`);
  });
- const screen=render(<NavigationContainer><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="main">{()=> <gate.Root entrypointUrl={BASE} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={jest.fn()} components={[...gate.components,Control]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+ const screen=render(<NavigationContainer><Stack.Navigator screenOptions={{animation: "none"}}><Stack.Screen name="main">{()=> <gate.Root entrypointUrl={BASE} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={jest.fn()} components={[...gate.components,Control]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
  try {
   await screen.findByText("Initial row");fireEvent.press(screen.getByText("Remove own origin"));await screen.findByText("Origin removed");
   expect(ends).toHaveBeenCalledTimes(1);expect(transport).toHaveBeenCalledTimes(2);
@@ -269,7 +269,7 @@ it("C2 denies two genuinely live boundaries before dispatch",async()=>{
   const second=`<app:realtime refresh-href="/hv/second/" target="second" mode="notice"><list id="second"><item key="second"><app:realtime-page request-id="${id}" page="1"/><text>Second boundary</text></item></list></app:realtime>`;
   return response(doc(id,'<view><app:ambiguous-dispatch/></view>').replace('</body>',second+'</body>'));
  });
- const screen=render(<NavigationContainer><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="main">{()=> <gate.Root entrypointUrl={BASE} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={jest.fn()} components={[...gate.components,Control]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+ const screen=render(<NavigationContainer><Stack.Navigator screenOptions={{animation: "none"}}><Stack.Screen name="main">{()=> <gate.Root entrypointUrl={BASE} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={jest.fn()} components={[...gate.components,Control]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
  try {
   await screen.findByText("Initial row");await screen.findByText("Second boundary");
   await act(async()=>fireEvent.press(screen.getByText("Ambiguous dispatch")));

@@ -22,7 +22,7 @@ function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>
 function setup(authenticate:GateAuthPort,more:Partial<React.ComponentProps<ReturnType<typeof createRealtimeGate>["Root"]>>={},controls="",onReady=jest.fn(),transformDoc:(body:string)=>string=body=>body){
  const gate=createRealtimeGate({authenticate,onReady});const errors=jest.fn();
  const transport=jest.fn(async(_input:RequestInfo|URL,init?:RequestInit):Promise<Response>=>{const id=new Headers(init?.headers).get("X-HyperTodo-Request-ID")!;return response(transport.mock.calls.length===1?transformDoc(doc(id,controls)):items(id));});
- const screen=render(<NavigationContainer><Stack.Navigator screenOptions={{animationEnabled:false}}><Stack.Screen name="fixture">{()=> <gate.Root entrypointUrl={BASE} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={errors} {...more} components={[...gate.components,...(more.components??[])]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+ const screen=render(<NavigationContainer><Stack.Navigator screenOptions={{animation: "none"}}><Stack.Screen name="fixture">{()=> <gate.Root entrypointUrl={BASE} fetch={gate.wrapFetch(transport)} formatDate={()=>undefined} onError={errors} {...more} components={[...gate.components,...(more.components??[])]}/>}</Stack.Screen></Stack.Navigator></NavigationContainer>);
  return{gate,screen,transport,errors,onReady};
 }
 
