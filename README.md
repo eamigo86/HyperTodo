@@ -59,6 +59,7 @@ with `LAN_IP`); `backend-run` and `backend-run-redis` listen on loopback only.
 
 | Command | Use |
 | --- | --- |
+| `PORT=8001 make backend-run-sse`, `PORT=8001 make mobile-start` | Use the same backend HTTP port in the listener, generated CSRF origins and mobile API URL; default is `8000`. Pass the same `PORT` to each terminal. |
 | `make help` | List every available target. |
 | `make setup` | Install backend/mobile dependencies; does not migrate or seed. |
 | `make backend-migrate`, `make backend-seed` | Initialize a new disposable demo DB, not an upgrade shortcut. |

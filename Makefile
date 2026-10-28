@@ -11,9 +11,10 @@ YARN := COREPACK_HOME="$(CURDIR)/$(MOBILE_DIR)/.corepack" corepack yarn
 REDIS_URL ?= redis://127.0.0.1:6379/15
 REDIS_TEST_URL ?= redis://127.0.0.1:6379/14
 DJANGO_DEBUG ?= 1
-EXPO_PUBLIC_API_URL ?= http://127.0.0.1:8000/hv/
+PORT ?= 8000
+EXPO_PUBLIC_API_URL ?= http://127.0.0.1:$(PORT)/hv/
 # The Android Emulator reaches the host's loopback as 10.0.2.2.
-EMULATOR_API_URL := http://10.0.2.2:8000/hv/
+EMULATOR_API_URL := http://10.0.2.2:$(PORT)/hv/
 # Validation only, as in CI: Expo Doctor resolves the app config, which needs an https
 # URL. Nothing connects to this host.
 DOCTOR_API_URL ?= https://hypertodo-ci.invalid/hv/
@@ -26,7 +27,7 @@ comma := ,
 define run_backend
 	DJANGO_SETTINGS_MODULE=config.settings REDIS_URL="$(REDIS_URL)" \
 		uv run python -m uvicorn config.asgi:application \
-		--host "$(1)" --port 8000 \
+		--host "$(1)" --port "$(PORT)" \
 		--loop asyncio --http h11 --ws none --no-proxy-headers
 endef
 
@@ -87,13 +88,13 @@ backend-run-device: ## Start Redis-backed ASGI/SSE on all interfaces for a devic
 	@cd "$(BACKEND_DIR)" && \
 		ENABLE_REDIS_CACHE=1 \
 		DJANGO_ALLOWED_HOSTS="127.0.0.1,localhost,$(LAN_IP)" \
-		CSRF_TRUSTED_ORIGINS="http://127.0.0.1:8000,http://$(LAN_IP):8000" \
+		CSRF_TRUSTED_ORIGINS="http://127.0.0.1:$(PORT),http://$(LAN_IP):$(PORT)" \
 		$(call run_backend,0.0.0.0)
 
 backend-run-sse: ## Start the same ASGI/SSE app on loopback or optional LAN_IP.
 	@cd "$(BACKEND_DIR)" && \
 		DJANGO_ALLOWED_HOSTS="127.0.0.1,localhost,10.0.2.2$(if $(LAN_IP),$(comma)$(LAN_IP))" \
-		CSRF_TRUSTED_ORIGINS="http://127.0.0.1:8000,http://10.0.2.2:8000$(if $(LAN_IP),$(comma)http://$(LAN_IP):8000)" \
+		CSRF_TRUSTED_ORIGINS="http://127.0.0.1:$(PORT),http://10.0.2.2:$(PORT)$(if $(LAN_IP),$(comma)http://$(LAN_IP):$(PORT))" \
 		$(call run_backend,$(if $(LAN_IP),$(LAN_IP),127.0.0.1))
 
 backend-test: ## Run backend tests with branch-aware coverage enforcement.
@@ -131,11 +132,11 @@ mobile-start-android: ## Start Metro with the Android Emulator backend address.
 
 mobile-start-device: ## Start Metro for a physical device; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
-	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) start)
+	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):$(PORT)/hv/" $(YARN) start)
 
 mobile-start-go: ## Start local Expo Go QR workflow; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
-	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) start:go)
+	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):$(PORT)/hv/" $(YARN) start:go)
 
 mobile-login: ## Sign in to Expo CLI through the browser.
 	@$(call run_mobile,$(YARN) expo login --browser)
@@ -162,14 +163,14 @@ mobile-ios: ## Build and launch the iOS development app on a Simulator.
 
 mobile-ios-device: ## Build and install HyperTodo on an iPhone; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
-	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) expo run:ios --device)
+	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):$(PORT)/hv/" $(YARN) expo run:ios --device)
 
 mobile-android: ## Build and launch the Android development app on an emulator.
 	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="$(EMULATOR_API_URL)" $(YARN) android)
 
 mobile-android-device: ## Build and install HyperTodo on Android; requires LAN_IP.
 	@if [[ -z "$(LAN_IP)" ]]; then echo "LAN_IP is required. Run make lan-ip."; exit 1; fi
-	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):8000/hv/" $(YARN) expo run:android --device)
+	@$(call run_mobile,$(LOCAL_API) EXPO_PUBLIC_API_URL="http://$(LAN_IP):$(PORT)/hv/" $(YARN) expo run:android --device)
 
 lan-ip: ## Print the macOS default-route address (en0, else another en* one, behind a VPN), a candidate LAN IP.
 	@iface="$$(route -n get default 2>/dev/null | awk '/interface:/ { print $$2; exit }')"; \

@@ -105,17 +105,65 @@ def make(tmp_path):
         ("mobile-android-device", DEVICE, "yarn expo run:android --device"),
     ],
 )
-def test_development_targets_opt_into_the_local_api(make, target, api_url, command):
+@pytest.mark.parametrize("port", [None, "8001"])
+def test_development_targets_opt_into_the_local_api(
+    make, target, api_url, command, port
+):
     # app.config.ts refuses cleartext (and an unset URL) without this opt-in, so a
     # fresh clone without a private mobile/.env has to get both from the Makefile.
-    result = make(target, LAN_IP=LAN_IP)
+    result = make(target, LAN_IP=LAN_IP, **({"PORT": port} if port else {}))
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == [
         f"corepack {command}",
         "EXPO_PUBLIC_ALLOW_LOCAL_API=1",
-        f"EXPO_PUBLIC_API_URL={api_url}",
+        f"EXPO_PUBLIC_API_URL={api_url.replace(':8000/', f':{port or 8000}/')}",
     ]
+
+
+def test_explicit_mobile_api_url_overrides_default_port(make):
+    custom = "https://staging.example.test/hv/"
+    result = make("mobile-start", PORT="8001", EXPO_PUBLIC_API_URL=custom)
+
+    assert result.returncode == 0, result.stderr
+    assert f"EXPO_PUBLIC_API_URL={custom}" in result.stdout
+
+
+@pytest.mark.parametrize("port", [None, "8001"])
+@pytest.mark.parametrize(
+    ("target", "lan_ip", "bind", "origin_hosts"),
+    [
+        ("backend-run", None, "127.0.0.1", None),
+        ("backend-run-redis", None, "127.0.0.1", None),
+        ("backend-run-sse", None, "127.0.0.1", "127.0.0.1,10.0.2.2"),
+        ("backend-run-sse", LAN_IP, LAN_IP, f"127.0.0.1,10.0.2.2,{LAN_IP}"),
+        ("backend-run-device", LAN_IP, "0.0.0.0", f"127.0.0.1,{LAN_IP}"),
+    ],
+)
+def test_backend_listener_and_csrf_origins_share_port(
+    make, tmp_path, target, lan_ip, bind, origin_hosts, port
+):
+    _stub(
+        tmp_path / "bin",
+        "uv",
+        'echo "uv $*"; echo "CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS-}"',
+    )
+    result = make(
+        target,
+        **({"LAN_IP": lan_ip} if lan_ip else {}),
+        **({"PORT": port} if port else {}),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"--host {bind} --port {port or 8000}" in result.stdout
+    expected = (
+        ""
+        if origin_hosts is None
+        else ",".join(
+            f"http://{host}:{port or 8000}" for host in origin_hosts.split(",")
+        )
+    )
+    assert f"CSRF_TRUSTED_ORIGINS={expected}" in result.stdout
 
 
 def test_doctor_validates_a_synthetic_https_api_whatever_the_shell_holds(make):

@@ -71,6 +71,7 @@ def test_documented_sse_and_go_commands_expand_without_starting_services():
     assert "LAN_IP=192.168.1.20 make backend-run-sse" in console_commands(backend)
     assert "LAN_IP=192.168.1.20 make mobile-start-go" in console_commands(mobile)
     env = {**os.environ, "LAN_IP": "192.168.1.20"}
+    env.pop("PORT", None)  # Prove the documented default regardless of the caller.
     result = subprocess.run(
         ["make", "--no-print-directory", "-n", "backend-run-sse", "mobile-start-go"],
         cwd=ROOT,
@@ -82,7 +83,7 @@ def test_documented_sse_and_go_commands_expand_without_starting_services():
     )
     assert "DJANGO_SETTINGS_MODULE=config.settings" in result.stdout
     assert "uvicorn config.asgi:application" in result.stdout
-    assert '--host "192.168.1.20" --port 8000' in result.stdout
+    assert '--host "192.168.1.20" --port "8000"' in result.stdout
     assert "EXPO_PUBLIC_ALLOW_LOCAL_API=1" in result.stdout
     assert 'EXPO_PUBLIC_API_URL="http://192.168.1.20:8000/hv/"' in result.stdout
     assert "start:go" in result.stdout
