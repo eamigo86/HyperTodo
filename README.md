@@ -24,13 +24,10 @@ not intended to be a reusable task-management product.
 Automated checks and manual device acceptance are separate; a passing XML or
 Jest test does not prove every native flow. Hyperview 0.113.0 requires
 React Navigation 7 and exposes an option's selected state to accessibility services.
-Hyperview 0.114.0 adds the `@react-navigation/native-stack` peer: on iOS, stacks
-render with native-stack and modals slide up from the bottom, while Android and web
-keep the JS stack. It also fixes `close` from a background modal, `back` and
-`navigate` from a background route, and refreshes render-time behaviors and navigator
-load behaviors only once per element. Tests and the manual iOS smoke list in
-`mobile/RELEASE.md` cover these changes only in part. The original upstream 0.111.0,
-0.112.0, 0.113.0 and 0.114.0 XSD files are byte-identical. The backend remains on
+Hyperview 0.114.0 adds the `@react-navigation/native-stack` peer for iOS stacks
+(Android and web keep the JS stack) and changes navigation from background routes;
+tests cover part of it and `mobile/RELEASE.md` lists the manual iOS checks. The
+original upstream 0.111.0 to 0.114.0 XSD files are byte-identical. The backend remains on
 published dj-hyperview 0.1.0b4 and its distinct corrected 0.111.0 `r4` validation
 contract. The client migration does not change the SSE wire protocol or imply
 native-device acceptance.
