@@ -1,3 +1,5 @@
+# Store release checklist
+
 The HyperTodo 1.3.2 GitHub source release adds Expo task push notifications and moves
 the mobile host to Hyperview 0.114.0 (React Navigation 7, native-stack on iOS) and the
 Expo SDK 57 patch set, on the unchanged dj-hyperview 0.1.0b4 backend. It does not submit
