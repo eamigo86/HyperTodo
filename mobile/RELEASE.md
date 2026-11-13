@@ -8,6 +8,18 @@ The 1.3.0 capability gate and legacy due-time field remain for older installed c
 The store checklist below covers account and infrastructure actions that cannot be
 completed in this repo. A store build remains blocked until items 1 and 2 are done.
 
+## Manual iOS smoke list (Hyperview 0.114.0 native-stack)
+
+Jest cannot render native-stack. Before a build that carries the Hyperview 0.114.0 client,
+check these on an iOS device or simulator:
+
+- Push and pop a screen (for example task list to task detail and back).
+- Swipe back from the left edge, including on a form with a draft.
+- Open a modal: it slides up from the bottom and `close` dismisses it.
+- `back` and `close` from a screen below the focused one (background routes) pop the right route.
+- Bottom tabs: tapping a tab from a pushed screen returns to the tab root, not a duplicate.
+- An SSE or fragment refresh updates the visible list once, without a double reload.
+
 ## How the build guard works
 
 `app.config.ts` resolves `EXPO_PUBLIC_API_URL` at config resolution time. Expo evaluates that file

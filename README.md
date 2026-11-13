@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml/badge.svg)](https://github.com/eamigo86/HyperTodo/actions/workflows/ci.yml)
 [![dj-hyperview](https://img.shields.io/badge/dj--hyperview-0.1.0b4-278CFF)](https://pypi.org/project/dj-hyperview/0.1.0b4/)
-[![Hyperview](https://img.shields.io/badge/Hyperview-0.113.0-171A2F)](https://www.npmjs.com/package/hyperview/v/0.113.0)
+[![Hyperview](https://img.shields.io/badge/Hyperview-0.114.0-171A2F)](https://www.npmjs.com/package/hyperview/v/0.114.0)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 HyperTodo is a test application for the
@@ -23,10 +23,15 @@ not intended to be a reusable task-management product.
 
 Automated checks and manual device acceptance are separate; a passing XML or
 Jest test does not prove every native flow. Hyperview 0.113.0 requires
-React Navigation 7. Its stack navigation uses `pop: true` to return to existing routes, and options expose their selected
-state to accessibility services. The original upstream 0.111.0, 0.112.0 and
-0.113.0 XSD files are byte-identical. The backend remains on published
-dj-hyperview 0.1.0b4 and its distinct corrected 0.111.0 `r4` validation
+React Navigation 7: stack navigation uses `pop: true` to return to existing
+routes, and options expose their selected state to accessibility services.
+Hyperview 0.114.0 adds the `@react-navigation/native-stack` peer. On iOS, stacks
+render with native-stack and modals slide up from the bottom; Android and web keep
+the JS stack. It also fixes `close` from a background modal, `back` from background
+routes and `navigate` from a background route, and refreshes render-time behaviors
+and navigator load behaviors only once per element. The original upstream 0.111.0,
+0.112.0, 0.113.0 and 0.114.0 XSD files are byte-identical. The backend remains on
+published dj-hyperview 0.1.0b4 and its distinct corrected 0.111.0 `r4` validation
 contract. The client migration does not change the SSE wire protocol or imply
 native-device acceptance.
 
@@ -35,7 +40,7 @@ native-device acceptance.
 | Path | Purpose |
 | --- | --- |
 | [`backend/`](backend/) | Python 3.14 / Django 6.1.1, pinned to `dj-hyperview[editor,realtime]==0.1.0b4`. |
-| [`mobile/`](mobile/) | Expo SDK 57, React Native 0.86 and Hyperview 0.113.0 / React Navigation 7 host. |
+| [`mobile/`](mobile/) | Expo SDK 57, React Native 0.86 and Hyperview 0.114.0 / React Navigation 7 host. |
 | [`Makefile`](Makefile) | Install, run and quality commands for both applications. |
 
 ## Makefile commands
