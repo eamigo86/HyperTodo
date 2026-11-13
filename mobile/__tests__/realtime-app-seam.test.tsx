@@ -221,6 +221,16 @@ it("binds the SDK's refreshed behavior to the swapped-in element and revokes it 
  }finally{mounted.screen.unmount();}
 });
 
+it("refuses to bind an element that is not in the current root and records missing-origin",async()=>{
+ let source:ReturnType<ReturnType<typeof createRealtimeGate>["bindSource"]>|undefined;let gate:ReturnType<typeof createRealtimeGate>;
+ const detached=new DOMParser().parseFromString("<behavior xmlns='"+HV+"'/>","application/xml").documentElement;
+ const behavior:HvBehavior={action:"capture-submit",callback:(_element,_update,getRoot,updateRoot)=>{source=gate.bindSource(detached,{getRoot,updateRoot});}};
+ const mounted=setup(async()=>({kind:"busy"}),{behaviors:[behavior]});gate=mounted.gate;
+ try{await mounted.screen.findByText("Login");await act(async()=>fireEvent.press(mounted.screen.getByText("Unlock")));
+  expect(source).toBeNull();expect(gate.snapshot().lastRejection).toMatchObject({reason:"missing-origin"});
+ }finally{mounted.screen.unmount();}
+});
+
 it.each(["absent","wrong"])("rejects an auth panel with %s request key before changing the form",async(kind)=>{
  const mounted=setup(async()=>({kind:"panel",status:422,body:panel("Invalid key",false,kind==="wrong"?"other-attempt":null,kind==="wrong"),receipt:{}}));
  try{await mounted.screen.findByText("Login");fireEvent.changeText(mounted.screen.getByPlaceholderText("Password"),"unchanged");fireEvent.press(mounted.screen.getByText("Sign in"));await waitFor(()=>expect(mounted.gate.snapshot().lastTerminal).toMatchObject({outcome:"error"}));expect(mounted.screen.queryByText("Invalid key")).toBeNull();expect(mounted.screen.getByPlaceholderText("Password").props.value).toBe("unchanged");}

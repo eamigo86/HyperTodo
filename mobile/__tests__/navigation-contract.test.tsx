@@ -168,6 +168,24 @@ describe("how a form transition dismisses the screen it just emptied", () => {
     expect(navigation.goBack).not.toHaveBeenCalled();
   });
 
+  it("resets the stack without the route when back comes from a route below the focused one", () => {
+    // routeBackRequest (navigator.ts:48-63): a BACK whose source route sits below the
+    // focused index removes just that route and dispatches CommonActions.reset with
+    // the filtered routes and a recomputed index; goBack/pop are not used.
+    const navigation = stack("dashboard-route", "card", "card");
+    const state = navigation.getState();
+
+    navigatorFor(navigation, "card").routeBackRequest(navigation as never, "back", "1");
+
+    const routes = [state.routes[0], state.routes[2]];
+    expect(navigation.dispatch).toHaveBeenCalledTimes(1);
+    expect(navigation.dispatch).toHaveBeenCalledWith({
+      payload: { ...state, index: 1, routes },
+      type: "RESET",
+    });
+    expect(navigation.goBack).not.toHaveBeenCalled();
+  });
+
   it("does nothing at all with action=close on a card", () => {
     // buildCloseRequest walks the hierarchy for a route NAMED modal (helpers.ts:301-345),
     // finds none, and hands back an undefined navigation; sendRequest (navigator.ts:89-95)
