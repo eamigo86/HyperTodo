@@ -1,9 +1,10 @@
-# Store release checklist
-
-The HyperTodo 1.3.1 GitHub source release includes the six time-picker compatibility,
-schema, accessibility and documentation fixes since 1.3.0, together with the
-published dj-hyperview 0.1.0b4 dependency. It does not submit a store binary.
-The 1.3.0 capability gate and legacy due-time field remain for older installed clients.
+The HyperTodo 1.3.2 GitHub source release adds Expo task push notifications and moves
+the mobile host to Hyperview 0.114.0 (React Navigation 7, native-stack on iOS) and the
+Expo SDK 57 patch set, on the unchanged dj-hyperview 0.1.0b4 backend. It does not submit
+a store binary, and push delivery and iOS native-stack navigation have not been validated
+on a physical device (see the manual iOS smoke list below).
+The 1.1.0, 1.2.0 and 1.3.0 capability gates and the legacy due-time field remain for
+older installed clients; push registration is client-initiated and needs no gate.
 
 The store checklist below covers account and infrastructure actions that cannot be
 completed in this repo. A store build remains blocked until items 1 and 2 are done.

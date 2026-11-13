@@ -301,7 +301,7 @@ describe("app.config cleartext and ATS gating", () => {
   it("ships the version the server uses for native capability gates", () => {
     // Not cosmetic: todo/views.py reads X-App-Version to gate native avatar
     // and time-picker controls. The declared version must match this binary.
-    expect(resolve(REMOTE).version).toBe("1.3.1");
+    expect(resolve(REMOTE).version).toBe("1.3.2");
   });
 
   it("leaves the photo permission keys to the plugin instead of hand-writing them", () => {
