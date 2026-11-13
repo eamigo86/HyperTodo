@@ -101,10 +101,18 @@ describe("how a form transition dismisses the screen it just emptied", () => {
     return {
       dispatch: jest.fn(),
       getParent: () => undefined,
-      getState: () => ({ index: routes.length - 1, routes, type: "stack" }),
+      getState: () => ({ index: routes.length - 1, key: "stack-key", routes, type: "stack" }),
       goBack: jest.fn(),
     };
   };
+
+  // Hyperview 0.114 dispatches GO_BACK with an explicit source route and target
+  // navigator instead of calling goBack(), so a pop cannot hit the wrong stack.
+  const explicitGoBack = (source: string) => ({
+    source,
+    target: "stack-key",
+    type: "GO_BACK",
+  });
 
   const navigatorFor = (navigation: ReturnType<typeof stack>, name: string) =>
     new Navigator({
@@ -137,8 +145,8 @@ describe("how a form transition dismisses the screen it just emptied", () => {
 
     fire(navigatorFor(navigation, "card"), "back");
 
-    expect(navigation.goBack).toHaveBeenCalledTimes(1);
-    expect(navigation.dispatch).not.toHaveBeenCalled();
+    expect(navigation.dispatch).toHaveBeenCalledTimes(1);
+    expect(navigation.dispatch).toHaveBeenCalledWith(explicitGoBack("1"));
   });
 
   it("pops a modal-presented form with the same action=back", () => {
@@ -146,7 +154,18 @@ describe("how a form transition dismisses the screen it just emptied", () => {
 
     fire(navigatorFor(navigation, "modal"), "back");
 
-    expect(navigation.goBack).toHaveBeenCalledTimes(1);
+    expect(navigation.dispatch).toHaveBeenCalledWith(explicitGoBack("1"));
+  });
+
+  it("closes a modal that is no longer the focused route by popping the routes above it", () => {
+    // Hyperview 0.114 routeBackRequest: a close from a modal below the focused
+    // route pops the modal together with everything stacked on top of it.
+    const navigation = stack("dashboard-route", "modal", "card");
+
+    navigatorFor(navigation, "modal").routeBackRequest(navigation as never, "close", "1");
+
+    expect(navigation.dispatch).toHaveBeenCalledWith({ payload: { count: 2 }, type: "POP" });
+    expect(navigation.goBack).not.toHaveBeenCalled();
   });
 
   it("does nothing at all with action=close on a card", () => {
@@ -171,9 +190,9 @@ describe("how a form transition dismisses the screen it just emptied", () => {
 
     fire(navigatorFor(navigation, "card"), "back", { delay: 350 });
 
-    expect(navigation.goBack).not.toHaveBeenCalled();
+    expect(navigation.dispatch).not.toHaveBeenCalled();
     jest.advanceTimersByTime(350);
-    expect(navigation.goBack).toHaveBeenCalledTimes(1);
+    expect(navigation.dispatch).toHaveBeenCalledWith(explicitGoBack("1"));
     jest.useRealTimers();
   });
 });

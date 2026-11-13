@@ -208,13 +208,16 @@ it.each(["<broken","<view xmlns='https://hyperview.org/hyperview' id='login-tran
  finally{mounted.screen.unmount();}
 });
 
-it("rejects the SDK's removed cached behavior after equivalent public swaps outside auth",async()=>{
+it("binds the SDK's refreshed behavior to the swapped-in element and revokes it once that element is swapped out",async()=>{
  let source:ReturnType<ReturnType<typeof createRealtimeGate>["bindSource"]>|undefined;let gate:ReturnType<typeof createRealtimeGate>;
  const behavior:HvBehavior={action:"capture-submit",callback:(element,_update,getRoot,updateRoot)=>{source=gate.bindSource(element,{getRoot,updateRoot});}};
  const Swap=Object.assign(({onUpdate,options}:HvComponentProps)=><Text onPress={()=>{const root=options.onUpdateCallbacks!.getDoc()!;const target=Array.from(root.getElementsByTagName("*")).find(node=>node.getAttribute("id")==="login-panel")!;const replacement=new DOMParser().parseFromString(panel("Repeat validation"),"application/xml").documentElement;onUpdate(null,"swap",target,{newElement:replacement});}}>Public swap</Text>,{localName:"public-swap",namespaceURI:APP});
  const mounted=setup(async()=>({kind:"busy"}),{behaviors:[behavior],components:[Swap]},'<app:public-swap/>');gate=mounted.gate;
  try{await mounted.screen.findByText("Login");await act(async()=>fireEvent.press(mounted.screen.getByText("Public swap")));await mounted.screen.findByText("Repeat validation");await act(async()=>fireEvent.press(mounted.screen.getByText("Public swap")));
-  await act(async()=>fireEvent.press(mounted.screen.getByText("Unlock")));expect(source).toBeNull();expect(gate.snapshot().lastRejection).toMatchObject({reason:"missing-origin"});
+  await act(async()=>fireEvent.press(mounted.screen.getByText("Unlock")));
+  // Hyperview 0.114 refreshes render-time behaviors from the current element, so the callback no longer sees the removed one.
+  expect(source).not.toBeNull();expect(source!.sourceIsCurrent()).toBe(true);
+  await act(async()=>fireEvent.press(mounted.screen.getByText("Public swap")));expect(source!.isAlive()).toBe(false);
  }finally{mounted.screen.unmount();}
 });
 
