@@ -17,7 +17,6 @@ check these on an iOS device or simulator:
 - Swipe back from the left edge, including on a form with a draft.
 - Open a modal: it slides up from the bottom and `close` dismisses it.
 - `back` and `close` from a screen below the focused one (background routes) pop the right route.
-- Bottom tabs: tapping a tab from a pushed screen returns to the tab root, not a duplicate.
 - An SSE or fragment refresh updates the visible list once, without a double reload.
 
 ## How the build guard works
