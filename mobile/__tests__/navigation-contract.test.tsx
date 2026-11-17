@@ -55,7 +55,7 @@ describe("action=close on a stack", () => {
   it("is a silent no-op when the top route was opened with action=navigate", () => {
     // buildCloseRequest walks for a route whose NAME starts with 'modal'
     // (helpers.ts:301-345); on a card-only stack it hands back no navigation and
-    // navigator.ts:89-95 returns early. The user stays on the emptied form.
+    // navigator.ts:157-165 returns early. The user stays on the emptied form.
     const [action, navigation] = NavigatorHelpers.buildRequest(
       stack("dashboard-route", "card") as never,
       "close",
@@ -137,7 +137,7 @@ describe("how a form transition dismisses the screen it just emptied", () => {
     );
 
   it("pops a card-presented form with action=back", () => {
-    // routeBackRequest (navigator.ts:33-77) only takes the CommonActions.reset branch
+    // routeBackRequest (navigator.ts:37-110) only takes the CommonActions.reset branch
     // for a BACK from a route BELOW the focused one. A transition always runs on the
     // focused form screen, so it lands on plain goBack() -- which is presentation
     // agnostic. That is what lets the forms go back to being cards.
@@ -157,19 +157,43 @@ describe("how a form transition dismisses the screen it just emptied", () => {
     expect(navigation.dispatch).toHaveBeenCalledWith(explicitGoBack("1"));
   });
 
-  it("closes a modal that is no longer the focused route by popping the routes above it", () => {
-    // Hyperview 0.114 routeBackRequest: a close from a modal below the focused
-    // route pops the modal together with everything stacked on top of it.
+  it("closes a background modal with a reset that keeps an unrelated route above it", () => {
+    // Hyperview 0.115 routeBackRequest (navigator.ts:47-55, :73-89): closing a modal
+    // below the focused route dispatches CommonActions.reset without that route and
+    // its owned descendants; a card with no ownerRouteKey is unrelated and stays (0.114
+    // popped it).
     const navigation = stack("dashboard-route", "modal", "card");
+    const state = navigation.getState();
 
     navigatorFor(navigation, "modal").routeBackRequest(navigation as never, "close", "1");
 
-    expect(navigation.dispatch).toHaveBeenCalledWith({ payload: { count: 2 }, type: "POP" });
+    expect(navigation.dispatch).toHaveBeenCalledTimes(1);
+    expect(navigation.dispatch).toHaveBeenCalledWith({
+      payload: { ...state, index: 1, routes: [state.routes[0], state.routes[2]] },
+      type: "RESET",
+    });
+    expect(navigation.goBack).not.toHaveBeenCalled();
+  });
+
+  it("removes the routes owned by a background modal when it closes", () => {
+    // The card above carries ownerRouteKey equal to the modal's key, so it leaves
+    // with the modal (navigator.ts:74-82); the unrelated route at the bottom stays.
+    const navigation = stack("dashboard-route", "modal", "card");
+    const state = navigation.getState();
+    (state.routes[2] as { params: object }).params = { ownerRouteKey: "1" };
+
+    navigatorFor(navigation, "modal").routeBackRequest(navigation as never, "close", "1");
+
+    expect(navigation.dispatch).toHaveBeenCalledTimes(1);
+    expect(navigation.dispatch).toHaveBeenCalledWith({
+      payload: { ...state, index: 0, routes: [state.routes[0]] },
+      type: "RESET",
+    });
     expect(navigation.goBack).not.toHaveBeenCalled();
   });
 
   it("resets the stack without the route when back comes from a route below the focused one", () => {
-    // routeBackRequest (navigator.ts:48-63): a BACK whose source route sits below the
+    // routeBackRequest (navigator.ts:57-72): a BACK whose source route sits below the
     // focused index removes just that route and dispatches CommonActions.reset with
     // the filtered routes and a recomputed index; goBack/pop are not used.
     const navigation = stack("dashboard-route", "card", "card");
@@ -188,7 +212,7 @@ describe("how a form transition dismisses the screen it just emptied", () => {
 
   it("does nothing at all with action=close on a card", () => {
     // buildCloseRequest walks the hierarchy for a route NAMED modal (helpers.ts:301-345),
-    // finds none, and hands back an undefined navigation; sendRequest (navigator.ts:89-95)
+    // finds none, and hands back an undefined navigation; sendRequest (navigator.ts:157-165)
     // then returns before dispatching. The user is stranded on the emptied form, which
     // is why `close` may never appear in a transition again.
     const navigation = stack("dashboard-route", "card");
@@ -200,7 +224,7 @@ describe("how a form transition dismisses the screen it just emptied", () => {
   });
 
   it("holds the emptied screen on screen for the whole of a delay", () => {
-    // navigator.ts:187-193 wraps sendRequest in setTimeout. The panel is already gone
+    // navigator.ts:283-289 wraps sendRequest in setTimeout. The panel is already gone
     // when the timer starts, so `delay` on a dismissal is measured in frames of blank
     // screen. This is why no transition behavior may carry one.
     jest.useFakeTimers();
