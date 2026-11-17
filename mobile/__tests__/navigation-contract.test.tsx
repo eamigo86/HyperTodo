@@ -24,7 +24,7 @@ function element(tag: string, attributes: Record<string, string> = {}): Element 
 
 describe("which route an action opens", () => {
   it("collapses every real href to the literal route name card or modal", () => {
-    // getRouteId (services/navigator/helpers.ts:211-220). Routes are NOT named after
+    // getRouteId (services/navigator/helpers.ts). Routes are NOT named after
     // the url, so two different task urls opened with `navigate` are both `card`.
     expect(NavigatorHelpers.getRouteId("navigate", "/hv/tasks/1/edit/")).toBe("card");
     expect(NavigatorHelpers.getRouteId("push", "/hv/tasks/1/edit/")).toBe("card");
@@ -54,8 +54,8 @@ describe("action=close on a stack", () => {
 
   it("is a silent no-op when the top route was opened with action=navigate", () => {
     // buildCloseRequest walks for a route whose NAME starts with 'modal'
-    // (helpers.ts:301-345); on a card-only stack it hands back no navigation and
-    // navigator.ts:157-165 returns early. The user stays on the emptied form.
+    // (helpers.ts); on a card-only stack it hands back no navigation and
+    // navigator.ts returns early. The user stays on the emptied form.
     const [action, navigation] = NavigatorHelpers.buildRequest(
       stack("dashboard-route", "card") as never,
       "close",
@@ -137,7 +137,7 @@ describe("how a form transition dismisses the screen it just emptied", () => {
     );
 
   it("pops a card-presented form with action=back", () => {
-    // routeBackRequest (navigator.ts:37-110) only takes the CommonActions.reset branch
+    // routeBackRequest (navigator.ts) only takes the CommonActions.reset branch
     // for a BACK from a route BELOW the focused one. A transition always runs on the
     // focused form screen, so it lands on plain goBack() -- which is presentation
     // agnostic. That is what lets the forms go back to being cards.
@@ -158,7 +158,7 @@ describe("how a form transition dismisses the screen it just emptied", () => {
   });
 
   it("closes a background modal with a reset that keeps an unrelated route above it", () => {
-    // Hyperview 0.115 routeBackRequest (navigator.ts:47-55, :73-89): closing a modal
+    // Hyperview 0.115 routeBackRequest (navigator.ts): closing a modal
     // below the focused route dispatches CommonActions.reset without that route and
     // its owned descendants; a card with no ownerRouteKey is unrelated and stays (0.114
     // popped it).
@@ -177,7 +177,7 @@ describe("how a form transition dismisses the screen it just emptied", () => {
 
   it("removes the routes owned by a background modal when it closes", () => {
     // The card above carries ownerRouteKey equal to the modal's key, so it leaves
-    // with the modal (navigator.ts:74-82); the unrelated route at the bottom stays.
+    // with the modal (navigator.ts); the unrelated route at the bottom stays.
     const navigation = stack("dashboard-route", "modal", "card");
     const state = navigation.getState();
     (state.routes[2] as { params: object }).params = { ownerRouteKey: "1" };
@@ -193,7 +193,7 @@ describe("how a form transition dismisses the screen it just emptied", () => {
   });
 
   it("resets the stack without the route when back comes from a route below the focused one", () => {
-    // routeBackRequest (navigator.ts:57-72): a BACK whose source route sits below the
+    // routeBackRequest (navigator.ts): a BACK whose source route sits below the
     // focused index removes just that route and dispatches CommonActions.reset with
     // the filtered routes and a recomputed index; goBack/pop are not used.
     const navigation = stack("dashboard-route", "card", "card");
@@ -211,8 +211,8 @@ describe("how a form transition dismisses the screen it just emptied", () => {
   });
 
   it("does nothing at all with action=close on a card", () => {
-    // buildCloseRequest walks the hierarchy for a route NAMED modal (helpers.ts:301-345),
-    // finds none, and hands back an undefined navigation; sendRequest (navigator.ts:157-165)
+    // buildCloseRequest walks the hierarchy for a route NAMED modal (helpers.ts),
+    // finds none, and hands back an undefined navigation; sendRequest (navigator.ts)
     // then returns before dispatching. The user is stranded on the emptied form, which
     // is why `close` may never appear in a transition again.
     const navigation = stack("dashboard-route", "card");
@@ -224,7 +224,7 @@ describe("how a form transition dismisses the screen it just emptied", () => {
   });
 
   it("holds the emptied screen on screen for the whole of a delay", () => {
-    // navigator.ts:283-289 wraps sendRequest in setTimeout. The panel is already gone
+    // navigator.ts wraps sendRequest in setTimeout. The panel is already gone
     // when the timer starts, so `delay` on a dismissal is measured in frames of blank
     // screen. This is why no transition behavior may carry one.
     jest.useFakeTimers();
@@ -304,14 +304,14 @@ describe("what the Home tab does to the stack", () => {
   };
 
   it("truncates back to the declared root route when Home is a fragment href", () => {
-    // getRouteId returns cleanHrefFragment for a fragment (helpers.ts:211-218), so the
+    // getRouteId returns cleanHrefFragment for a fragment (helpers.ts), so the
     // The real Hyperview Navigator must ask Navigation 7 to pop to an existing
     // route; plain NAVIGATE would leave duplicate Home screens behind.
     expect(walk("#root-route").map(route => route.name)).toEqual(["root-route"]);
   });
 
   it("keeps the root route pointed at its own url after the truncation", () => {
-    // buildRequest deletes params.url for a fragment (helpers.ts:395-401), so the
+    // buildRequest deletes params.url for a fragment (helpers.ts), so the
     // merge with routeParamList leaves the declared href intact and HvDoc does not
     // refetch (hv-doc.tsx:186-193). That is why dashboard.xml has to listen for the
     // events that can invalidate what it already rendered.
@@ -353,7 +353,7 @@ describe("what a reload does to the route it lands on", () => {
 
   it("keeps the whole navigator document when it lands on a screen route", () => {
     // mergeDocument bails to the NEW document when the first child elements differ
-    // (helpers.ts:534-542). HvRouteInner then renders a whole HvNavigator inside a
+    // (helpers.ts). HvRouteInner then renders a whole HvNavigator inside a
     // route that is already a screen: a stack nested one level deeper on every
     // login/logout cycle. This is why the auth transitions reload a SCREEN url.
     const merged = NavigatorHelpers.mergeDocument(
@@ -373,7 +373,7 @@ describe("what a reload does to the route it lands on", () => {
 describe("how many behaviors one press can run", () => {
   it("runs the element's own href first, then its child behaviors", () => {
     // getBehaviorElements unshifts the element itself when it carries href/action
-    // (services/dom/helpers.ts:8-18) and TouchableView chains every press behavior in
+    // (services/dom/helpers.ts) and TouchableView chains every press behavior in
     // that order (hyper-ref.tsx:238-263). The side menu's Home link relies on it: the
     // navigate truncates the stack, the child replace dismisses the overlay, and on
     // the dashboard the navigate is a no-op so the replace is the only visible half.
