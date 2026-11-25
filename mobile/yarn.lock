@@ -3492,10 +3492,10 @@ human-signals@^2.1.0:
   resolved "https://registry.yarnpkg.com/human-signals/-/human-signals-2.1.0.tgz#dc91fcba42e4d06e4abaed33b3e7a3c02f514ea0"
   integrity sha512-B4FFZ6q/T2jhhksgkbEW3HBvWIfDW85snkQgawt07S7J5QXTk6BkNV+0yAeZrM5QpMAdYlocGoljn0sJ/WQkFw==
 
-hyperview@0.115.0:
-  version "0.115.0"
-  resolved "https://registry.yarnpkg.com/hyperview/-/hyperview-0.115.0.tgz#62ff69631fb1d90f7b9cc078ad28f9050b40e171"
-  integrity sha512-q8WJ0+aClxmyuDdTXvNbjxwAWujq53C1i6pTkQBd4CzktEqyO28ZzIDYtI3R9WgCz1s0cBwgOHSvh3+2vlg1+Q==
+hyperview@0.115.1:
+  version "0.115.1"
+  resolved "https://registry.yarnpkg.com/hyperview/-/hyperview-0.115.1.tgz#d5c86048c9e1aa49fff5a24778ee6811eaec9afd"
+  integrity sha512-zDteD444F0WGHwHA3lpdTPdkfMHyqQxNUll1UWUVUovPBYIS3MuKff+Wg/MN9j+M6Tqeoog9FC1HlAQdSmLP5Q==
   dependencies:
     "@instawork/xmldom" "0.0.3"
     "@react-native/normalize-colors" "0.87.1"

@@ -239,6 +239,51 @@ describe("how a form transition dismisses the screen it just emptied", () => {
   });
 });
 
+describe("a navigator that has no state yet", () => {
+  // Hyperview 0.115.1 (#1420) types NavigationProps.getState as possibly undefined and
+  // guards it: the back path of Navigator (navigator.ts) returns without dispatching and
+  // buildCloseRequest (helpers.ts) hands back a plain CLOSE. 0.115.0 read `.routes` or
+  // `.index` off undefined and threw inside the press handler.
+  const stateless = () => ({
+    dispatch: jest.fn(),
+    getParent: () => undefined,
+    getState: () => undefined,
+    goBack: jest.fn(),
+  });
+
+  it("ignores action=back instead of throwing", () => {
+    const navigation = stateless();
+    const navigator = new Navigator({
+      entrypointUrl: "/hv/",
+      navigation: navigation as never,
+      rootNavigation: undefined,
+      route: { key: "1", name: "card", params: {} } as never,
+      setElement: jest.fn(),
+    });
+
+    expect(() =>
+      navigator.navigate(
+        "#",
+        "back" as never,
+        element("behavior", { action: "back" }),
+        { getFormData: () => null } as never,
+        {} as never,
+      ),
+    ).not.toThrow();
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+    expect(navigation.goBack).not.toHaveBeenCalled();
+  });
+
+  it("builds a plain close request for action=close instead of throwing", () => {
+    const navigation = stateless();
+
+    const [action, target] = NavigatorHelpers.buildRequest(navigation as never, "close");
+
+    expect(action).toBe("close");
+    expect(target).toBe(navigation);
+  });
+});
+
 describe("what the Home tab does to the stack", () => {
   // Every screen embeds fragments/bottom_navigation.xml, so Home is tapped from
   // whatever route is focused. These cases drive the REAL StackRouter with the real
