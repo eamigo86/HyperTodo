@@ -11,9 +11,9 @@ older installed clients; push registration is client-initiated and needs no gate
 The store checklist below covers account and infrastructure actions that cannot be
 completed in this repo. A store build remains blocked until items 1 and 2 are done.
 
-## Manual iOS smoke list (Hyperview 0.115.0 native-stack)
+## Manual iOS smoke list (Hyperview 0.115.1 native-stack)
 
-Jest cannot render native-stack. Before a build that carries the Hyperview 0.115.0 client,
+Jest cannot render native-stack. Before a build that carries the Hyperview 0.115.1 client,
 check these on an iOS device or simulator:
 
 - Push and pop a screen (for example task list to task detail and back).
