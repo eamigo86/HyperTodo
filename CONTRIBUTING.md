@@ -39,8 +39,8 @@ Google convention, and ANN.
   private, and `Any` is rejected too except under `todo/management/`.
 - `backend/tests/test_docstring_contract.py` rejects a backtick in every docstring
   under `backend/`, tests and migrations included.
-- `backend/tests/test_docstring_standards.py` parses `config`, `manage.py` and
-  `todo` with the `ast` module, migrations excluded, and rejects:
+- `backend/tests/test_docstring_standards.py` parses `config`, `manage.py`, `todo`
+  and `tests` with the `ast` module, migrations excluded, and rejects:
   - a missing module docstring, underscore and package init modules included, and a
     missing docstring on a public name, an exported name or a public member;
   - an `Args:` section that omits a parameter, `*args` or `**kwargs`, lists a name
@@ -63,6 +63,7 @@ No tool checks these, so review checks them by hand:
 
 - the quality of every description.
 
-Tests are exempt from rules A and B, as the Ruff configuration exempts them from the
-D and ANN rules, and generated migrations are exempt from every Ruff rule. Rule C
-applies to every backend docstring, tests included.
+Rules A, B and C apply to tests too: Ruff and the docstring standards test check
+`backend/tests/` like the rest of the backend. Generated migrations are exempt
+from every Ruff rule and from the docstring standards test; rule C still applies
+to them.
