@@ -49,7 +49,8 @@ Google convention, and ANN.
   - a missing `Returns:` on a function whose annotation is not `None`, `NoReturn`
     or `Never` (a property, a cached property and a generator are exempt), a
     missing `Yields:` on a generator, and a missing or incomplete `Raises:` for an
-    exception the function raises by name and does not catch itself;
+    exception the function raises by name and does not catch itself (a `try`
+    handler, `pytest.raises`, `assertRaises` or `contextlib.suppress` catches);
   - a heading other than the exact Google spelling, and an empty section;
   - an unannotated parameter or return on any function, nested ones included;
   - a type written in `Args:` as `name (type):` or at the start of `Returns:` or
