@@ -4,20 +4,27 @@ import asyncio
 import copy
 import gc
 import threading
+from collections.abc import Coroutine, Sequence
 from dataclasses import FrozenInstanceError
 from datetime import timedelta
+from typing import Never, Self
 
 import pytest
 from asgiref.sync import ThreadSensitiveContext, async_to_sync
+from django.contrib.auth.models import AbstractUser
 from django.contrib.sessions.backends.db import SessionStore
 from django.contrib.sessions.models import Session
 from django.core.exceptions import ImproperlyConfigured
-from django.http import HttpRequest
-from django.test import RequestFactory
+from django.core.handlers.wsgi import WSGIRequest
+from django.db.models import Model
+from django.http import HttpRequest, HttpResponse
+from django.test import Client, RequestFactory
 from django.test.utils import override_script_prefix
 from django.utils import timezone
+from pytest_django.fixtures import DjangoAssertNumQueries, Settings
 
 from tests.test_session_contract import _confirm
+from todo.realtime_auth import Access, Identity
 from todo.session_contract import (
     CLIENT_CONTRACT_HEADER,
     EXPECTED_SESSION_HEADER,
@@ -30,7 +37,19 @@ HINT = {"event": "invalidate", "data": {"version": 1, "resources": ["tasks"]}}
 
 
 @pytest.fixture
-def authenticated(client, user, settings):
+def authenticated(
+    client: Client, user: AbstractUser, settings: Settings
+) -> tuple[Client, AbstractUser, WSGIRequest, str]:
+    """Sign a user in and build a realtime stream request bound to that session.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        settings: Django settings overridden by this test.
+
+    Returns:
+        The client, the user, the stream request and the session binding.
+    """
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": CONFIG.copy()}
     client.force_login(user)
     binding, _ = _confirm(client, True)
@@ -47,13 +66,28 @@ def authenticated(client, user, settings):
     return client, user, request, binding
 
 
-def access_for(authenticated):
+def access_for(authenticated: tuple[Client, AbstractUser, WSGIRequest, str]) -> Access:
+    """Authorize the stream request of an authenticated session.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+
+    Returns:
+        The access that authorization grants.
+    """
     from todo.realtime_auth import authorize
 
     return async_to_sync(authorize)(authenticated[2])
 
 
-def test_fresh_auth_uses_database_session_not_cached_request_user(authenticated):
+def test_fresh_auth_uses_database_session_not_cached_request_user(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """Fresh authentication reads the database session, not the cached request user.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_auth import authorize, fresh_identity
 
     client, user, request, binding = authenticated
@@ -75,7 +109,15 @@ def test_fresh_auth_uses_database_session_not_cached_request_user(authenticated)
 @pytest.mark.parametrize(
     "revocation", ["expired", "inactive", "password", "deleted", "backend"]
 )
-def test_real_django_session_revocation(authenticated, revocation):
+def test_real_django_session_revocation(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str], revocation: str
+) -> None:
+    """Revoking the Django session in any supported way denies authorization.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        revocation: Way the Django session is revoked.
+    """
     from todo.realtime_auth import fresh_identity
 
     client, user, _, _ = authenticated
@@ -101,8 +143,14 @@ def test_real_django_session_revocation(authenticated, revocation):
 
 
 def test_a_session_only_a_fallback_secret_verifies_is_not_rotated_or_deleted(
-    authenticated, settings
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str], settings: Settings
+) -> None:
+    """A session that only a fallback secret verifies is neither rotated nor deleted.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        settings: Django settings overridden by this test.
+    """
     from todo.realtime_auth import fresh_identity
     from todo.session_contract import session_binding
 
@@ -127,8 +175,13 @@ def test_a_session_only_a_fallback_secret_verifies_is_not_rotated_or_deleted(
 
 
 def test_a_session_whose_auth_hash_fails_is_refused_but_left_for_the_next_request(
-    authenticated,
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """A session whose auth hash fails is refused but left for the next request.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_auth import fresh_identity
 
     client, user, _, _ = authenticated
@@ -144,19 +197,26 @@ def test_a_session_whose_auth_hash_fails_is_refused_but_left_for_the_next_reques
 
 
 def test_each_identity_check_runs_off_the_callers_thread_and_closes_its_connection(
-    authenticated, monkeypatch
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each identity check runs off the caller's thread and closes its connection.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        monkeypatch: Patches the code under test for this test.
+    """
     from todo import realtime_auth
 
     ran, closed = [], []
     real = realtime_auth.fresh_identity
     real_close = realtime_auth.close_old_connections
 
-    def spy(session_key):
+    def spy(session_key: str | None) -> Identity | None:
         ran.append(threading.get_ident())
         return real(session_key)
 
-    def closing():
+    def closing() -> None:
         closed.append(1)
         real_close()
 
@@ -172,12 +232,19 @@ def test_each_identity_check_runs_off_the_callers_thread_and_closes_its_connecti
     assert closed == [1]
 
 
-def test_a_failing_identity_check_still_closes_its_connection(monkeypatch):
+def test_a_failing_identity_check_still_closes_its_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failing identity check still closes its database connection.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     from todo import realtime_auth
 
     closed = []
 
-    def broken(session_key):
+    def broken(session_key: str | None) -> Never:
         raise RuntimeError("database unavailable")
 
     monkeypatch.setattr(realtime_auth, "fresh_identity", broken)
@@ -192,28 +259,35 @@ def test_a_failing_identity_check_still_closes_its_connection(monkeypatch):
 
 
 def test_open_streams_share_the_default_executor_for_their_identity_checks(
-    authenticated, monkeypatch
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Open streams share the default executor for their identity checks.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        monkeypatch: Patches the code under test for this test.
+    """
     from todo import realtime_auth
 
     key = authenticated[0].session.session_key
     threads = set()
     real = SessionStore._get_session_from_db
 
-    def spy(self):
+    def spy(self: SessionStore) -> dict[str, object]:
         threads.add(threading.get_ident())
         return real(self)
 
     monkeypatch.setattr(SessionStore, "_get_session_from_db", spy)
 
-    async def one_stream():
+    async def one_stream() -> None:
         # ASGIHandler gives every request a thread-sensitive context of its own, and
         # thread-sensitive work then runs on a thread that context keeps for good.
         async with ThreadSensitiveContext():
             for _ in range(2):
                 assert await realtime_auth.fresh_identity_async(key) is not None
 
-    async def run():
+    async def run() -> None:
         await asyncio.gather(*(one_stream() for _ in range(40)))
 
     # No async_to_sync here: a sync caller above would run everything on its own thread
@@ -232,7 +306,15 @@ def test_open_streams_share_the_default_executor_for_their_identity_checks(
         "django.contrib.sessions.backends.cached_db",
     ],
 )
-def test_enabled_realtime_requires_actual_database_session_engine(settings, engine):
+def test_enabled_realtime_requires_actual_database_session_engine(
+    settings: Settings, engine: str
+) -> None:
+    """Enabled realtime requires the database session engine.
+
+    Args:
+        settings: Django settings overridden by this test.
+        engine: Session backend that realtime does not support.
+    """
     from todo.realtime_config import get_realtime_config
 
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": CONFIG.copy()}
@@ -257,7 +339,20 @@ def test_enabled_realtime_requires_actual_database_session_engine(settings, engi
         ("anonymous", 401),
     ],
 )
-def test_route_specific_denials_before_broker(authenticated, settings, case, status):
+def test_route_specific_denials_before_broker(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    settings: Settings,
+    case: str,
+    status: int,
+) -> None:
+    """Route-specific denials are decided before the broker is reached.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        settings: Django settings overridden by this test.
+        case: Kind of denial the request is set up to trigger.
+        status: Status code the request is expected to receive.
+    """
     from todo.realtime_auth import RealtimeDenied, authorize
 
     _, _, request, _ = authenticated
@@ -284,7 +379,14 @@ def test_route_specific_denials_before_broker(authenticated, settings, case, sta
     assert denied.value.status == status
 
 
-def test_same_origin_and_native_no_origin_are_both_supported(authenticated):
+def test_same_origin_and_native_no_origin_are_both_supported(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """A same-origin request and a native request without Origin are both admitted.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_auth import authorize
 
     _, _, request, binding = authenticated
@@ -294,8 +396,14 @@ def test_same_origin_and_native_no_origin_are_both_supported(authenticated):
 
 
 def test_topics_are_server_selected_from_principal_and_template_sources(
-    authenticated, settings
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str], settings: Settings
+) -> None:
+    """The server selects the topics from the principal and the template sources.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        settings: Django settings overridden by this test.
+    """
     from todo.realtime_auth import topics_for
     from todo.realtime_notifications import private_topic, ui_topic
 
@@ -321,32 +429,65 @@ def test_topics_are_server_selected_from_principal_and_template_sources(
 
 
 class Subscription:
-    def __init__(self, *items):
+    """Fake broker subscription that yields the items queued for it."""
+
+    def __init__(self, *items: dict[str, object] | None) -> None:
+        """Queue the items that the subscription yields.
+
+        Args:
+            *items: Items the subscription yields, in order.
+        """
         self.items = asyncio.Queue()
         for item in items:
             self.items.put_nowait(item)
         self.closed = 0
         self.failure = None
 
-    def __aiter__(self):
+    def __aiter__(self) -> Self:
+        """Return the subscription itself as its async iterator.
+
+        Returns:
+            This subscription.
+        """
         return self
 
-    async def __anext__(self):
+    async def __anext__(self) -> dict[str, object] | None:
+        """Return the next queued item, or raise the configured failure.
+
+        Returns:
+            The next item of the subscription.
+        """
         if self.failure:
             raise self.failure
         return await self.items.get()
 
-    async def aclose(self):
+    async def aclose(self) -> None:
+        """Record that the subscription was closed."""
         self.closed += 1
 
 
 class Broker:
-    def __init__(self, subscription):
+    """Fake broker that hands out one prepared subscription."""
+
+    def __init__(self, subscription: Subscription) -> None:
+        """Remember the subscription that every subscribe call returns.
+
+        Args:
+            subscription: Subscription that every subscribe call returns.
+        """
         self.subscription = subscription
         self.topics = None
         self.failure = None
 
-    async def subscribe(self, topics):
+    async def subscribe(self, topics: Sequence[str]) -> Subscription:
+        """Record the topics, then return the subscription or raise the failure.
+
+        Args:
+            topics: Topics the stream subscribes to.
+
+        Returns:
+            The prepared subscription.
+        """
         self.topics = topics
         if self.failure:
             raise self.failure
@@ -362,43 +503,68 @@ class SteppedLoop(asyncio.SelectorEventLoop):
     without racing the real clock.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Create the loop with a zeroed clock and a selector that never waits."""
         super().__init__()
         self._ticks = 0
         select = self._selector.select
 
-        def step(timeout=None):
+        def step(timeout: float | None = None) -> list[tuple[object, int]]:
             self._ticks += 1
             return select(0)
 
         self._selector.select = step
 
-    def time(self):
+    def time(self) -> float:
+        """Return the current tick as the loop clock.
+
+        Returns:
+            The number of loop iterations so far, in seconds.
+        """
         return float(self._ticks)
 
 
-def run_stepped(coroutine):
+def run_stepped(coroutine: Coroutine[object, object, object]) -> object:
+    """Run a coroutine on a stepped event loop and return its result.
+
+    Args:
+        coroutine: Coroutine to run on the stepped loop.
+
+    Returns:
+        The value the coroutine returns.
+    """
     with asyncio.Runner(loop_factory=SteppedLoop) as runner:
         return runner.run(coroutine)
 
 
-def standalone_access():
-    """Authority for tests that never touch Django: no config, session or database."""
+def standalone_access() -> Access:
+    """Authority for tests that never touch Django: no config, session or database.
+
+    Returns:
+        An access with no configuration and a fixed identity.
+    """
     from todo.realtime_auth import Access, Identity
 
     identity = Identity("default", "1", "hvs1." + "x" * 43)
     return Access(None, identity, "session-key")
 
 
-def test_stream_rechecks_before_initial_resync_and_every_frame(authenticated):
+def test_stream_rechecks_before_initial_resync_and_every_frame(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """The stream re-checks authentication before the resync and before every frame.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
+    async def run() -> None:
         reads = []
 
-        async def fresh(key):
+        async def fresh(key: str | None) -> Identity | None:
             reads.append(key)
             return access.identity
 
@@ -416,15 +582,22 @@ def test_stream_rechecks_before_initial_resync_and_every_frame(authenticated):
     async_to_sync(run)()
 
 
-def test_auth_loss_between_frames_emits_only_auth_required_then_closes(authenticated):
+def test_auth_loss_between_frames_emits_only_auth_required_then_closes(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """Losing authentication between frames emits only auth-required, then closes.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
+    async def run() -> None:
         current = access.identity
 
-        async def fresh(key):
+        async def fresh(key: str | None) -> Identity | None:
             return current
 
         sub = Subscription(RESYNC, HINT)
@@ -440,15 +613,22 @@ def test_auth_loss_between_frames_emits_only_auth_required_then_closes(authentic
     async_to_sync(run)()
 
 
-def test_heartbeat_requires_fresh_auth_and_lifetime_closes(authenticated):
+def test_heartbeat_requires_fresh_auth_and_lifetime_closes(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """A heartbeat needs fresh authentication, and the lifetime limit closes the stream.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
+    async def run() -> None:
         reads = 0
 
-        async def fresh(key):
+        async def fresh(key: str | None) -> Identity | None:
             nonlocal reads
             reads += 1
             return access.identity
@@ -473,13 +653,14 @@ def test_heartbeat_requires_fresh_auth_and_lifetime_closes(authenticated):
     async_to_sync(run)()
 
 
-def test_a_hint_taken_as_the_heartbeat_expires_is_delivered_not_dropped():
+def test_a_hint_taken_as_the_heartbeat_expires_is_delivered_not_dropped() -> None:
+    """A hint taken just as the heartbeat expires is delivered, not dropped."""
     from todo.realtime_stream import Admissions, open_stream
 
     access = standalone_access()
 
-    async def run():
-        async def fresh(key):
+    async def run() -> None:
+        async def fresh(key: str | None) -> Identity | None:
             return access.identity
 
         pool = Admissions()
@@ -504,12 +685,24 @@ def test_a_hint_taken_as_the_heartbeat_expires_is_delivered_not_dropped():
 
 
 class CountingSubscription(Subscription):
-    def __init__(self, *items):
+    """Subscription that counts its reads and the reads that were cancelled."""
+
+    def __init__(self, *items: dict[str, object] | None) -> None:
+        """Queue the items and start the read counters at zero.
+
+        Args:
+            *items: Items the subscription yields, in order.
+        """
         super().__init__(*items)
         self.reads = 0
         self.cancelled = 0
 
-    async def __anext__(self):
+    async def __anext__(self) -> dict[str, object] | None:
+        """Count the read, and count it as cancelled when it is cancelled.
+
+        Returns:
+            The next item of the subscription.
+        """
         self.reads += 1
         try:
             return await super().__anext__()
@@ -518,13 +711,14 @@ class CountingSubscription(Subscription):
             raise
 
 
-def test_one_read_stays_pending_across_heartbeats():
+def test_one_read_stays_pending_across_heartbeats() -> None:
+    """One subscription read stays pending across heartbeats."""
     from todo.realtime_stream import Admissions, open_stream
 
     access = standalone_access()
 
-    async def run():
-        async def fresh(key):
+    async def run() -> None:
+        async def fresh(key: str | None) -> Identity | None:
             return access.identity
 
         sub = CountingSubscription()
@@ -547,13 +741,14 @@ def test_one_read_stays_pending_across_heartbeats():
     run_stepped(run())
 
 
-def test_closing_cancels_the_read_a_heartbeat_left_pending():
+def test_closing_cancels_the_read_a_heartbeat_left_pending() -> None:
+    """Closing the stream cancels the read that a heartbeat left pending."""
     from todo.realtime_stream import Admissions, open_stream
 
     access = standalone_access()
 
-    async def run():
-        async def fresh(key):
+    async def run() -> None:
+        async def fresh(key: str | None) -> Identity | None:
             return access.identity
 
         pool = Admissions()
@@ -569,26 +764,29 @@ def test_closing_cancels_the_read_a_heartbeat_left_pending():
     run_stepped(run())
 
 
-def test_a_read_that_failed_while_a_heartbeat_was_pending_is_not_left_unretrieved():
+def test_a_read_that_failed_while_a_heartbeat_was_pending_is_not_left_unretrieved() -> (
+    None
+):
+    """A read that failed while a heartbeat was pending is not left unretrieved."""
     from todo.realtime_stream import Admissions, open_stream
 
     access = standalone_access()
     unretrieved = []
 
-    async def run():
+    async def run() -> None:
         asyncio.get_running_loop().set_exception_handler(
             lambda loop, context: unretrieved.append(context["message"])
         )
 
         class Failing(Subscription):
-            def __init__(self):
+            def __init__(self) -> None:
                 super().__init__()
                 self.outcome = asyncio.get_running_loop().create_future()
 
-            async def __anext__(self):
+            async def __anext__(self) -> dict[str, object] | None:
                 return await self.outcome
 
-        async def fresh(key):
+        async def fresh(key: str | None) -> Identity | None:
             return access.identity
 
         sub = Failing()
@@ -606,14 +804,19 @@ def test_a_read_that_failed_while_a_heartbeat_was_pending_is_not_left_unretrieve
 
 
 def test_caps_are_per_principal_across_bindings_and_release_without_iteration(
-    authenticated,
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """Stream caps are per principal across bindings and are released without iterating.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
-        async def fresh(key):
+    async def run() -> None:
+        async def fresh(key: str | None) -> Identity | None:
             return access.identity
 
         pool = Admissions()
@@ -636,13 +839,20 @@ def test_caps_are_per_principal_across_bindings_and_release_without_iteration(
     async_to_sync(run)()
 
 
-def test_subscribe_error_and_auth_recheck_failure_release_preheader(authenticated):
+def test_subscribe_error_and_auth_recheck_failure_release_preheader(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """A subscribe error or failed re-check releases the reservation before headers.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_auth import RealtimeDenied
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
+    async def run() -> None:
         pool = Admissions()
         sub = Subscription(RESYNC)
         broker = Broker(sub)
@@ -652,7 +862,7 @@ def test_subscribe_error_and_auth_recheck_failure_release_preheader(authenticate
         assert error.value.status == 503 and pool.total == 0
         broker.failure = None
 
-        async def fresh(key):
+        async def fresh(key: str | None) -> None:
             return None
 
         with pytest.raises(RealtimeDenied) as denied:
@@ -675,13 +885,22 @@ def test_subscribe_error_and_auth_recheck_failure_release_preheader(authenticate
         {"event": "resync", "data": {"version": 1, "owner": "secret"}},
     ],
 )
-def test_broker_input_is_revalidated_against_app_wire_allowlist(authenticated, bad):
+def test_broker_input_is_revalidated_against_app_wire_allowlist(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    bad: dict[str, object] | None,
+) -> None:
+    """Broker input is validated again against the application wire allowlist.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        bad: Malformed or disallowed event the broker delivers.
+    """
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
-        async def fresh(key):
+    async def run() -> None:
+        async def fresh(key: str | None) -> Identity | None:
             return access.identity
 
         sub = Subscription(RESYNC, bad)
@@ -695,18 +914,27 @@ def test_broker_input_is_revalidated_against_app_wire_allowlist(authenticated, b
     async_to_sync(run)()
 
 
-def test_close_failure_still_releases_capability(authenticated, caplog):
+def test_close_failure_still_releases_capability(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failure while closing still releases the stream capability.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        caplog: Captures the log records emitted by this test.
+    """
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
-        async def fresh(key):
+    async def run() -> None:
+        async def fresh(key: str | None) -> Identity | None:
             return access.identity
 
         sub = Subscription(RESYNC)
 
-        async def bad_close():
+        async def bad_close() -> Never:
             raise RuntimeError("SECRET")
 
         sub.aclose = bad_close
@@ -719,7 +947,8 @@ def test_close_failure_still_releases_capability(authenticated, caplog):
     assert "SECRET" not in caplog.text
 
 
-def test_default_limits_are_exact_and_total_capacity_enforced():
+def test_default_limits_are_exact_and_total_capacity_enforced() -> None:
+    """The default limits are exact and the total capacity is enforced."""
     from todo.realtime_auth import Identity, RealtimeDenied
     from todo.realtime_stream import Admissions
 
@@ -735,17 +964,24 @@ def test_default_limits_are_exact_and_total_capacity_enforced():
     assert pool.total == 0
 
 
-def test_closed_stream_does_not_emit_late_auth_failure(authenticated):
+def test_closed_stream_does_not_emit_late_auth_failure(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """A closed stream does not emit a late authentication failure.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
+    async def run() -> None:
         calls = 0
         waiting = asyncio.Event()
         release = asyncio.Event()
 
-        async def fresh(key):
+        async def fresh(key: str | None) -> Identity | None:
             nonlocal calls
             calls += 1
             if calls == 1:
@@ -768,14 +1004,21 @@ def test_closed_stream_does_not_emit_late_auth_failure(authenticated):
     async_to_sync(run)()
 
 
-def test_real_database_revocation_between_stream_frames(authenticated):
+def test_real_database_revocation_between_stream_frames(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """A real database revocation between frames ends the stream.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from asgiref.sync import sync_to_async
 
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
+    async def run() -> None:
         pool = Admissions()
         sub = Subscription(RESYNC, HINT)
         stream = await open_stream(access, Broker(sub), admissions=pool)
@@ -793,8 +1036,19 @@ def test_real_database_revocation_between_stream_frames(authenticated):
 @pytest.mark.parametrize("script_name", ["", "/app"])
 @pytest.mark.parametrize("status", [200, 401, 403])
 def test_exact_stream_path_bypasses_presentation_only(
-    user, status, script_name, django_assert_num_queries
-):
+    user: AbstractUser,
+    status: int,
+    script_name: str,
+    django_assert_num_queries: DjangoAssertNumQueries,
+) -> None:
+    """Only the exact stream path bypasses the presentation middleware.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        status: Status code of the downstream response.
+        script_name: Script prefix the site is mounted under.
+        django_assert_num_queries: Asserts the exact number of queries the block runs.
+    """
     from django.http import HttpResponse
 
     from todo.middleware import ProfileLanguageMiddleware, ThemeHeaderMiddleware
@@ -805,7 +1059,7 @@ def test_exact_stream_path_bypasses_presentation_only(
     request = RequestFactory().get("/realtime/events/", SCRIPT_NAME=script_name)
     request.user = user
 
-    def downstream(incoming):
+    def downstream(incoming: HttpRequest) -> HttpResponse:
         assert incoming is request
         assert incoming.user is user
         return HttpResponse(status=status)
@@ -820,7 +1074,15 @@ def test_exact_stream_path_bypasses_presentation_only(
 @pytest.mark.parametrize(
     "path", ["/realtime/events/extra", "/hv/", "/app/realtime/events/"]
 )
-def test_other_routes_keep_presentation_middleware(user, path):
+def test_other_routes_keep_presentation_middleware(
+    user: AbstractUser, path: str
+) -> None:
+    """Other routes keep the presentation middleware.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        path: Path of the route under test.
+    """
     from django.http import HttpResponse
 
     from todo.middleware import ProfileLanguageMiddleware, ThemeHeaderMiddleware
@@ -837,7 +1099,14 @@ def test_other_routes_keep_presentation_middleware(user, path):
 
 
 @pytest.mark.parametrize("script_name", ["", "/app", "/a/b"])
-def test_the_stream_route_is_recognised_wherever_the_site_is_mounted(script_name):
+def test_the_stream_route_is_recognised_wherever_the_site_is_mounted(
+    script_name: str,
+) -> None:
+    """The stream route is recognised wherever the site is mounted.
+
+    Args:
+        script_name: Script prefix the site is mounted under.
+    """
     from todo.realtime_middleware import is_stream_request
 
     request = RequestFactory().get("/realtime/events/", SCRIPT_NAME=script_name)
@@ -858,7 +1127,12 @@ def test_the_stream_route_is_recognised_wherever_the_site_is_mounted(script_name
         "/",
     ],
 )
-def test_no_other_route_is_taken_for_the_stream(path):
+def test_no_other_route_is_taken_for_the_stream(path: str) -> None:
+    """No other route is mistaken for the stream.
+
+    Args:
+        path: Path of the route under test.
+    """
     from todo.realtime_middleware import is_stream_request
 
     assert not is_stream_request(RequestFactory().get(path))
@@ -867,8 +1141,16 @@ def test_no_other_route_is_taken_for_the_stream(path):
 @pytest.mark.parametrize("script_name", ["", "/app"])
 @pytest.mark.parametrize("enabled,status", [(True, 405), (False, 404)])
 def test_the_method_guard_finds_the_stream_whatever_the_script_name(
-    settings, script_name, enabled, status
-):
+    settings: Settings, script_name: str, enabled: bool, status: int
+) -> None:
+    """The method guard finds the stream whatever the script name is.
+
+    Args:
+        settings: Django settings overridden by this test.
+        script_name: Script prefix the site is mounted under.
+        enabled: Whether realtime is enabled in the settings.
+        status: Status code the request is expected to receive.
+    """
     from django.http import HttpResponse
 
     from todo.realtime_middleware import RealtimeMethodMiddleware
@@ -880,7 +1162,7 @@ def test_the_method_guard_finds_the_stream_whatever_the_script_name(
     request = RequestFactory().post("/realtime/events/", SCRIPT_NAME=script_name)
     seen = []
 
-    def next_handler(incoming):
+    def next_handler(incoming: HttpRequest) -> HttpResponse:
         seen.append(incoming)
         return HttpResponse(status=418)
 
@@ -889,17 +1171,24 @@ def test_the_method_guard_finds_the_stream_whatever_the_script_name(
     assert response.status_code == status and seen == []
 
 
-def test_lifetime_expiry_while_fresh_auth_waits_never_emits_frame(authenticated):
+def test_lifetime_expiry_while_fresh_auth_waits_never_emits_frame(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """A lifetime expiry while the fresh authentication waits never emits a frame.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
+    async def run() -> None:
         calls = 0
         waiting = asyncio.Event()
         release = asyncio.Event()
 
-        async def fresh(key):
+        async def fresh(key: str | None) -> Identity | None:
             nonlocal calls
             calls += 1
             if calls > 1:
@@ -923,8 +1212,15 @@ def test_lifetime_expiry_while_fresh_auth_waits_never_emits_frame(authenticated)
 
 
 def test_origin_explicit_port_zero_is_not_default_and_rejects_before_auth(
-    authenticated, django_assert_num_queries
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    django_assert_num_queries: DjangoAssertNumQueries,
+) -> None:
+    """An Origin with explicit port zero is not the default port and is rejected early.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        django_assert_num_queries: Asserts the exact number of queries the block runs.
+    """
     from todo.realtime_auth import RealtimeDenied, authorize
 
     request = authenticated[2]
@@ -934,7 +1230,14 @@ def test_origin_explicit_port_zero_is_not_default_and_rejects_before_auth(
     assert denied.value.status == 403
 
 
-def test_origin_explicit_default_port_is_equivalent(authenticated):
+def test_origin_explicit_default_port_is_equivalent(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """An explicit default port in the Origin is equivalent to omitting it.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_auth import authorize
 
     request = authenticated[2]
@@ -943,8 +1246,18 @@ def test_origin_explicit_default_port_is_equivalent(authenticated):
 
 
 @pytest.fixture
-def behind_a_tls_proxy(authenticated, settings):
-    """A request the proxy received over HTTPS, which Django sees as plain http."""
+def behind_a_tls_proxy(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str], settings: Settings
+) -> tuple[Client, AbstractUser, WSGIRequest, str]:
+    """A request the proxy received over HTTPS, which Django sees as plain http.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        settings: Django settings overridden by this test.
+
+    Returns:
+        The authenticated session, with the proxy's host and trusted origin configured.
+    """
     settings.ALLOWED_HOSTS = ["api.example.com", "testserver"]
     settings.CSRF_TRUSTED_ORIGINS = ["https://api.example.com"]
     request = authenticated[2]
@@ -953,8 +1266,18 @@ def behind_a_tls_proxy(authenticated, settings):
     return authenticated
 
 
-def admitted(authenticated, origin):
-    """Report whether authorize() lets this Origin through."""
+def admitted(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str], origin: str
+) -> bool:
+    """Report whether authorize() lets this Origin through.
+
+    Args:
+        authenticated: Signed-in session whose request is copied for each call.
+        origin: Value of the Origin header to try.
+
+    Returns:
+        True when the Origin was admitted, False when it was refused with a 403.
+    """
     from todo.realtime_auth import RealtimeDenied, authorize
 
     # A copy per call: request.headers is computed once, so a second Origin set on
@@ -980,8 +1303,15 @@ def admitted(authenticated, origin):
     ],
 )
 def test_a_trusted_origin_is_admitted_behind_a_tls_terminating_proxy(
-    behind_a_tls_proxy, origin
-):
+    behind_a_tls_proxy: tuple[Client, AbstractUser, WSGIRequest, str], origin: str
+) -> None:
+    """A trusted origin is admitted behind a TLS-terminating proxy.
+
+    Args:
+        behind_a_tls_proxy: Signed-in session whose request reached Django over plain
+        http behind a TLS proxy.
+        origin: Value of the Origin header.
+    """
     # request.scheme is http here, so comparing the Origin with the request alone
     # refused the page's real origin and silently turned realtime off. The origin the
     # operator already trusts for CSRF is the one the browser will send.
@@ -1013,15 +1343,32 @@ def test_a_trusted_origin_is_admitted_behind_a_tls_terminating_proxy(
     ],
 )
 def test_an_origin_nobody_trusts_is_still_refused_behind_a_proxy(
-    behind_a_tls_proxy, origin
-):
+    behind_a_tls_proxy: tuple[Client, AbstractUser, WSGIRequest, str], origin: str
+) -> None:
+    """An origin that nobody trusts is still refused behind a proxy.
+
+    Args:
+        behind_a_tls_proxy: Signed-in session whose request reached Django over plain
+        http behind a TLS proxy.
+        origin: Value of the Origin header.
+    """
     assert not admitted(behind_a_tls_proxy, origin)
 
 
 @pytest.mark.parametrize("hostless", ["https://", "http://", "https://:443"])
 def test_an_origin_without_a_hostname_is_never_admitted(
-    behind_a_tls_proxy, settings, hostless
-):
+    behind_a_tls_proxy: tuple[Client, AbstractUser, WSGIRequest, str],
+    settings: Settings,
+    hostless: str,
+) -> None:
+    """An origin without a hostname is never admitted.
+
+    Args:
+        behind_a_tls_proxy: Signed-in session whose request reached Django over plain
+        http behind a TLS proxy.
+        settings: Django settings overridden by this test.
+        hostless: Origin that has a scheme but no hostname.
+    """
     # urlsplit() reads "https://" as scheme https with host None, so the entry and
     # the header both reduced to ("https", None, 443) and a hostless entry (a typo for
     # a real one) admitted a hostless Origin. Neither of them names an origin.
@@ -1032,8 +1379,18 @@ def test_an_origin_without_a_hostname_is_never_admitted(
 
 @pytest.mark.parametrize("scheme", ["ftp", "ws", "wss", "chrome-extension"])
 def test_a_trusted_entry_that_is_not_http_or_https_is_ignored(
-    behind_a_tls_proxy, settings, scheme
-):
+    behind_a_tls_proxy: tuple[Client, AbstractUser, WSGIRequest, str],
+    settings: Settings,
+    scheme: str,
+) -> None:
+    """A trusted entry that is not http or https is ignored.
+
+    Args:
+        behind_a_tls_proxy: Signed-in session whose request reached Django over plain
+        http behind a TLS proxy.
+        settings: Django settings overridden by this test.
+        scheme: Scheme of the trusted origin entry that must be ignored.
+    """
     origin = f"{scheme}://api.example.com"
     settings.CSRF_TRUSTED_ORIGINS = [origin]
 
@@ -1041,8 +1398,16 @@ def test_a_trusted_entry_that_is_not_http_or_https_is_ignored(
 
 
 def test_trusted_origins_are_matched_exactly_and_never_as_wildcards(
-    behind_a_tls_proxy, settings
-):
+    behind_a_tls_proxy: tuple[Client, AbstractUser, WSGIRequest, str],
+    settings: Settings,
+) -> None:
+    """Trusted origins are matched exactly and never as wildcards.
+
+    Args:
+        behind_a_tls_proxy: Signed-in session whose request reached Django over plain
+        http behind a TLS proxy.
+        settings: Django settings overridden by this test.
+    """
     settings.CSRF_TRUSTED_ORIGINS = ["https://*.example.com", "https://[bad"]
 
     assert not admitted(behind_a_tls_proxy, "https://api.example.com")
@@ -1050,8 +1415,16 @@ def test_trusted_origins_are_matched_exactly_and_never_as_wildcards(
 
 
 def test_without_trusted_origins_only_the_requests_own_origin_is_admitted(
-    behind_a_tls_proxy, settings
-):
+    behind_a_tls_proxy: tuple[Client, AbstractUser, WSGIRequest, str],
+    settings: Settings,
+) -> None:
+    """Without trusted origins only the request's own origin is admitted.
+
+    Args:
+        behind_a_tls_proxy: Signed-in session whose request reached Django over plain
+        http behind a TLS proxy.
+        settings: Django settings overridden by this test.
+    """
     settings.CSRF_TRUSTED_ORIGINS = []
 
     assert not admitted(behind_a_tls_proxy, "https://api.example.com")
@@ -1060,8 +1433,19 @@ def test_without_trusted_origins_only_the_requests_own_origin_is_admitted(
 
 @pytest.mark.parametrize("options", [{}, {"using": None}])
 def test_template_topic_uses_django_router_when_source_has_no_explicit_alias(
-    authenticated, settings, monkeypatch, options
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    options: dict[str, object],
+) -> None:
+    """The template topic uses the Django router when the source names no alias.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        settings: Django settings overridden by this test.
+        monkeypatch: Patches the code under test for this test.
+        options: Options of the database template source.
+    """
     from django.db import router
 
     from todo.realtime_auth import topics_for
@@ -1079,7 +1463,7 @@ def test_template_topic_uses_django_router_when_source_has_no_explicit_alias(
     }
     seen = []
 
-    def route(model, **hints):
+    def route(model: type[Model], **hints: object) -> str:
         seen.append(model._meta.label_lower)
         return "routed-templates"
 
@@ -1098,13 +1482,22 @@ def test_template_topic_uses_django_router_when_source_has_no_explicit_alias(
         {"event": "resync", "data": {"version": 2}},
     ],
 )
-def test_malformed_envelopes_close_without_data(authenticated, bad):
+def test_malformed_envelopes_close_without_data(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    bad: dict[str, object] | None,
+) -> None:
+    """Malformed envelopes close the stream without emitting data.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        bad: Malformed or disallowed event the broker delivers.
+    """
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
-        async def fresh(key):
+    async def run() -> None:
+        async def fresh(key: str | None) -> Identity | None:
             return access.identity
 
         pool = Admissions()
@@ -1117,13 +1510,20 @@ def test_malformed_envelopes_close_without_data(authenticated, bad):
     async_to_sync(run)()
 
 
-def test_expired_before_iteration_and_remote_auth_terminal_release(authenticated):
+def test_expired_before_iteration_and_remote_auth_terminal_release(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """A stream that expires or loses authentication ends and releases its reservation.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
-        async def fresh(key):
+    async def run() -> None:
+        async def fresh(key: str | None) -> Identity | None:
             return access.identity
 
         pool = Admissions()
@@ -1146,19 +1546,26 @@ def test_expired_before_iteration_and_remote_auth_terminal_release(authenticated
     async_to_sync(run)()
 
 
-def test_explicit_close_cancels_pending_cancel_safe_subscription_read(authenticated):
+def test_explicit_close_cancels_pending_cancel_safe_subscription_read(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """An explicit close cancels a pending subscription read that is safe to cancel.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_stream import Admissions, open_stream
 
     access = access_for(authenticated)
 
-    async def run():
-        async def fresh(key):
+    async def run() -> None:
+        async def fresh(key: str | None) -> Identity | None:
             return access.identity
 
         started = asyncio.Event()
 
         class WaitingSubscription(Subscription):
-            async def __anext__(self):
+            async def __anext__(self) -> dict[str, object] | None:
                 started.set()
                 return await super().__anext__()
 
@@ -1175,7 +1582,14 @@ def test_explicit_close_cancels_pending_cancel_safe_subscription_read(authentica
     async_to_sync(run)()
 
 
-def test_changed_binding_after_subscribe_is_403_and_cleans_up(authenticated):
+def test_changed_binding_after_subscribe_is_403_and_cleans_up(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """A binding that changes after subscribing is answered 403 and cleaned up.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from dataclasses import replace
 
     from todo.realtime_auth import RealtimeDenied
@@ -1183,8 +1597,8 @@ def test_changed_binding_after_subscribe_is_403_and_cleans_up(authenticated):
 
     access = access_for(authenticated)
 
-    async def run():
-        async def fresh(key):
+    async def run() -> None:
+        async def fresh(key: str | None) -> Identity | None:
             return replace(access.identity, binding="hvs1." + "x" * 43)
 
         sub = Subscription(RESYNC)
@@ -1196,7 +1610,14 @@ def test_changed_binding_after_subscribe_is_403_and_cleans_up(authenticated):
     async_to_sync(run)()
 
 
-def test_malformed_origin_port_is_rejected_without_auth(authenticated):
+def test_malformed_origin_port_is_rejected_without_auth(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """A malformed port in the Origin is rejected without authenticating.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_auth import RealtimeDenied, authorize
 
     authenticated[2].META["HTTP_ORIGIN"] = "http://testserver:invalid"
@@ -1206,7 +1627,15 @@ def test_malformed_origin_port_is_rejected_without_auth(authenticated):
 
 
 @pytest.mark.parametrize("origin", ["http://@testserver", "http://:@testserver"])
-def test_origin_userinfo_even_empty_is_not_a_serialized_origin(authenticated, origin):
+def test_origin_userinfo_even_empty_is_not_a_serialized_origin(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str], origin: str
+) -> None:
+    """An Origin with user information, even an empty one, is not a serialized origin.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        origin: Value of the Origin header.
+    """
     from todo.realtime_auth import RealtimeDenied, authorize
 
     authenticated[2].META["HTTP_ORIGIN"] = origin

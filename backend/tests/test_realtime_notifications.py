@@ -1,7 +1,10 @@
 """After-commit app invalidation intents, without Redis or stream transport."""
 
 import json
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import FrozenInstanceError
+from pathlib import Path
+from typing import Never
 from unittest.mock import patch
 
 import pytest
@@ -9,11 +12,19 @@ from dj_hyperview.contrib.database.models import HyperviewTemplate
 from dj_hyperview.signals import TemplateInvalidation, template_invalidated
 from django.apps import apps
 from django.conf import settings as django_settings
+from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ImproperlyConfigured
 from django.db import DatabaseError, transaction
+from django.test import Client
 from django.urls import reverse
+from pytest_django.fixtures import (
+    DjangoAssertNumQueries,
+    DjangoCaptureOnCommitCallbacks,
+    Settings,
+)
 
 from todo.models import Category, Task
+from todo.realtime_notifications import Notification
 from todo.services import create_category, create_task, delete_category, toggle_task
 
 CONFIG = {"REDIS_URL": "redis://127.0.0.1:6379/14", "NAMESPACE": "unit-test"}
@@ -21,12 +32,15 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def cold_broker_cache():
+def cold_broker_cache() -> Iterator[None]:
     """Forget the cached brokers, so a test that counts constructions starts cold.
 
     get_broker is cached for the life of the process: without this the counting test
     passes only the first time its namespace is seen, and fails on a rerun or when
     another test has used the same configuration before it.
+
+    Yields:
+        Nothing; the broker cache is empty while the test runs.
     """
     from todo.realtime_config import get_broker
 
@@ -36,7 +50,18 @@ def cold_broker_cache():
 
 
 @pytest.fixture
-def published(settings, monkeypatch):
+def published(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> list[tuple[object, Notification]]:
+    """Enable realtime and record every notification instead of publishing it.
+
+    Args:
+        settings: Django settings overridden by this test.
+        monkeypatch: Patches the code under test for this test.
+
+    Returns:
+        The config and intent pairs recorded by the patched publisher.
+    """
     from todo import realtime_notifications as notifications
 
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": CONFIG.copy()}
@@ -47,11 +72,21 @@ def published(settings, monkeypatch):
     return seen
 
 
-def intents(published):
+def intents(published: list[tuple[object, Notification]]) -> list[Notification]:
+    """Return only the intents of the recorded notifications.
+
+    Args:
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+
+    Returns:
+        The recorded intents, in publication order.
+    """
     return [intent for _, intent in published]
 
 
-def test_normal_application_enables_central_realtime():
+def test_normal_application_enables_central_realtime() -> None:
+    """The normal application enables the central realtime configuration."""
     from config import settings
 
     assert settings.HYPERVIEW["REALTIME"] == {
@@ -61,8 +96,19 @@ def test_normal_application_enables_central_realtime():
 
 
 def test_services_publish_only_after_commit(
-    user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """Services publish their notification only after the transaction commits.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     with django_capture_on_commit_callbacks(execute=True):
         task = create_task(
             user=user,
@@ -94,8 +140,19 @@ def test_services_publish_only_after_commit(
 
 
 def test_nested_rollback_and_outer_rollback_drop_intents(
-    user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """A nested rollback and an outer rollback both drop the pending intents.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     with django_capture_on_commit_callbacks(execute=True):
         with pytest.raises(RuntimeError):
             with transaction.atomic():
@@ -111,8 +168,21 @@ def test_nested_rollback_and_outer_rollback_drop_intents(
 
 
 def test_task_lifecycle_and_real_admin_delete_selected(
-    user, admin_client, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    admin_client: Client,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """The task lifecycle and the admin delete-selected action publish intents.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        admin_client: Client signed in as a superuser that requests the admin.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     with django_capture_on_commit_callbacks(execute=True):
         task = create_task(
             user=user, title="Task", notes="", category=None, due_at=None
@@ -132,8 +202,23 @@ def test_task_lifecycle_and_real_admin_delete_selected(
 
 
 def test_task_admin_owner_transfer_targets_old_and_new(
-    user, other_user, admin_client, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    other_user: AbstractUser,
+    admin_client: Client,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """Transferring a task in the admin notifies the old and the new owner.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        admin_client: Client signed in as a superuser that requests the admin.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     task = Task.objects.create(user=user, title="Task")
     with django_capture_on_commit_callbacks(execute=True):
         response = admin_client.post(
@@ -170,8 +255,23 @@ def test_task_admin_owner_transfer_targets_old_and_new(
     ],
 )
 def test_partial_save_uses_persisted_owner_not_unsaved_memory(
-    user, other_user, published, django_capture_on_commit_callbacks, fields
-):
+    user: AbstractUser,
+    other_user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+    fields: Callable[[], Iterable[str]],
+) -> None:
+    """A partial save targets the persisted owner, not the unsaved in-memory one.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+        fields: Factory of the update_fields iterable passed to the save.
+    """
     task = Task.objects.create(user=user, title="Initial")
     task.user = other_user
     task.title = "Changed"
@@ -185,8 +285,21 @@ def test_partial_save_uses_persisted_owner_not_unsaved_memory(
 
 
 def test_delete_uses_persisted_owner_and_captures_before_pk_cleared(
-    user, other_user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    other_user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """A delete targets the persisted owner, captured before the primary key clears.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     task = Task.objects.create(user=user, title="Initial")
     task.user = other_user
     with django_capture_on_commit_callbacks(execute=True):
@@ -198,8 +311,21 @@ def test_delete_uses_persisted_owner_and_captures_before_pk_cleared(
 
 
 def test_category_delete_set_null_captures_related_task_owners(
-    user, other_user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    other_user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """Deleting a category notifies the owners of the tasks whose category it clears.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     category = Category.objects.create(user=user, name="Shared history")
     task = Task.objects.create(user=user, category=category, title="Task")
     # Existing Admin permits this transfer; do not silently repair persisted data.
@@ -220,8 +346,23 @@ def test_category_delete_set_null_captures_related_task_owners(
 
 
 def test_category_admin_transfer_includes_related_owners(
-    user, other_user, admin_client, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    other_user: AbstractUser,
+    admin_client: Client,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """Transferring a category in the admin also notifies its related task owners.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        admin_client: Client signed in as a superuser that requests the admin.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     category = Category.objects.create(user=user, name="Category")
     task = Task.objects.create(user=user, category=category, title="Task")
     with django_capture_on_commit_callbacks(execute=True):
@@ -248,8 +389,19 @@ def test_category_admin_transfer_includes_related_owners(
 
 
 def test_category_create_and_update_only_categories(
-    user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """Creating and updating a category invalidates only categories.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     with django_capture_on_commit_callbacks(execute=True):
         category = create_category(user=user, name="Category", color="mint")
         category.name = "New"
@@ -258,8 +410,20 @@ def test_category_create_and_update_only_categories(
 
 
 def test_disabled_preserves_query_count_and_never_publishes(
-    user, settings, published, django_assert_num_queries
-):
+    user: AbstractUser,
+    settings: Settings,
+    published: list[tuple[object, Notification]],
+    django_assert_num_queries: DjangoAssertNumQueries,
+) -> None:
+    """With realtime disabled, the query count is unchanged and nothing is published.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        settings: Django settings overridden by this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_assert_num_queries: Asserts the exact number of queries the block runs.
+    """
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": None}
     with django_assert_num_queries(1):
         task = Task.objects.create(user=user, title="Disabled")
@@ -270,8 +434,19 @@ def test_disabled_preserves_query_count_and_never_publishes(
 
 
 def test_raw_fixture_save_does_not_notify(
-    user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """A raw fixture save does not notify.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     task = Task(
         user=user, title="Raw", created_at=user.date_joined, updated_at=user.date_joined
     )
@@ -281,8 +456,17 @@ def test_raw_fixture_save_does_not_notify(
 
 
 def test_public_template_signal_only_ui_no_name_payload(
-    published, django_capture_on_commit_callbacks
-):
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """The public template signal invalidates only ui and carries no template name.
+
+    Args:
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     with django_capture_on_commit_callbacks(execute=True):
         template_invalidated.send(
             sender=HyperviewTemplate,
@@ -300,8 +484,17 @@ def test_public_template_signal_only_ui_no_name_payload(
 
 
 def test_template_model_emits_when_cache_disabled(
-    published, django_capture_on_commit_callbacks
-):
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """Template model changes still notify when the cache is disabled.
+
+    Args:
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     assert "CACHE" not in django_settings.HYPERVIEW
     with django_capture_on_commit_callbacks(execute=True):
         HyperviewTemplate.objects.create(
@@ -314,7 +507,15 @@ def test_template_model_emits_when_cache_disabled(
     assert [i.resources for i in intents(published)] == [("ui",)]
 
 
-def test_signal_rejects_unrelated_sender_and_payload(published):
+def test_signal_rejects_unrelated_sender_and_payload(
+    published: list[tuple[object, Notification]],
+) -> None:
+    """The template signal ignores an unrelated sender and payload.
+
+    Args:
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+    """
     template_invalidated.send(
         sender=Task, event=TemplateInvalidation(names=frozenset(), using="default")
     )
@@ -324,7 +525,8 @@ def test_signal_rejects_unrelated_sender_and_payload(published):
     assert published == []
 
 
-def test_topic_components_are_delimited_and_alias_scoped():
+def test_topic_components_are_delimited_and_alias_scoped() -> None:
+    """Topic components are delimited and scoped to the database alias."""
     from todo.realtime_notifications import private_topic, ui_topic
 
     values = {
@@ -339,7 +541,16 @@ def test_topic_components_are_delimited_and_alias_scoped():
     assert all("\n" not in t and "*" not in t for t in values)
 
 
-def test_callback_copies_values_and_alias_before_mutation(published, monkeypatch):
+def test_callback_copies_values_and_alias_before_mutation(
+    published: list[tuple[object, Notification]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The commit callback copies its values and alias, so later mutation cannot leak.
+
+    Args:
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        monkeypatch: Patches the code under test for this test.
+    """
     from todo.realtime_notifications import notify_after_commit, private_topic
 
     callbacks = []
@@ -361,13 +572,27 @@ def test_callback_copies_values_and_alias_before_mutation(published, monkeypatch
 
 
 def test_publisher_failure_does_not_revert_committed_business(
-    user, settings, monkeypatch, caplog, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """A failing publisher does not revert the committed business change.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        settings: Django settings overridden by this test.
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records emitted by this test.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     from todo import realtime_notifications as notifications
 
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": CONFIG.copy()}
 
-    def fail(config, intent):
+    def fail(config: object, intent: Notification) -> Never:
         raise RuntimeError("SECRET redis://credentials@host and owner")
 
     monkeypatch.setattr(notifications, "_publish", fail)
@@ -379,7 +604,15 @@ def test_publisher_failure_does_not_revert_committed_business(
     assert "credentials" not in caplog.text
 
 
-def test_real_publisher_calls_public_broker_not_a_success_stub(settings, monkeypatch):
+def test_real_publisher_calls_public_broker_not_a_success_stub(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real publisher calls the public broker instead of a success stub.
+
+    Args:
+        settings: Django settings overridden by this test.
+        monkeypatch: Patches the code under test for this test.
+    """
     from dj_hyperview.realtime import RedisBroker
 
     from todo.realtime_config import get_realtime_config
@@ -388,7 +621,13 @@ def test_real_publisher_calls_public_broker_not_a_success_stub(settings, monkeyp
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": CONFIG.copy()}
     seen = []
 
-    def publish(broker, event, topics, *, using):
+    def publish(
+        broker: RedisBroker,
+        event: dict[str, object],
+        topics: Sequence[str],
+        *,
+        using: str,
+    ) -> None:
         seen.append((event, topics, using))
 
     monkeypatch.setattr(RedisBroker, "publish_after_commit", publish)
@@ -403,8 +642,13 @@ def test_real_publisher_calls_public_broker_not_a_success_stub(settings, monkeyp
 
 
 def test_one_broker_serves_every_publish_and_every_stream_of_a_configuration(
-    settings,
-):
+    settings: Settings,
+) -> None:
+    """One broker serves every publish and every stream of a configuration.
+
+    Args:
+        settings: Django settings overridden by this test.
+    """
     from todo.realtime_config import get_broker, get_realtime_config
     from todo.realtime_views import _broker
 
@@ -418,8 +662,15 @@ def test_one_broker_serves_every_publish_and_every_stream_of_a_configuration(
 
 
 def test_the_broker_is_constructed_once_not_per_publish_and_per_stream(
-    settings, monkeypatch, cold_broker_cache
-):
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, cold_broker_cache: None
+) -> None:
+    """The broker is constructed once, not once per publish and per stream.
+
+    Args:
+        settings: Django settings overridden by this test.
+        monkeypatch: Patches the code under test for this test.
+        cold_broker_cache: Forgets the cached brokers before and after the test.
+    """
     from dj_hyperview.realtime import RedisBroker
 
     from todo.realtime_config import get_realtime_config
@@ -433,7 +684,7 @@ def test_the_broker_is_constructed_once_not_per_publish_and_per_stream(
     built = []
     real_init = RedisBroker.__init__
 
-    def counting_init(broker, url, namespace):
+    def counting_init(broker: RedisBroker, url: str | None, namespace: str) -> None:
         built.append(namespace)
         real_init(broker, url, namespace)
 
@@ -448,7 +699,12 @@ def test_the_broker_is_constructed_once_not_per_publish_and_per_stream(
     assert built == ["built-once"]
 
 
-def test_a_different_configuration_gets_its_own_broker(settings):
+def test_a_different_configuration_gets_its_own_broker(settings: Settings) -> None:
+    """A different configuration gets its own broker.
+
+    Args:
+        settings: Django settings overridden by this test.
+    """
     from todo.realtime_config import get_broker, get_realtime_config
 
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": CONFIG.copy()}
@@ -463,7 +719,15 @@ def test_a_different_configuration_gets_its_own_broker(settings):
     assert second._config.namespace == "another-unit-test"
 
 
-def test_publishing_reuses_the_cached_broker(settings, monkeypatch):
+def test_publishing_reuses_the_cached_broker(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Publishing reuses the cached broker.
+
+    Args:
+        settings: Django settings overridden by this test.
+        monkeypatch: Patches the code under test for this test.
+    """
     from dj_hyperview.realtime import RedisBroker
 
     from todo.realtime_config import get_broker, get_realtime_config
@@ -497,7 +761,15 @@ def test_publishing_reuses_the_cached_broker(settings, monkeypatch):
         {**CONFIG, "NAMESPACE": "unsafe:*"},
     ],
 )
-def test_invalid_configuration_rejected_without_network(settings, value):
+def test_invalid_configuration_rejected_without_network(
+    settings: Settings, value: object
+) -> None:
+    """An invalid configuration is rejected without any network use.
+
+    Args:
+        settings: Django settings overridden by this test.
+        value: Realtime configuration under test.
+    """
     from todo.realtime_config import get_realtime_config
 
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": value}
@@ -505,7 +777,14 @@ def test_invalid_configuration_rejected_without_network(settings, value):
         get_realtime_config()
 
 
-def test_valid_configuration_does_not_expose_url_and_freezes(settings):
+def test_valid_configuration_does_not_expose_url_and_freezes(
+    settings: Settings,
+) -> None:
+    """A valid configuration neither exposes its URL nor stays mutable.
+
+    Args:
+        settings: Django settings overridden by this test.
+    """
     from todo.realtime_config import get_realtime_config
 
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": CONFIG.copy()}
@@ -518,8 +797,19 @@ def test_valid_configuration_does_not_expose_url_and_freezes(settings):
 
 
 def test_ready_idempotent_without_redis_database_or_cache(
-    user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """Running ready twice is harmless and needs no Redis, database or cache.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     from django.db.backends.base.base import BaseDatabaseWrapper
 
     app = apps.get_app_config("todo")
@@ -542,7 +832,15 @@ def test_ready_idempotent_without_redis_database_or_cache(
     assert len(published) == 1
 
 
-def test_actual_other_alias_commit_and_rollback_do_not_use_default(tmp_path):
+def test_actual_other_alias_commit_and_rollback_do_not_use_default(
+    tmp_path: Path,
+) -> None:
+    """Commit and rollback on another database alias do not involve the default alias.
+
+    Args:
+        tmp_path: Temporary directory that holds the SQLite file of the second database
+        alias.
+    """
     import os
     import subprocess
     import sys
@@ -606,8 +904,17 @@ print("two independent SQLite aliases: committed scope and rollback verified")
 
 
 def test_empty_owners_do_not_publish_and_invalid_resources_fail(
-    published, django_capture_on_commit_callbacks
-):
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """An empty owner list publishes nothing, and invalid resources fail.
+
+    Args:
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     from todo.realtime_notifications import notify_after_commit
 
     with django_capture_on_commit_callbacks(execute=True):
@@ -619,8 +926,15 @@ def test_empty_owners_do_not_publish_and_invalid_resources_fail(
 
 
 def test_direct_disabled_notifications_and_template_signal_are_inert(
-    settings, published
-):
+    settings: Settings, published: list[tuple[object, Notification]]
+) -> None:
+    """Direct notifications and the template signal are inert while realtime is off.
+
+    Args:
+        settings: Django settings overridden by this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+    """
     from todo.realtime_notifications import notify_after_commit
 
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": None}
@@ -642,7 +956,15 @@ def test_direct_disabled_notifications_and_template_signal_are_inert(
         "redis://host#fragment",
     ],
 )
-def test_invalid_redis_location_is_rejected_without_disclosing_it(settings, url):
+def test_invalid_redis_location_is_rejected_without_disclosing_it(
+    settings: Settings, url: str | None
+) -> None:
+    """An invalid Redis location is rejected without disclosing it.
+
+    Args:
+        settings: Django settings overridden by this test.
+        url: Redis location under test, or None when it is missing.
+    """
     from todo.realtime_config import get_realtime_config
 
     settings.HYPERVIEW = {
@@ -654,8 +976,23 @@ def test_invalid_redis_location_is_rejected_without_disclosing_it(settings, url)
 
 
 def test_save_failure_does_not_reuse_snapshot_after_disable(
-    user, other_user, settings, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    other_user: AbstractUser,
+    settings: Settings,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """A failed save does not reuse its snapshot after realtime is disabled.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        settings: Django settings overridden by this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     task = Task.objects.create(user=user, title="Task")
     with django_capture_on_commit_callbacks(execute=True):
         task.pk = "00000000-0000-0000-0000-000000000000"
@@ -669,8 +1006,21 @@ def test_save_failure_does_not_reuse_snapshot_after_disable(
 
 
 def test_category_partial_owner_change_does_not_notify_unwritten_owner(
-    user, other_user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    other_user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """A partial category save does not notify an owner whose change was not written.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     category = Category.objects.create(user=user, name="Initial")
     category.user = other_user
     category.name = "New"
@@ -684,8 +1034,19 @@ def test_category_partial_owner_change_does_not_notify_unwritten_owner(
 
 
 def test_bulk_sql_is_explicitly_outside_automatic_notifications(
-    user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """Bulk SQL writes are explicitly outside the automatic notifications.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     task = Task.objects.create(user=user, title="Task")
     with django_capture_on_commit_callbacks(execute=True):
         assert Task.objects.filter(pk=task.pk).update(title="Direct SQL") == 1
@@ -693,8 +1054,21 @@ def test_bulk_sql_is_explicitly_outside_automatic_notifications(
 
 
 def test_category_admin_bulk_delete_notifies_affected_task_owners(
-    user, admin_client, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    admin_client: Client,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """The admin bulk delete of categories notifies the affected task owners.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        admin_client: Client signed in as a superuser that requests the admin.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     category = Category.objects.create(user=user, name="Category")
     task = Task.objects.create(user=user, category=category, title="Task")
     with django_capture_on_commit_callbacks(execute=True):

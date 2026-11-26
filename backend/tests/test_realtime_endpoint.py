@@ -1,13 +1,20 @@
 """The real Django ASGI chain and public package SSE response ownership."""
 
 import asyncio
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Never
 
 import pytest
 from asgiref.sync import async_to_sync, sync_to_async
 from dj_hyperview.realtime import realtime_asgi
 from django.conf import settings as django_settings
+from django.contrib.auth.models import AbstractUser
 from django.contrib.sessions.models import Session
 from django.core.asgi import get_asgi_application
+from django.core.handlers.wsgi import WSGIRequest
+from django.http import HttpRequest, HttpResponse
+from django.test import Client
+from pytest_django.fixtures import Settings
 
 from tests.test_realtime_stream import (
     RESYNC,
@@ -22,8 +29,24 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 async def asgi_exchange(
-    request, *, before_send=None, disconnect_after_body=True, script_name=""
-):
+    request: WSGIRequest,
+    *,
+    before_send: Callable[[dict[str, object]], Awaitable[None]] | None = None,
+    disconnect_after_body: bool = True,
+    script_name: str = "",
+) -> list[dict[str, object]]:
+    """Run one request through the real ASGI application and collect what it sends.
+
+    Args:
+        request: Request the ASGI scope is built from.
+        before_send: Coroutine function awaited for every event the application sends.
+        disconnect_after_body: Whether the client disconnects once the response body is
+        sent.
+        script_name: Script prefix the application is mounted under.
+
+    Returns:
+        The ASGI events the application sent.
+    """
     queue = asyncio.Queue()
     sent = []
     queue.put_nowait({"type": "http.request", "body": b"", "more_body": False})
@@ -50,7 +73,7 @@ async def asgi_exchange(
         "headers": headers,
     }
 
-    async def send(event):
+    async def send(event: dict[str, object]) -> None:
         sent.append(event)
         if before_send:
             await before_send(event)
@@ -64,12 +87,19 @@ async def asgi_exchange(
 
 
 def test_real_asgi_initial_resync_then_disconnect_closes_subscription(
-    authenticated, monkeypatch
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The real ASGI chain resyncs first and closes the subscription on disconnect.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        monkeypatch: Patches the code under test for this test.
+    """
     from todo import realtime_views
     from todo.realtime_stream import admissions
 
-    async def run():
+    async def run() -> None:
         sub = Subscription(RESYNC)
         monkeypatch.setattr(realtime_views, "_broker", lambda config: Broker(sub))
         sent = await asgi_exchange(authenticated[2])
@@ -88,12 +118,19 @@ def test_real_asgi_initial_resync_then_disconnect_closes_subscription(
 
 
 def test_the_stream_runs_under_a_script_name_without_presentation_headers(
-    authenticated, monkeypatch
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stream runs under a script name and carries no presentation headers.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        monkeypatch: Patches the code under test for this test.
+    """
     from todo import realtime_views
     from todo.realtime_stream import admissions
 
-    async def run():
+    async def run() -> None:
         sub = Subscription(RESYNC)
         monkeypatch.setattr(realtime_views, "_broker", lambda config: Broker(sub))
         sent = await asgi_exchange(authenticated[2], script_name="/app")
@@ -108,7 +145,14 @@ def test_the_stream_runs_under_a_script_name_without_presentation_headers(
     async_to_sync(run)()
 
 
-def test_a_non_get_method_is_rejected_before_csrf_under_a_script_name(authenticated):
+def test_a_non_get_method_is_rejected_before_csrf_under_a_script_name(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """A non-GET method is rejected before the CSRF check, even under a script name.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     request = authenticated[2]
     request.method = "POST"
 
@@ -132,8 +176,21 @@ def test_a_non_get_method_is_rejected_before_csrf_under_a_script_name(authentica
     ],
 )
 def test_real_asgi_denials_never_subscribe_or_include_private_metadata(
-    authenticated, monkeypatch, settings, case, status
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    case: str,
+    status: int,
+) -> None:
+    """Real ASGI denials never subscribe to the broker or expose private metadata.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        monkeypatch: Patches the code under test for this test.
+        settings: Django settings overridden by this test.
+        case: Kind of denial the request is set up to trigger.
+        status: Status code the denial is expected to return.
+    """
     from todo import realtime_views
 
     request = authenticated[2]
@@ -152,7 +209,7 @@ def test_real_asgi_denials_never_subscribe_or_include_private_metadata(
     else:
         request.COOKIES.clear()
 
-    def forbidden(config):
+    def forbidden(config: object) -> Never:
         raise AssertionError("denial must not acquire broker")
 
     monkeypatch.setattr(realtime_views, "_broker", forbidden)
@@ -172,25 +229,34 @@ def test_real_asgi_denials_never_subscribe_or_include_private_metadata(
     assert b"no-store" in headers[b"cache-control"]
 
 
-def test_no_headers_before_broker_ack_and_fresh_auth_check(authenticated, monkeypatch):
+def test_no_headers_before_broker_ack_and_fresh_auth_check(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No headers are sent before the broker ack and the fresh authentication check.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        monkeypatch: Patches the code under test for this test.
+    """
     from todo import realtime_views
     from todo.realtime_stream import admissions
 
-    async def run():
+    async def run() -> None:
         sub = Subscription(RESYNC)
         started = asyncio.Event()
         release = asyncio.Event()
         response_started = False
 
         class DeferredBroker:
-            async def subscribe(self, topics):
+            async def subscribe(self, topics: Sequence[str]) -> Subscription:
                 started.set()
                 await release.wait()
                 return sub
 
         monkeypatch.setattr(realtime_views, "_broker", lambda config: DeferredBroker())
 
-        async def on_send(event):
+        async def on_send(event: dict[str, object]) -> None:
             nonlocal response_started
             response_started = True
 
@@ -198,7 +264,7 @@ def test_no_headers_before_broker_ack_and_fresh_auth_check(authenticated, monkey
         await started.wait()
         assert not response_started and admissions.total == 1
 
-        def revoke_from_independent_connection():
+        def revoke_from_independent_connection() -> None:
             from django.db import connection
 
             try:
@@ -228,15 +294,24 @@ def test_no_headers_before_broker_ack_and_fresh_auth_check(authenticated, monkey
     async_to_sync(run)()
 
 
-def test_response_constructor_failure_releases_before_503(authenticated, monkeypatch):
+def test_response_constructor_failure_releases_before_503(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failing response constructor releases the reservation before the 503 answer.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        monkeypatch: Patches the code under test for this test.
+    """
     from todo import realtime_views
     from todo.realtime_stream import admissions
 
-    async def run():
+    async def run() -> None:
         sub = Subscription(RESYNC)
         monkeypatch.setattr(realtime_views, "_broker", lambda config: Broker(sub))
 
-        def fail(*args, **kwargs):
+        def fail(*args: object, **kwargs: object) -> Never:
             raise RuntimeError("private constructor failure")
 
         monkeypatch.setattr(realtime_views, "sse_response", fail)
@@ -251,8 +326,21 @@ def test_response_constructor_failure_releases_before_503(authenticated, monkeyp
 @pytest.mark.parametrize("method", ["POST", "DELETE", "PUT", "OPTIONS", "HEAD"])
 @pytest.mark.parametrize("enabled", [True, False])
 def test_non_get_method_rejected_before_csrf_without_business(
-    authenticated, monkeypatch, settings, method, enabled
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    method: str,
+    enabled: bool,
+) -> None:
+    """A non-GET method is rejected before the CSRF check and before any business work.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        monkeypatch: Patches the code under test for this test.
+        settings: Django settings overridden by this test.
+        method: HTTP method of the request.
+        enabled: Whether realtime is enabled in the settings.
+    """
     from todo import realtime_views
 
     request = authenticated[2]
@@ -260,7 +348,7 @@ def test_non_get_method_rejected_before_csrf_without_business(
     if not enabled:
         settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": None}
 
-    def forbidden(config):
+    def forbidden(config: object) -> Never:
         raise AssertionError("method rejection must not acquire broker")
 
     monkeypatch.setattr(realtime_views, "_broker", forbidden)
@@ -272,7 +360,15 @@ def test_non_get_method_rejected_before_csrf_without_business(
 
 
 @pytest.mark.parametrize("path", ["/realtime/events/extra", "/hv/login/"])
-def test_method_guard_does_not_match_other_routes(authenticated, path):
+def test_method_guard_does_not_match_other_routes(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str], path: str
+) -> None:
+    """The method guard leaves other routes to their own handlers.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        path: Path of a route that is not the stream.
+    """
     from django.http import HttpResponse
 
     from todo.realtime_middleware import RealtimeMethodMiddleware
@@ -282,7 +378,7 @@ def test_method_guard_does_not_match_other_routes(authenticated, path):
     request.method = "POST"
     seen = []
 
-    def next_handler(incoming):
+    def next_handler(incoming: HttpRequest) -> HttpResponse:
         seen.append(incoming)
         return HttpResponse(status=418)
 
@@ -292,8 +388,19 @@ def test_method_guard_does_not_match_other_routes(authenticated, path):
 
 @pytest.mark.parametrize("method,expected,calls", [("GET", 418, 1), ("POST", 405, 0)])
 def test_async_method_middleware_preserves_async_handler(
-    authenticated, method, expected, calls
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    method: str,
+    expected: int,
+    calls: int,
+) -> None:
+    """The method middleware keeps an asynchronous handler asynchronous.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        method: HTTP method of the request.
+        expected: Status code the middleware is expected to return.
+        calls: Number of times the wrapped handler is expected to run.
+    """
     from django.http import HttpResponse
 
     from todo.realtime_middleware import RealtimeMethodMiddleware
@@ -301,10 +408,10 @@ def test_async_method_middleware_preserves_async_handler(
     request = authenticated[2]
     request.method = method
 
-    async def run():
+    async def run() -> None:
         seen = []
 
-        async def next_handler(incoming):
+        async def next_handler(incoming: HttpRequest) -> HttpResponse:
             seen.append(incoming)
             return HttpResponse(status=418)
 
@@ -314,7 +421,14 @@ def test_async_method_middleware_preserves_async_handler(
     async_to_sync(run)()
 
 
-def test_view_itself_refuses_methods_even_without_middleware(authenticated):
+def test_view_itself_refuses_methods_even_without_middleware(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+) -> None:
+    """The view refuses unsupported methods even without the middleware.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+    """
     from todo.realtime_views import events
 
     authenticated[2].method = "DELETE"
@@ -323,16 +437,23 @@ def test_view_itself_refuses_methods_even_without_middleware(authenticated):
 
 
 def test_cancel_before_subscription_ack_releases_reservation(
-    authenticated, monkeypatch
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cancelling before the subscription is acknowledged releases the reservation.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        monkeypatch: Patches the code under test for this test.
+    """
     from todo import realtime_views
     from todo.realtime_stream import admissions
 
-    async def run():
+    async def run() -> None:
         started = asyncio.Event()
 
         class WaitingBroker:
-            async def subscribe(self, topics):
+            async def subscribe(self, topics: Sequence[str]) -> None:
                 started.set()
                 await asyncio.Event().wait()
 
@@ -348,7 +469,16 @@ def test_cancel_before_subscription_ack_releases_reservation(
     async_to_sync(run)()
 
 
-def test_real_broker_factory_constructs_without_network(authenticated, monkeypatch):
+def test_real_broker_factory_constructs_without_network(
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The real broker factory builds a Redis broker without opening a connection.
+
+    Args:
+        authenticated: Client, user, request and session binding of a signed-in session.
+        monkeypatch: Patches the code under test for this test.
+    """
     import socket
 
     from dj_hyperview.realtime import RedisBroker
@@ -358,7 +488,7 @@ def test_real_broker_factory_constructs_without_network(authenticated, monkeypat
 
     access = async_to_sync(authorize)(authenticated[2])
 
-    def forbidden(*args, **kwargs):
+    def forbidden(*args: object, **kwargs: object) -> Never:
         raise AssertionError("constructor must not connect")
 
     monkeypatch.setattr(socket.socket, "connect", forbidden)

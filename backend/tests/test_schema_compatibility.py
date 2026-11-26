@@ -11,6 +11,7 @@ import pytest
 from dj_hyperview.exceptions import TemplateValidationError
 from dj_hyperview.validation import validate_hxml
 from django.conf import settings
+from django.contrib.auth.models import AbstractUser
 
 from tests.test_preferences import FLAGS, HOSTS, option_of, switcher
 
@@ -21,7 +22,8 @@ STYLE_HASHES = json.loads((FIXTURES / "schema_style_hashes.json").read_text())
 NS = {"hv": "https://hyperview.org/hyperview"}
 
 
-def test_schema_corpus_manifest_names_every_source():
+def test_schema_corpus_manifest_names_every_source() -> None:
+    """The corpus manifest names every source."""
     assert set(MANIFEST) == {
         str(path.relative_to(ROOT)) for path in ROOT.rglob("*.xml")
     }
@@ -36,7 +38,12 @@ def test_schema_corpus_manifest_names_every_source():
 
 
 @pytest.mark.parametrize("name", STYLE_HASHES)
-def test_screen_owns_its_original_stylesheet(name):
+def test_screen_owns_its_original_stylesheet(name: str) -> None:
+    """A screen owns its original stylesheet.
+
+    Args:
+        name: Screen whose stylesheet hash is checked.
+    """
     source = (ROOT / name).read_text()
     stylesheet = re.search(r"<styles>.*?</styles>", source, re.S)[0]
     assert hashlib.sha256(stylesheet.encode()).hexdigest() == STYLE_HASHES[name]
@@ -49,8 +56,15 @@ def test_screen_owns_its_original_stylesheet(name):
 @pytest.mark.parametrize("host", HOSTS)
 @pytest.mark.parametrize("language", sorted(FLAGS))
 def test_language_decoration_uses_inline_text_without_string_booleans(
-    host, language, user
-):
+    host: str, language: str, user: AbstractUser
+) -> None:
+    """Language decoration uses inline text and no string booleans.
+
+    Args:
+        host: Route name of the screen that hosts the language switcher.
+        language: Language code of the option under test.
+        user: Signed-in user who owns the data in this test.
+    """
     option = option_of(switcher(user, host), language)
     labels = option.findall("./hv:text", NS)
     assert len(labels) == 1
@@ -73,7 +87,7 @@ def test_language_decoration_uses_inline_text_without_string_booleans(
     assert settings.HYPERVIEW["ADMIN"] == {"EDITOR": True}
 
 
-def _configuration_from_environment():
+def _configuration_from_environment() -> dict[str, object]:
     spec = spec_from_file_location(
         "config._schema_contract_settings", ROOT.parent / "config/settings.py"
     )
@@ -82,7 +96,8 @@ def _configuration_from_environment():
     return module.HYPERVIEW
 
 
-def test_ordinary_launch_declares_extensions_without_validation_selectors():
+def test_ordinary_launch_declares_extensions_without_validation_selectors() -> None:
+    """An ordinary launch declares the extensions without validation selectors."""
     configuration = _configuration_from_environment()
     assert "SCHEMA_PROFILE" not in configuration
     assert "VALIDATION" not in configuration
@@ -92,7 +107,8 @@ def test_ordinary_launch_declares_extensions_without_validation_selectors():
     assert "SCHEMA_EXTENSIONS" in configuration
 
 
-def test_configuration_declares_only_owned_extensions():
+def test_configuration_declares_only_owned_extensions() -> None:
+    """The configuration declares only the extensions that the project owns."""
     configuration = _configuration_from_environment()
     registry = configuration["SCHEMA_EXTENSIONS"]
     behavior_attributes = {
@@ -125,7 +141,10 @@ def test_configuration_declares_only_owned_extensions():
     }
 
 
-def test_the_schema_declares_the_time_picker_and_rejects_an_invented_attribute():
+def test_the_schema_declares_the_time_picker_and_rejects_an_invented_attribute() -> (
+    None
+):
+    """The schema declares the time picker and rejects an invented attribute."""
     # Undeclared, the element was unchecked: any attribute passed, as none would on an
     # unknown tag. It is rejected on <app:swipe-row>, and now here too.
     document = (
@@ -156,7 +175,15 @@ def test_the_schema_declares_the_time_picker_and_rejects_an_invented_attribute()
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("version", (None, "1.2.0"))
-def test_idle_avatar_preview_has_a_hidden_local_transparent_source(user, version):
+def test_idle_avatar_preview_has_a_hidden_local_transparent_source(
+    user: AbstractUser, version: str | None
+) -> None:
+    """The idle avatar preview has a hidden, local and transparent source.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        version: Client package version, or None for the default.
+    """
     from django.test import Client
 
     client = Client(headers={"x-app-version": version} if version else {})
@@ -177,7 +204,8 @@ def test_idle_avatar_preview_has_a_hidden_local_transparent_source(user, version
     assert image.convert("RGBA").getpixel((0, 0))[3] == 0
 
 
-def test_extension_declarations_are_detached_between_configurations():
+def test_extension_declarations_are_detached_between_configurations() -> None:
+    """Extension declarations are detached between configurations."""
     first = _configuration_from_environment()
     first["SCHEMA_EXTENSIONS"]["BEHAVIORS"]["show-snackbar"]["ATTRIBUTES"]["tone"][
         "ENUM"

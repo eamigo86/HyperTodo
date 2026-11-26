@@ -9,11 +9,14 @@ from uuid import uuid4
 import pytest
 from asgiref.sync import async_to_sync, sync_to_async
 from dj_hyperview.realtime import RedisBroker
+from django.contrib.auth.models import AbstractUser
 from django.core.asgi import get_asgi_application
 from django.core.cache import cache
 from django.db import transaction
+from django.http import HttpResponse
 from django.test import Client, override_settings
 from django.urls import reverse
+from pytest_django.fixtures import Settings
 
 from tests.test_session_contract import _confirm
 from todo.models import Task
@@ -26,7 +29,15 @@ INVALIDATE = {"event": "invalidate", "data": {"version": 1, "resources": ["tasks
 
 
 @pytest.fixture
-def realtime_redis(settings):
+def realtime_redis(settings: Settings) -> tuple[str, str]:
+    """Point realtime at the explicitly owned Redis service, or skip the test.
+
+    Args:
+        settings: Django settings overridden by this test.
+
+    Returns:
+        The Redis URL and the unique namespace of this test.
+    """
     if os.environ.get("HYPERTODO_REDIS_INTEGRATION") != "1":
         pytest.skip("Real Redis acceptance is explicitly opt-in")
     assert os.environ.get("HYPERTODO_REDIS_TEST_OWNED") == "1", (
@@ -53,9 +64,21 @@ def realtime_redis(settings):
 
 
 def test_default_redis_cache_preserves_session_and_template_contract(
-    user, other_user, client, settings, realtime_redis
-):
-    """Exercise the production cache backend without clearing shared Redis keys."""
+    user: AbstractUser,
+    other_user: AbstractUser,
+    client: Client,
+    settings: Settings,
+    realtime_redis: tuple[str, str],
+) -> None:
+    """Exercise the production cache backend without clearing shared Redis keys.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        client: Client that posts the admin form.
+        settings: Django settings overridden by this test.
+        realtime_redis: Redis URL and unique namespace of the owned test service.
+    """
     url, namespace = realtime_redis
     configured_cache = {
         "BACKEND": "django_redis.cache.RedisCache",
@@ -96,11 +119,17 @@ def test_default_redis_cache_preserves_session_and_template_contract(
         assert cache.get(key) == payload
 
 
-def test_pubsub_delivers_after_idle_beyond_redis8_default_timeout(realtime_redis):
-    """Use a post-idle publish barrier, not a timing-based absence assertion."""
+def test_pubsub_delivers_after_idle_beyond_redis8_default_timeout(
+    realtime_redis: tuple[str, str],
+) -> None:
+    """Use a post-idle publish barrier, not a timing-based absence assertion.
+
+    Args:
+        realtime_redis: Redis URL and unique namespace of the owned test service.
+    """
     url, namespace = realtime_redis
 
-    async def run():
+    async def run() -> None:
         broker = RedisBroker(url, namespace)
         subscription = await broker.subscribe(["test-idle"])
         try:
@@ -118,7 +147,17 @@ def test_pubsub_delivers_after_idle_beyond_redis8_default_timeout(realtime_redis
     async_to_sync(run)()
 
 
-def admin_rename(client, task, title):
+def admin_rename(client: Client, task: Task, title: str) -> HttpResponse:
+    """Post the admin change form that renames a task.
+
+    Args:
+        client: Client that posts the admin form.
+        task: Task whose title changes.
+        title: New title of the task.
+
+    Returns:
+        The admin response to the change form.
+    """
     return client.post(
         reverse("admin:todo_task_change", args=[task.pk]),
         {
@@ -136,8 +175,23 @@ def admin_rename(client, task, title):
 
 
 def test_admin_commit_targets_a_not_b_or_other_namespace(
-    user, other_user, admin_client, client, settings, realtime_redis
-):
+    user: AbstractUser,
+    other_user: AbstractUser,
+    admin_client: Client,
+    client: Client,
+    settings: Settings,
+    realtime_redis: tuple[str, str],
+) -> None:
+    """An admin commit reaches the owner's topic only, not another user or namespace.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        admin_client: Client signed in as a superuser that requests the admin.
+        client: Client that posts the admin form.
+        settings: Django settings overridden by this test.
+        realtime_redis: Redis URL and unique namespace of the owned test service.
+    """
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": None}
     task = Task.objects.create(user=user, title="Before")
     client.force_login(user)
@@ -147,7 +201,7 @@ def test_admin_commit_targets_a_not_b_or_other_namespace(
         "REALTIME": {"REDIS_URL": url, "NAMESPACE": namespace},
     }
 
-    async def run():
+    async def run() -> None:
         broker = RedisBroker(url, namespace)
         foreign = RedisBroker(url, "hypertodo-other-" + uuid4().hex)
         owned = []
@@ -161,7 +215,7 @@ def test_admin_commit_targets_a_not_b_or_other_namespace(
             for sub in owned:
                 assert await asyncio.wait_for(anext(sub), 2) == RESYNC
 
-            def rolled_back_change():
+            def rolled_back_change() -> None:
                 with pytest.raises(RuntimeError):
                     with transaction.atomic():
                         task.title = "Rolled back"
@@ -216,8 +270,23 @@ def test_admin_commit_targets_a_not_b_or_other_namespace(
 
 @pytest.mark.parametrize("changes_v2", [False, True])
 def test_real_asgi_stream_receives_admin_change_and_releases(
-    user, admin_client, client, settings, realtime_redis, changes_v2
-):
+    user: AbstractUser,
+    admin_client: Client,
+    client: Client,
+    settings: Settings,
+    realtime_redis: tuple[str, str],
+    changes_v2: bool,
+) -> None:
+    """The real ASGI stream receives an admin change and releases its reservation.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        admin_client: Client signed in as a superuser that requests the admin.
+        client: Client that posts the admin form.
+        settings: Django settings overridden by this test.
+        realtime_redis: Redis URL and unique namespace of the owned test service.
+        changes_v2: Whether the stream negotiates change precision.
+    """
     settings.HYPERVIEW = {**settings.HYPERVIEW, "REALTIME": None}
     task = Task.objects.create(user=user, title="Before")
     client.force_login(user)
@@ -230,7 +299,7 @@ def test_real_asgi_stream_receives_admin_change_and_releases(
     session_cookie = client.cookies[settings.SESSION_COOKIE_NAME].value
     cookie = f"{settings.SESSION_COOKIE_NAME}={session_cookie}"
 
-    async def run():
+    async def run() -> None:
         from dj_hyperview.realtime import realtime_asgi
 
         from todo.realtime_stream import admissions
@@ -240,7 +309,7 @@ def test_real_asgi_stream_receives_admin_change_and_releases(
         sent = []
         frames = []
 
-        async def send(event):
+        async def send(event: dict[str, object]) -> None:
             sent.append(event)
             body = event.get("body", b"")
             if body:
@@ -303,9 +372,21 @@ def test_real_asgi_stream_receives_admin_change_and_releases(
 
 
 def test_template_admin_commit_reaches_live_ui_stream_and_fresh_http(
-    user, admin_client, client, settings, realtime_redis
-):
-    """Real Redis/ASGI acceptance; no broker, signal or commit callback mocks."""
+    user: AbstractUser,
+    admin_client: Client,
+    client: Client,
+    settings: Settings,
+    realtime_redis: tuple[str, str],
+) -> None:
+    """Real Redis/ASGI acceptance; no broker, signal or commit callback mocks.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        admin_client: Client signed in as a superuser that requests the admin.
+        client: Client that posts the admin form.
+        settings: Django settings overridden by this test.
+        realtime_redis: Redis URL and unique namespace of the owned test service.
+    """
     from dj_hyperview.contrib.database.models import HyperviewTemplate
     from dj_hyperview.realtime import realtime_asgi
 
@@ -342,7 +423,7 @@ def test_template_admin_commit_reaches_live_ui_stream_and_fresh_http(
         "admin:dj_hyperview_database_hyperviewtemplate_change", args=[template.pk]
     )
 
-    def edit(rollback):
+    def edit(rollback: bool) -> None:
         with transaction.atomic():
             response = admin_client.post(
                 admin_url,
@@ -361,13 +442,13 @@ def test_template_admin_commit_reaches_live_ui_stream_and_fresh_http(
         assert template.content == (before if rollback else after)
         assert template.revision == (1 if rollback else 2)
 
-    async def run():
+    async def run() -> None:
         queue = asyncio.Queue()
         queue.put_nowait({"type": "http.request", "body": b"", "more_body": False})
         sent, frames = [], []
         broker = RedisBroker(url, namespace)
 
-        async def send(event):
+        async def send(event: dict[str, object]) -> None:
             sent.append(event)
             if body := event.get("body", b""):
                 frames.append(body)

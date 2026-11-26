@@ -7,12 +7,15 @@ from unittest.mock import patch
 
 import pytest
 from django.conf import settings
+from django.contrib.auth.models import AbstractUser
 from django.contrib.sessions.models import Session
 from django.db import connection
+from django.http import HttpResponse
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils.crypto import constant_time_compare, salted_hmac
+from pytest_django.fixtures import Settings
 
 from tests.test_hxml_views import assert_hxml, token_from
 from todo.context_processors import THEME_COOKIE
@@ -30,7 +33,7 @@ FORMAT = re.compile(r"hvs1\.[A-Za-z0-9_-]{43}")
 NS = {"hv": "https://hyperview.org/hyperview"}
 
 
-def _expected_binding(user=None, key=None):
+def _expected_binding(user: AbstractUser | None = None, key: str | None = None) -> str:
     identity = (
         [1, user._state.db, str(user.pk), key]
         if user is not None
@@ -45,14 +48,14 @@ def _expected_binding(user=None, key=None):
     return "hvs1." + base64.urlsafe_b64encode(digest).decode().rstrip("=")
 
 
-def _headers(binding=None):
+def _headers(binding: str | None = None) -> dict[str, str]:
     headers = {CONTRACT: "realtime-v1"}
     if binding is not None:
         headers[EXPECTED] = binding
     return headers
 
 
-def _confirm(client, authenticated):
+def _confirm(client: Client, authenticated: bool) -> tuple[str, HttpResponse]:
     response = client.get(STATE, headers=_headers())
     assert response.status_code == 200
     body = response.json()
@@ -68,7 +71,7 @@ def _confirm(client, authenticated):
     return body["binding"], response
 
 
-def _json_error(response, status, code):
+def _json_error(response: HttpResponse, status: int, code: str) -> None:
     assert response.status_code == status
     assert response.json() == {"error": code}
     assert len(response.content) <= 1024
@@ -77,7 +80,14 @@ def _json_error(response, status, code):
     assert OUTCOME not in response
 
 
-def test_anonymous_confirmation_is_exact_stable_and_creates_nothing(client):
+def test_anonymous_confirmation_is_exact_stable_and_creates_nothing(
+    client: Client,
+) -> None:
+    """An anonymous confirmation is exact and stable and creates nothing.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     with CaptureQueriesContext(connection) as queries:
         first, response = _confirm(client, False)
         second, _ = _confirm(client, False)
@@ -89,8 +99,15 @@ def test_anonymous_confirmation_is_exact_stable_and_creates_nothing(client):
 
 
 def test_authenticated_confirmation_has_exact_hmac_and_no_writes(
-    client, user, settings
-):
+    client: Client, user: AbstractUser, settings: Settings
+) -> None:
+    """An authenticated confirmation carries the exact HMAC and writes nothing.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        settings: Django settings overridden by this test.
+    """
     settings.SECRET_KEY = "session-contract-fixture-only-secret"
     client.force_login(user)
     key = client.session.session_key
@@ -111,7 +128,15 @@ def test_authenticated_confirmation_has_exact_hmac_and_no_writes(
     assert user.last_login == last_login
 
 
-def test_confirmation_ignores_claimed_owner_and_expected_binding(client, user):
+def test_confirmation_ignores_claimed_owner_and_expected_binding(
+    client: Client, user: AbstractUser
+) -> None:
+    """The confirmation ignores a claimed owner and an expected binding.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
     expected = _expected_binding(user, client.session.session_key)
     response = client.get(
@@ -123,7 +148,12 @@ def test_confirmation_ignores_claimed_owner_and_expected_binding(client, user):
     assert response.json()["binding"] == expected
 
 
-def test_anonymous_existing_session_is_not_identity(client):
+def test_anonymous_existing_session_is_not_identity(client: Client) -> None:
+    """An existing anonymous session is not an identity.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     session = client.session
     session["preference"] = "not-authentication"
     session.save()
@@ -131,7 +161,15 @@ def test_anonymous_existing_session_is_not_identity(client):
     assert client.session["preference"] == "not-authentication"
 
 
-def test_sessions_and_users_have_distinct_bindings(user, other_user):
+def test_sessions_and_users_have_distinct_bindings(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """Different sessions and different users have distinct bindings.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     bindings = []
     for account in (user, user, other_user):
         client = Client()
@@ -140,7 +178,13 @@ def test_sessions_and_users_have_distinct_bindings(user, other_user):
     assert len(set(bindings)) == 3
 
 
-def test_session_rotation_changes_binding(client, user):
+def test_session_rotation_changes_binding(client: Client, user: AbstractUser) -> None:
+    """Rotating the session changes the binding.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
     before, _ = _confirm(client, True)
     session = client.session
@@ -151,7 +195,16 @@ def test_session_rotation_changes_binding(client, user):
 
 
 @pytest.mark.parametrize("reason", ["deactivated", "password-revoked", "deleted"])
-def test_invalidated_auth_becomes_anonymous_without_private_data(client, user, reason):
+def test_invalidated_auth_becomes_anonymous_without_private_data(
+    client: Client, user: AbstractUser, reason: str
+) -> None:
+    """Invalidated authentication becomes anonymous and exposes no private data.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        reason: Way the authentication is invalidated.
+    """
     client.force_login(user)
     previous, _ = _confirm(client, True)
     old_key = client.session.session_key
@@ -173,7 +226,16 @@ def test_invalidated_auth_becomes_anonymous_without_private_data(client, user, r
         assert not Session.objects.filter(session_key=old_key).exists()
 
 
-def test_django_fallback_auth_hash_rotation_remains_intact(client, user, settings):
+def test_django_fallback_auth_hash_rotation_remains_intact(
+    client: Client, user: AbstractUser, settings: Settings
+) -> None:
+    """Rotating to a Django fallback authentication hash leaves the session intact.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        settings: Django settings overridden by this test.
+    """
     old_secret = settings.SECRET_KEY
     client.force_login(user)
     key = client.session.session_key
@@ -188,7 +250,13 @@ def test_django_fallback_auth_hash_rotation_remains_intact(client, user, setting
 @pytest.mark.parametrize(
     "method", ["post", "put", "patch", "delete", "head", "options"]
 )
-def test_confirmation_accepts_only_get(client, method):
+def test_confirmation_accepts_only_get(client: Client, method: str) -> None:
+    """The confirmation accepts only GET.
+
+    Args:
+        client: Client that requests the screens under test.
+        method: HTTP method of the request.
+    """
     response = getattr(client, method)(STATE, headers=_headers())
     assert response.status_code == 405
     assert response["Allow"] == "GET"
@@ -196,7 +264,8 @@ def test_confirmation_accepts_only_get(client, method):
     assert OUTCOME not in response
 
 
-def test_confirmation_post_is_405_even_with_enforced_csrf():
+def test_confirmation_post_is_405_even_with_enforced_csrf() -> None:
+    """A POST to the confirmation is answered 405 even with CSRF enforced."""
     assert (
         Client(enforce_csrf_checks=True).post(STATE, headers=_headers()).status_code
         == 405
@@ -204,7 +273,13 @@ def test_confirmation_post_is_405_even_with_enforced_csrf():
 
 
 @pytest.mark.parametrize("method", ["get", "post"])
-def test_confirmation_is_404_for_legacy(client, method):
+def test_confirmation_is_404_for_legacy(client: Client, method: str) -> None:
+    """The confirmation does not exist for legacy clients.
+
+    Args:
+        client: Client that requests the screens under test.
+        method: HTTP method of the request.
+    """
     assert getattr(client, method)(STATE).status_code == 404
 
 
@@ -212,7 +287,15 @@ def test_confirmation_is_404_for_legacy(client, method):
     "value",
     ["", " ", "realtime-v2", "Realtime-v1", "realtime-v1 ", "realtime-v1,realtime-v1"],
 )
-def test_unknown_contract_fails_before_business_view(client, value):
+def test_unknown_contract_fails_before_business_view(
+    client: Client, value: str
+) -> None:
+    """An unknown contract fails before the business view runs.
+
+    Args:
+        client: Client that requests the screens under test.
+        value: Unknown contract header value.
+    """
     with CaptureQueriesContext(connection) as queries:
         response = client.get("/hv/tasks/", headers={CONTRACT: value})
     _json_error(response, 400, "unsupported-client-contract")
@@ -232,7 +315,13 @@ def test_unknown_contract_fails_before_business_view(client, value):
         "hvs1." + "a" * 43 + "\n",
     ],
 )
-def test_expected_binding_format_is_strict(client, value):
+def test_expected_binding_format_is_strict(client: Client, value: str | None) -> None:
+    """The expected binding format is strict.
+
+    Args:
+        client: Client that requests the screens under test.
+        value: Malformed binding the client claims to expect.
+    """
     _json_error(
         client.get("/hv/tasks/", headers=_headers(value)),
         400,
@@ -240,7 +329,16 @@ def test_expected_binding_format_is_strict(client, value):
     )
 
 
-def test_mismatch_precedes_business_queries_and_writes(client, user, other_user):
+def test_mismatch_precedes_business_queries_and_writes(
+    client: Client, user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A binding mismatch is decided before any business query or write.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     client.force_login(user)
     task = Task.objects.create(user=user, title="Private fixture task")
     foreign = Client()
@@ -260,7 +358,12 @@ def test_mismatch_precedes_business_queries_and_writes(client, user, other_user)
     )
 
 
-def test_guard_uses_constant_time_comparison(client):
+def test_guard_uses_constant_time_comparison(client: Client) -> None:
+    """The guard compares bindings in constant time.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     with patch(
         "todo.session_contract.constant_time_compare", wraps=constant_time_compare
     ) as compare:
@@ -270,8 +373,15 @@ def test_guard_uses_constant_time_comparison(client):
 
 
 def test_binding_never_authenticates_or_grants_object_permission(
-    client, user, other_user
-):
+    client: Client, user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A binding never authenticates or grants object permission.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     anonymous, _ = _confirm(client, False)
     denied = client.get("/hv/tasks/", headers=_headers(anonymous))
     assert denied.status_code == 401
@@ -289,7 +399,15 @@ def test_binding_never_authenticates_or_grants_object_permission(
     assert task.completed_at is None
 
 
-def test_valid_mutation_retains_binding_without_auth_outcome(client, user):
+def test_valid_mutation_retains_binding_without_auth_outcome(
+    client: Client, user: AbstractUser
+) -> None:
+    """A valid mutation keeps the binding and reports no authentication outcome.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
     mine, _ = _confirm(client, True)
     task = Task.objects.create(user=user, title="Mine")
@@ -303,7 +421,13 @@ def test_valid_mutation_retains_binding_without_auth_outcome(client, user):
     assert task.completed_at is not None
 
 
-def test_legacy_and_admin_are_unchanged(client, admin_client):
+def test_legacy_and_admin_are_unchanged(client: Client, admin_client: Client) -> None:
+    """Legacy requests and the admin are unchanged.
+
+    Args:
+        client: Client that requests the screens under test.
+        admin_client: Client signed in as a superuser that requests the admin.
+    """
     legacy = client.get("/hv/login/", headers={EXPECTED: "garbage"})
     assert_hxml(legacy)
     assert BINDING not in legacy
@@ -316,7 +440,12 @@ def test_legacy_and_admin_are_unchanged(client, admin_client):
     assert OUTCOME not in admin
 
 
-def test_csrf_denial_stays_403_without_auth_outcome(user):
+def test_csrf_denial_stays_403_without_auth_outcome(user: AbstractUser) -> None:
+    """A CSRF denial stays 403 and reports no authentication outcome.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client(enforce_csrf_checks=True)
     anonymous, _ = _confirm(client, False)
     response = client.post(
@@ -331,7 +460,15 @@ def test_csrf_denial_stays_403_without_auth_outcome(user):
 
 
 @pytest.mark.parametrize("optin", ["on", "off"])
-def test_password_success_preserves_csrf_and_effect_returns_result_binding(user, optin):
+def test_password_success_preserves_csrf_and_effect_returns_result_binding(
+    user: AbstractUser, optin: str
+) -> None:
+    """A password sign-in preserves CSRF and returns the result binding.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        optin: Value of the biometric opt-in field.
+    """
     client = Client(enforce_csrf_checks=True)
     anonymous, _ = _confirm(client, False)
     login_form = client.get("/hv/login/", headers=_headers(anonymous))
@@ -361,7 +498,16 @@ def test_password_success_preserves_csrf_and_effect_returns_result_binding(user,
     "payload",
     [{}, {"username": "ada", "password": "incorrect", "enable_biometrics": "on"}],
 )
-def test_password_failure_keeps_binding_and_422_panel(client, user, payload):
+def test_password_failure_keeps_binding_and_422_panel(
+    client: Client, user: AbstractUser, payload: dict[str, str]
+) -> None:
+    """A password failure keeps the binding and answers a 422 panel.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        payload: Form data posted to the login.
+    """
     anonymous, _ = _confirm(client, False)
     response = client.post("/hv/login/", payload, headers=_headers(anonymous))
     tree = assert_hxml(response, status=422)
@@ -372,8 +518,15 @@ def test_password_failure_keeps_binding_and_422_panel(client, user, payload):
 
 
 def test_password_account_switch_compares_incoming_and_returns_new_binding(
-    client, user, other_user
-):
+    client: Client, user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A password account switch compares the incoming binding and returns the new one.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     client.force_login(user)
     first, _ = _confirm(client, True)
     response = client.post(
@@ -387,7 +540,16 @@ def test_password_account_switch_compares_incoming_and_returns_new_binding(
     assert client.session["_auth_user_id"] == str(other_user.pk)
 
 
-def test_mismatched_auth_post_cannot_switch_or_rotate(client, user, other_user):
+def test_mismatched_auth_post_cannot_switch_or_rotate(
+    client: Client, user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """An authentication POST with a mismatched binding cannot switch or rotate.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     client.force_login(user)
     key = client.session.session_key
     response = client.post(
@@ -400,7 +562,15 @@ def test_mismatched_auth_post_cannot_switch_or_rotate(client, user, other_user):
     assert client.session["_auth_user_id"] == str(user.pk)
 
 
-def test_biometric_success_rotates_token_and_returns_result_binding(client, user):
+def test_biometric_success_rotates_token_and_returns_result_binding(
+    client: Client, user: AbstractUser
+) -> None:
+    """A biometric sign-in rotates the token and returns the result binding.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     anonymous, _ = _confirm(client, False)
     response = client.post(
@@ -417,7 +587,12 @@ def test_biometric_success_rotates_token_and_returns_result_binding(client, user
     assert rotated not in str(dict(response.headers))
 
 
-def test_biometric_failure_and_throttle_remain_distinct(client):
+def test_biometric_failure_and_throttle_remain_distinct(client: Client) -> None:
+    """A biometric failure and a throttle stay distinct.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     anonymous, _ = _confirm(client, False)
     for _ in range(BIOMETRIC_ATTEMPT_LIMIT):
         response = client.post(
@@ -442,7 +617,15 @@ def test_biometric_failure_and_throttle_remain_distinct(client):
     assert tree.find("./hv:behavior[@action='store-biometric-token']", NS) is None
 
 
-def test_logout_returns_anonymous_and_keeps_enrollment(client, user):
+def test_logout_returns_anonymous_and_keeps_enrollment(
+    client: Client, user: AbstractUser
+) -> None:
+    """Logging out returns an anonymous binding and keeps the biometric enrollment.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     issue_biometric_token(user=user)
     client.force_login(user)
     before, _ = _confirm(client, True)
@@ -458,7 +641,15 @@ def test_logout_returns_anonymous_and_keeps_enrollment(client, user):
 
 
 @pytest.mark.parametrize("path", ["/hv/login/", "/hv/logout/", "/hv/biometric/login/"])
-def test_auth_gets_and_legacy_posts_have_no_modern_outcome(client, path):
+def test_auth_gets_and_legacy_posts_have_no_modern_outcome(
+    client: Client, path: str
+) -> None:
+    """Authentication GETs and legacy POSTs report no modern outcome.
+
+    Args:
+        client: Client that requests the screens under test.
+        path: Authentication or legacy path that is requested.
+    """
     anonymous, _ = _confirm(client, False)
     response = client.get(path, headers=_headers(anonymous))
     assert OUTCOME not in response
@@ -468,7 +659,14 @@ def test_auth_gets_and_legacy_posts_have_no_modern_outcome(client, path):
     assert OUTCOME not in legacy
 
 
-def test_guard_and_finalizer_surround_django_session_persistence(settings):
+def test_guard_and_finalizer_surround_django_session_persistence(
+    settings: Settings,
+) -> None:
+    """The guard and the finalizer surround Django's session persistence.
+
+    Args:
+        settings: Django settings overridden by this test.
+    """
     middleware = settings.MIDDLEWARE
     assert middleware.index(
         "todo.session_middleware.SessionBindingResponseMiddleware"
@@ -481,8 +679,15 @@ def test_guard_and_finalizer_surround_django_session_persistence(settings):
 
 
 def test_failed_session_persistence_cannot_claim_success_or_result_binding(
-    client, user, other_user
-):
+    client: Client, user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A failed session save cannot claim success or a result binding.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     from django.contrib.sessions.backends.base import UpdateError
 
     client.force_login(user)
@@ -500,7 +705,15 @@ def test_failed_session_persistence_cannot_claim_success_or_result_binding(
     assert BINDING not in response
 
 
-def test_settings_credential_clear_is_same_session_not_authentication(client, user):
+def test_settings_credential_clear_is_same_session_not_authentication(
+    client: Client, user: AbstractUser
+) -> None:
+    """Clearing the settings credentials keeps the session and is no authentication.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     issue_biometric_token(user=user)
     client.force_login(user)
     binding, _ = _confirm(client, True)

@@ -14,8 +14,13 @@ pytestmark = pytest.mark.django_db
 
 @override_settings(DEBUG=True)
 def test_seed_demo_creates_isolated_admin_and_user_data_with_local_defaults(
-    monkeypatch,
-):
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The seed command creates an admin and isolated user data with local defaults.
+
+    Args:
+        monkeypatch: Patches the password environment variables of the seed command.
+    """
     monkeypatch.delenv("HYPERTODO_ADMIN_PASSWORD", raising=False)
     monkeypatch.delenv("HYPERTODO_DEMO_PASSWORD", raising=False)
 
@@ -51,7 +56,14 @@ def test_seed_demo_creates_isolated_admin_and_user_data_with_local_defaults(
         assert template.content == source.read_text(encoding="utf-8")
 
 
-def test_seed_demo_allows_credentials_and_usernames_to_be_overridden(monkeypatch):
+def test_seed_demo_allows_credentials_and_usernames_to_be_overridden(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The seed command lets the credentials and usernames be overridden.
+
+    Args:
+        monkeypatch: Patches the password environment variables of the seed command.
+    """
     monkeypatch.setenv("HYPERTODO_ADMIN_PASSWORD", "private-admin-password")
     monkeypatch.setenv("HYPERTODO_DEMO_PASSWORD", "private-demo-password")
 
@@ -64,7 +76,14 @@ def test_seed_demo_allows_credentials_and_usernames_to_be_overridden(monkeypatch
 
 
 @override_settings(DEBUG=False)
-def test_seed_demo_requires_explicit_passwords_outside_debug(monkeypatch):
+def test_seed_demo_requires_explicit_passwords_outside_debug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The seed command requires explicit passwords outside debug mode.
+
+    Args:
+        monkeypatch: Patches the password environment variables of the seed command.
+    """
     monkeypatch.delenv("HYPERTODO_ADMIN_PASSWORD", raising=False)
     monkeypatch.delenv("HYPERTODO_DEMO_PASSWORD", raising=False)
 

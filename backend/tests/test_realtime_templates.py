@@ -2,11 +2,15 @@
 
 from urllib.parse import parse_qs, urlsplit
 from xml.etree import ElementTree as ET
+from xml.etree.ElementTree import Element
 
 import pytest
 from dj_hyperview import validate_hyperview_schema
 from dj_hyperview.exceptions import TemplateValidationError
+from django.contrib.auth.models import AbstractUser
+from django.http import HttpResponse
 from django.test import Client
+from pytest_django.fixtures import Settings
 
 from tests.test_session_contract import _confirm, _headers
 from todo.models import Category, Task
@@ -26,7 +30,28 @@ RESOURCES = (
 )
 
 
-def request(client, method, url, data=None, *, modern=True, request_id="gate-review-1"):
+def request(
+    client: Client,
+    method: str,
+    url: str,
+    data: dict[str, str] | None = None,
+    *,
+    modern: bool = True,
+    request_id: str | None = "gate-review-1",
+) -> tuple[HttpResponse, Element]:
+    """Send a request, with realtime headers when modern, and parse the answer.
+
+    Args:
+        client: Client that sends the request.
+        method: Name of the client method to call, such as get or post.
+        url: URL that is requested.
+        data: Form data to send, if any.
+        modern: Whether the request negotiates the realtime contract.
+        request_id: Request id sent in the correlation header, or None to omit it.
+
+    Returns:
+        The response and the root element of its body.
+    """
     headers = {}
     if modern:
         binding, _ = _confirm(client, client.session.get("_auth_user_id") is not None)
@@ -54,8 +79,18 @@ def request(client, method, url, data=None, *, modern=True, request_id="gate-rev
     ],
 )
 def test_screen_boundary_is_negotiated_and_outside_lists(
-    user, modern, url, mode, target, resources
-):
+    user: AbstractUser, modern: bool, url: str, mode: str, target: str, resources: str
+) -> None:
+    """A screen boundary appears only for a negotiated client and sits outside lists.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        modern: Whether the client negotiates the realtime contract.
+        url: Screen URL that is requested.
+        mode: Mode the boundary is expected to declare.
+        target: Target the boundary is expected to declare.
+        resources: Resources the boundary is expected to declare.
+    """
     client = Client()
     client.force_login(user)
     _, root = request(client, "get", url, modern=modern)
@@ -77,13 +112,25 @@ def test_screen_boundary_is_negotiated_and_outside_lists(
 @pytest.mark.parametrize(
     "url", ("/hv/login/", "/hv/dashboard/", "/hv/tasks/?status=bad")
 )
-def test_anonymous_and_error_screens_also_have_one_boundary(url):
+def test_anonymous_and_error_screens_also_have_one_boundary(url: str) -> None:
+    """Anonymous and error screens also carry exactly one boundary.
+
+    Args:
+        url: Screen URL that is requested.
+    """
     _, root = request(Client(), "get", url)
     assert len(root.findall(".//app:realtime", NS)) == 1
     assert root.find(".//app:realtime", NS).attrib["mode"] == "notice"
 
 
-def test_navigator_document_does_not_invent_a_screen_boundary(user):
+def test_navigator_document_does_not_invent_a_screen_boundary(
+    user: AbstractUser,
+) -> None:
+    """A navigator document does not invent a screen boundary.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
     _, root = request(client, "get", "/hv/")
@@ -94,8 +141,15 @@ def test_navigator_document_does_not_invent_a_screen_boundary(user):
 @pytest.mark.parametrize("kind", ("task", "category"))
 @pytest.mark.parametrize("populated", (False, True))
 def test_marker_is_inside_first_existing_item_with_unchanged_cardinality(
-    user, kind, populated
-):
+    user: AbstractUser, kind: str, populated: bool
+) -> None:
+    """The page marker sits in the first existing item and keeps the item count.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        kind: Kind of record the list holds.
+        populated: Whether the list holds a record.
+    """
     if populated:
         for n in range(22):
             if kind == "task":
@@ -123,7 +177,12 @@ def test_marker_is_inside_first_existing_item_with_unchanged_cardinality(
         assert markers[0].attrib == {"request-id": "gate-review-1", "page": page}
 
 
-def test_task_refresh_returns_filtered_page_one(user):
+def test_task_refresh_returns_filtered_page_one(user: AbstractUser) -> None:
+    """A task refresh returns the filtered first page.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     category = Category.objects.create(user=user, name="Home", color="mint")
     for n in range(22):
         Task.objects.create(user=user, title=f"Task {n}", category=category)
@@ -144,7 +203,15 @@ def test_task_refresh_returns_filtered_page_one(user):
 
 
 @pytest.mark.parametrize("request_id", (None, "", "<bad>", "é", "x" * 81, "good_ID-9"))
-def test_only_bounded_ascii_request_id_is_reflected(user, request_id):
+def test_only_bounded_ascii_request_id_is_reflected(
+    user: AbstractUser, request_id: str | None
+) -> None:
+    """Only a bounded ASCII request id is reflected.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        request_id: Request id the client sends, or None to omit it.
+    """
     client = Client()
     client.force_login(user)
     _, root = request(client, "get", "/hv/tasks/", request_id=request_id)
@@ -166,8 +233,15 @@ def test_only_bounded_ascii_request_id_is_reflected(user, request_id):
     ],
 )
 def test_resource_producers_are_typed_and_keep_legacy_snackbar_back(
-    user, name, resource
-):
+    user: AbstractUser, name: str, resource: str
+) -> None:
+    """Resource producers are typed and keep the legacy snackbar and back behavior.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        name: Name of the transition producer under test.
+        resource: Resource the producer is expected to name.
+    """
     from django.test import RequestFactory
 
     from todo.views import _template_response
@@ -206,7 +280,17 @@ def test_resource_producers_are_typed_and_keep_legacy_snackbar_back(
     assert values[0] == values[1]
 
 
-def typed_document(resources, *, behavior=False):
+def typed_document(resources: str, *, behavior: bool = False) -> str:
+    """Build a document with a typed resources attribute on a boundary or behavior.
+
+    Args:
+        resources: Value of the resources attribute.
+        behavior: Whether the attribute goes on a notify-resources behavior instead of a
+        boundary.
+
+    Returns:
+        The document source.
+    """
     content = (
         f'<behavior action="notify-resources" resources="{resources}"/>'
         if behavior
@@ -224,8 +308,14 @@ def typed_document(resources, *, behavior=False):
 @pytest.mark.parametrize("value", RESOURCES)
 @pytest.mark.parametrize("behavior", (False, True))
 def test_same_canonical_resource_sets_are_valid_for_boundary_and_behavior(
-    value, behavior
-):
+    value: str, behavior: bool
+) -> None:
+    """The same canonical resource sets are valid for the boundary and the behavior.
+
+    Args:
+        value: Canonical resources attribute under test.
+        behavior: Whether the value is set on a behavior instead of a boundary.
+    """
     validate_hyperview_schema(typed_document(value, behavior=behavior))
 
 
@@ -243,8 +333,14 @@ def test_same_canonical_resource_sets_are_valid_for_boundary_and_behavior(
 )
 @pytest.mark.parametrize("behavior", (False, True))
 def test_resource_metadata_rejects_unknown_duplicate_noncanonical_values(
-    value, behavior
-):
+    value: str, behavior: bool
+) -> None:
+    """Resource metadata rejects unknown, duplicate and non-canonical values.
+
+    Args:
+        value: Invalid resources attribute under test.
+        behavior: Whether the value is set on a behavior instead of a boundary.
+    """
     with pytest.raises(TemplateValidationError):
         validate_hyperview_schema(typed_document(value, behavior=behavior))
 
@@ -252,12 +348,27 @@ def test_resource_metadata_rejects_unknown_duplicate_noncanonical_values(
 @pytest.mark.parametrize("populated", (False, True))
 @pytest.mark.parametrize("modern", (False, True))
 def test_all_40_sources_render_through_real_routes_under_both_contracts(
-    user, monkeypatch, settings, populated, modern
-):
+    user: AbstractUser,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    populated: bool,
+    modern: bool,
+) -> None:
+    """All 40 sources render through the real routes under both contracts.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+        settings: Django settings overridden by this test.
+        populated: Whether the list holds a record.
+        modern: Whether the client negotiates the realtime contract.
+    """
     import tests.test_schema_corpus as corpus
 
     class CorpusClient(Client):
-        def generic(self, method, path, *args, **kwargs):
+        def generic(
+            self, method: str, path: str, *args: object, **kwargs: object
+        ) -> HttpResponse:
             if modern and path.startswith("/hv/") and path != "/hv/session-state/":
                 binding, _ = _confirm(
                     self, self.session.get("_auth_user_id") is not None
@@ -300,7 +411,16 @@ def test_all_40_sources_render_through_real_routes_under_both_contracts(
     "case", ("login", "password-invalid", "biometric-invalid", "biometric-throttled")
 )
 @pytest.mark.parametrize("request_id", ("gate-panel-2", None))
-def test_auth_panel_root_key_tracks_only_negotiated_request(modern, case, request_id):
+def test_auth_panel_root_key_tracks_only_negotiated_request(
+    modern: bool, case: str, request_id: str | None
+) -> None:
+    """The root key of an authentication panel tracks only a negotiated request.
+
+    Args:
+        modern: Whether the client negotiates the realtime contract.
+        case: Authentication panel that is rendered.
+        request_id: Request id the client sends, or None to omit it.
+    """
     client = Client()
     if case == "biometric-throttled":
         from todo.throttle import BIOMETRIC_ATTEMPT_LIMIT
@@ -354,7 +474,14 @@ def test_auth_panel_root_key_tracks_only_negotiated_request(modern, case, reques
         '<app:realtime refresh-href="/hv/tasks/" target="task-list" mode="list"/>',
     ),
 )
-def test_typed_resources_are_required_and_not_a_namespace_or_action_escape(body):
+def test_typed_resources_are_required_and_not_a_namespace_or_action_escape(
+    body: str,
+) -> None:
+    """Typed resources are required and are no escape from namespace or action rules.
+
+    Args:
+        body: Boundary or behavior markup that must be rejected.
+    """
     with pytest.raises(TemplateValidationError):
         validate_hyperview_schema(
             f'<doc xmlns="{HV}" xmlns:app="{APP}"><screen><body>'
@@ -381,8 +508,17 @@ def test_typed_resources_are_required_and_not_a_namespace_or_action_escape(body)
     ),
 )
 def test_modern_validation_panels_preserve_drafts_and_do_not_reload(
-    user, url, data, field, value
-):
+    user: AbstractUser, url: str, data: dict[str, str], field: str, value: str
+) -> None:
+    """Modern validation panels preserve the draft and do not reload the screen.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        url: Screen URL that is requested.
+        data: Form data posted to the screen.
+        field: Form field that must keep its draft.
+        value: Draft value the field must keep.
+    """
     client = Client()
     client.force_login(user)
     response, root = request(client, "post", url, data)
@@ -395,7 +531,12 @@ def test_modern_validation_panels_preserve_drafts_and_do_not_reload(
     assert not Category.objects.filter(user=user).exists()
 
 
-def test_every_refresh_metadata_href_has_a_real_shape(user):
+def test_every_refresh_metadata_href_has_a_real_shape(user: AbstractUser) -> None:
+    """Every refresh metadata href has a real shape.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     from tests.test_schema_compatibility import ROOT
 
     cases = {
@@ -438,7 +579,8 @@ def test_every_refresh_metadata_href_has_a_real_shape(user):
             assert refreshed.find("hv:navigator", NS) is None
 
 
-def test_modern_metadata_has_real_gate_exports_not_a_data_only_exemption():
+def test_modern_metadata_has_real_gate_exports_not_a_data_only_exemption() -> None:
+    """Modern metadata has real gate exports, not a data-only exemption."""
     import re
 
     from tests.test_fragment_contract import DATA_ONLY_ELEMENTS, MOBILE_ROOT

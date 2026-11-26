@@ -3,22 +3,37 @@
 import json
 
 import pytest
+from django.contrib.auth.models import AbstractUser
 from django.db import transaction
+from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
+from pytest_django.fixtures import DjangoCaptureOnCommitCallbacks
 
 from tests.test_realtime_changes import module, request
 from tests.test_realtime_notifications import intents
 from tests.test_realtime_notifications import published as published
 from todo.models import Profile
+from todo.realtime_notifications import Notification
 from todo.services import update_profile
 
 pytestmark = pytest.mark.django_db
 
 
 def test_profile_edit_captures_origin_and_only_owner_topic(
-    user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """A profile edit captures the mutation origin and targets only the owner topic.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     from todo.realtime_notifications import private_topic
 
     with django_capture_on_commit_callbacks(execute=True):
@@ -46,8 +61,23 @@ def test_profile_edit_captures_origin_and_only_owner_topic(
     [("theme", "dark"), ("language", "es"), ("avatar", "avatars/fixture.png")],
 )
 def test_new_and_changed_preferences_emit_scoped_ui(
-    user, published, django_capture_on_commit_callbacks, field, value
-):
+    user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+    field: str,
+    value: str,
+) -> None:
+    """A new or changed preference emits a scoped ui invalidation.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+        field: Name of the profile field that changes.
+        value: New value stored in the profile field.
+    """
     with django_capture_on_commit_callbacks(execute=True):
         profile = Profile.objects.create(user=user, **{field: value})
     assert len(published) == 1 and intents(published)[0].resources == ("ui",)
@@ -58,8 +88,19 @@ def test_new_and_changed_preferences_emit_scoped_ui(
 
 
 def test_auth_only_and_noop_user_writes_never_emit_ui(
-    user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """Authentication-only and no-op user writes never emit a ui invalidation.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     with django_capture_on_commit_callbacks(execute=True):
         user.last_login = timezone.now()
         user.save(update_fields=["last_login"])
@@ -73,8 +114,19 @@ def test_auth_only_and_noop_user_writes_never_emit_ui(
 
 
 def test_admin_style_user_save_observed_without_request_origin(
-    user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """An admin-style user save is observed without a request origin.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     with django_capture_on_commit_callbacks(execute=True):
         user.first_name = "Admin edit"
         user.save()
@@ -82,8 +134,23 @@ def test_admin_style_user_save_observed_without_request_origin(
 
 
 def test_real_user_admin_save_matches_the_current_settings_dependency(
-    user, client, admin_client, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    client: Client,
+    admin_client: Client,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """A real user admin save matches the dependency of the current settings.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        client: Client that requests the screens under test.
+        admin_client: Client signed in as a superuser that requests the admin.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     from tests.test_realtime_change_templates import NS, get
     from todo.realtime_notifications import private_topic
 
@@ -120,8 +187,19 @@ def test_real_user_admin_save_matches_the_current_settings_dependency(
 
 
 def test_blank_profile_noop_is_silent_but_deletion_of_preferences_notifies(
-    user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """Saving a blank profile is silent, but deleting stored preferences notifies.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     with django_capture_on_commit_callbacks(execute=True):
         profile = Profile.objects.create(user=user)
         profile.save()
@@ -134,8 +212,21 @@ def test_blank_profile_noop_is_silent_but_deletion_of_preferences_notifies(
 
 
 def test_profile_transfer_targets_both_owners_without_shared_ui_topic(
-    user, other_user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    other_user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """Transferring a profile notifies both owners and no shared ui topic.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     from todo.realtime_notifications import private_topic
 
     profile = Profile.objects.create(user=user, theme="dark")
@@ -151,8 +242,19 @@ def test_profile_transfer_targets_both_owners_without_shared_ui_topic(
 
 
 def test_profile_rollback_drops_hint_and_bulk_update_stays_explicit(
-    user, published, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    published: list[tuple[object, Notification]],
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """A profile rollback drops the hint, and a bulk update stays explicit.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        published: Notifications captured instead of being published, as config and
+        intent pairs.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     with django_capture_on_commit_callbacks(execute=True):
         with transaction.atomic():
             user.first_name = "Rolled back"

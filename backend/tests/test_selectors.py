@@ -1,9 +1,11 @@
 """Tests for task selection and dashboard counts."""
 
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 import pytest
+from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
+from pytest_django.fixtures import DjangoAssertNumQueries
 
 from todo.models import Category, Task
 from todo.selectors import dashboard_counts, dashboard_summary, tasks_for_user
@@ -11,17 +13,32 @@ from todo.selectors import dashboard_counts, dashboard_summary, tasks_for_user
 pytestmark = pytest.mark.django_db
 
 
-def freeze_local_noon(monkeypatch):
+def freeze_local_noon(monkeypatch: pytest.MonkeyPatch) -> datetime:
     """Freeze timezone.now on the local noon of the current day.
 
     Patching the shared django.utils.timezone.now freezes auto_now_add too.
+
+    Args:
+        monkeypatch: Patches timezone.now.
+
+    Returns:
+        The frozen local noon.
     """
     now = timezone.localtime().replace(hour=12, minute=0, second=0, microsecond=0)
     monkeypatch.setattr("django.utils.timezone.now", lambda: now)
     return now
 
 
-def test_task_filters_are_composable_and_user_isolated(user, other_user, monkeypatch):
+def test_task_filters_are_composable_and_user_isolated(
+    user: AbstractUser, other_user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Task filters compose and stay isolated per user.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        monkeypatch: Patches the clock of the selectors for this test.
+    """
     now = freeze_local_noon(monkeypatch)
     today_due = timezone.localtime(now).replace(
         hour=23, minute=59, second=59, microsecond=0
@@ -56,8 +73,19 @@ def test_task_filters_are_composable_and_user_isolated(user, other_user, monkeyp
 
 
 def test_dashboard_counts_describe_private_work(
-    user, other_user, monkeypatch, django_assert_num_queries
-):
+    user: AbstractUser,
+    other_user: AbstractUser,
+    monkeypatch: pytest.MonkeyPatch,
+    django_assert_num_queries: DjangoAssertNumQueries,
+) -> None:
+    """Dashboard counts describe only the user's own work.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        monkeypatch: Patches the clock of the selectors for this test.
+        django_assert_num_queries: Asserts the exact number of queries the block runs.
+    """
     now = freeze_local_noon(monkeypatch)
     today_due = timezone.localtime(now).replace(
         hour=23, minute=59, second=59, microsecond=0
@@ -79,7 +107,15 @@ def test_dashboard_counts_describe_private_work(
     }
 
 
-def test_dashboard_summary_measures_today_progress(user, monkeypatch):
+def test_dashboard_summary_measures_today_progress(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dashboard summary measures today's progress.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the clock of the selectors for this test.
+    """
     now = freeze_local_noon(monkeypatch)
     today_due = now.replace(hour=23, minute=59)
     Task.objects.create(user=user, title="Due today", due_at=today_due)
@@ -103,7 +139,15 @@ def test_dashboard_summary_measures_today_progress(user, monkeypatch):
     }
 
 
-def test_dashboard_summary_progress_is_zero_without_work_today(user, monkeypatch):
+def test_dashboard_summary_progress_is_zero_without_work_today(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dashboard summary reports zero progress when there is no work today.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the clock of the selectors for this test.
+    """
     now = freeze_local_noon(monkeypatch)
     Task.objects.create(user=user, title="Later", due_at=now + timedelta(days=4))
 
@@ -115,7 +159,15 @@ def test_dashboard_summary_progress_is_zero_without_work_today(user, monkeypatch
     assert summary["progress_percent"] == 0
 
 
-def test_dashboard_summary_buckets_the_week_by_local_day(user, monkeypatch):
+def test_dashboard_summary_buckets_the_week_by_local_day(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dashboard summary buckets the week by local day.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the clock of the selectors for this test.
+    """
     now = freeze_local_noon(monkeypatch)
     today = timezone.localdate(now)
     late_yesterday = now.replace(hour=23, minute=30) - timedelta(days=1)
@@ -158,8 +210,19 @@ def test_dashboard_summary_buckets_the_week_by_local_day(user, monkeypatch):
     ],
 )
 def test_dashboard_summary_counts_the_completion_streak(
-    user, monkeypatch, completed_days_ago, expected_streak
-):
+    user: AbstractUser,
+    monkeypatch: pytest.MonkeyPatch,
+    completed_days_ago: tuple[int, ...],
+    expected_streak: int,
+) -> None:
+    """The dashboard summary counts the completion streak.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the clock of the selectors for this test.
+        completed_days_ago: Days before today on which a task was completed.
+        expected_streak: Streak the summary is expected to report.
+    """
     now = freeze_local_noon(monkeypatch)
     for days_ago in completed_days_ago:
         Task.objects.create(
@@ -172,8 +235,15 @@ def test_dashboard_summary_counts_the_completion_streak(
 
 
 def test_dashboard_summary_counts_active_tasks_per_owned_category(
-    user, other_user, monkeypatch
-):
+    user: AbstractUser, other_user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dashboard summary counts active tasks per owned category.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        monkeypatch: Patches the clock of the selectors for this test.
+    """
     now = freeze_local_noon(monkeypatch)
     work = Category.objects.create(
         user=user, name="Work", color=Category.Color.LAVENDER
@@ -200,8 +270,15 @@ def test_dashboard_summary_counts_active_tasks_per_owned_category(
 
 
 def test_dashboard_summary_lists_next_active_tasks_with_nulls_last(
-    user, other_user, monkeypatch
-):
+    user: AbstractUser, other_user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dashboard summary lists the next active tasks with unscheduled ones last.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        monkeypatch: Patches the clock of the selectors for this test.
+    """
     now = freeze_local_noon(monkeypatch)
     Task.objects.create(user=user, title="Overdue", due_at=now - timedelta(days=1))
     Task.objects.create(user=user, title="Today", due_at=now.replace(hour=23))
@@ -249,8 +326,20 @@ def test_dashboard_summary_lists_next_active_tasks_with_nulls_last(
     ],
 )
 def test_dashboard_summary_dates_the_next_scheduled_task_beyond_the_week(
-    user, monkeypatch, days_ahead, expects_weekday
-):
+    user: AbstractUser,
+    monkeypatch: pytest.MonkeyPatch,
+    days_ahead: int,
+    expects_weekday: bool,
+) -> None:
+    """The dashboard summary dates the next scheduled task once it is beyond the week.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the clock of the selectors for this test.
+        days_ahead: Days from today until the next scheduled task.
+        expects_weekday: Whether the label is expected to be a weekday name instead of a
+        date.
+    """
     now = freeze_local_noon(monkeypatch)
     due_at = now + timedelta(days=days_ahead)
     Task.objects.create(user=user, title="Planned", due_at=due_at)
@@ -260,7 +349,15 @@ def test_dashboard_summary_dates_the_next_scheduled_task_beyond_the_week(
     assert label == (f"{due_at:%a}" if expects_weekday else f"{due_at:%b} {due_at.day}")
 
 
-def test_dashboard_summary_reports_no_label_without_future_work(user, monkeypatch):
+def test_dashboard_summary_reports_no_label_without_future_work(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dashboard summary reports no label when there is no future work.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the clock of the selectors for this test.
+    """
     now = freeze_local_noon(monkeypatch)
     Task.objects.create(user=user, title="Overdue", due_at=now - timedelta(days=2))
 
@@ -271,8 +368,19 @@ def test_dashboard_summary_reports_no_label_without_future_work(user, monkeypatc
 
 
 def test_dashboard_summary_is_user_isolated_within_four_queries(
-    user, other_user, monkeypatch, django_assert_num_queries
-):
+    user: AbstractUser,
+    other_user: AbstractUser,
+    monkeypatch: pytest.MonkeyPatch,
+    django_assert_num_queries: DjangoAssertNumQueries,
+) -> None:
+    """The dashboard summary is isolated per user and runs within four queries.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        monkeypatch: Patches the clock of the selectors for this test.
+        django_assert_num_queries: Asserts the exact number of queries the block runs.
+    """
     now = freeze_local_noon(monkeypatch)
     work = Category.objects.create(
         user=user, name="Work", color=Category.Color.LAVENDER
@@ -305,7 +413,15 @@ def test_dashboard_summary_is_user_isolated_within_four_queries(
     assert summary["week_completed_total"] == 1
 
 
-def test_selector_rejects_invalid_status_and_foreign_category(user, other_user):
+def test_selector_rejects_invalid_status_and_foreign_category(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """The selector rejects an invalid status and another user's category.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     foreign = Category.objects.create(
         user=other_user, name="Foreign", color=Category.Color.PINK
     )
@@ -315,12 +431,27 @@ def test_selector_rejects_invalid_status_and_foreign_category(user, other_user):
         tasks_for_user(user, category=foreign)
 
 
-def end_of_day(day):
-    """Return the last instant of a local calendar day, as the task form stores it."""
+def end_of_day(day: date) -> datetime:
+    """Return the last instant of a local calendar day, as the task form stores it.
+
+    Args:
+        day: Local calendar day.
+
+    Returns:
+        The last instant of the day, as an aware datetime.
+    """
     return timezone.make_aware(datetime.combine(day, time.max))
 
 
-def test_an_all_day_deadline_stays_open_until_its_day_ends(user, monkeypatch):
+def test_an_all_day_deadline_stays_open_until_its_day_ends(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An all-day deadline stays open until its day ends.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the clock of the selectors for this test.
+    """
     now = freeze_local_noon(monkeypatch)
     due_at = end_of_day(timezone.localdate(now))
     Task.objects.create(user=user, title="Pay rent", due_at=due_at, due_all_day=True)
@@ -347,7 +478,15 @@ def test_an_all_day_deadline_stays_open_until_its_day_ends(user, monkeypatch):
     }
 
 
-def test_a_timed_deadline_is_overdue_the_moment_it_passes(user, monkeypatch):
+def test_a_timed_deadline_is_overdue_the_moment_it_passes(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A timed deadline is overdue the moment it passes.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the clock of the selectors for this test.
+    """
     now = freeze_local_noon(monkeypatch)
     Task.objects.create(user=user, title="Morning call", due_at=now.replace(hour=9))
     Task.objects.create(user=user, title="Evening call", due_at=now.replace(hour=18))
@@ -356,7 +495,15 @@ def test_a_timed_deadline_is_overdue_the_moment_it_passes(user, monkeypatch):
     assert dashboard_counts(user)["overdue"] == 1
 
 
-def test_an_all_day_task_sorts_after_the_timed_tasks_of_its_day(user, monkeypatch):
+def test_an_all_day_task_sorts_after_the_timed_tasks_of_its_day(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An all-day task sorts after the timed tasks of its day.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the clock of the selectors for this test.
+    """
     now = freeze_local_noon(monkeypatch)
     today = timezone.localdate(now)
     Task.objects.create(

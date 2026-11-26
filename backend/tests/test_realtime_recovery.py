@@ -1,17 +1,20 @@
 """Neutral Sign in presentation never adopts the actual unexpected cookie owner."""
 
 from xml.etree import ElementTree as ET
+from xml.etree.ElementTree import Element
 
 import pytest
 from dj_hyperview import validate_hyperview_schema
 from dj_hyperview.contrib.database.services import publish_template
 from django.conf import settings
+from django.contrib.auth.models import AbstractUser
 from django.contrib.messages import INFO
 from django.contrib.messages.storage.session import SessionStorage
 from django.db import connection
 from django.http import HttpResponse
 from django.test import Client, RequestFactory
 from django.test.utils import CaptureQueriesContext
+from pytest_django.fixtures import Settings
 
 from tests.test_session_contract import (
     BINDING,
@@ -33,7 +36,16 @@ HV = "https://hyperview.org/hyperview"
 NS = {"hv": HV}
 
 
-def headers(client, **extra):
+def headers(client: Client, **extra: object) -> dict[str, str]:
+    """Build the headers of a recovery request for the current session of the client.
+
+    Args:
+        client: Client whose session the binding is confirmed for.
+        **extra: Further request headers merged over the defaults.
+
+    Returns:
+        The contract, binding, recovery and request id headers plus the extras.
+    """
     binding, _ = _confirm(client, client.session.get("_auth_user_id") is not None)
     return {
         **_headers(binding),
@@ -43,7 +55,16 @@ def headers(client, **extra):
     }
 
 
-def xml(response, status=200):
+def xml(response: HttpResponse, status: int = 200) -> Element:
+    """Check that a response is a valid Hyperview document and parse it.
+
+    Args:
+        response: Response that must carry a Hyperview document.
+        status: Status code the response must have.
+
+    Returns:
+        The root element of the response body.
+    """
     assert response.status_code == status
     assert response["Content-Type"].startswith("application/vnd.hyperview")
     validate_hyperview_schema(response.content.decode())
@@ -53,7 +74,15 @@ def xml(response, status=200):
     return ET.fromstring(response.content)
 
 
-def csrf(root):
+def csrf(root: Element) -> str:
+    """Return the CSRF token shared by the two forms of the document.
+
+    Args:
+        root: Parsed recovery document.
+
+    Returns:
+        The CSRF token that both forms share.
+    """
     values = root.findall(".//hv:text-field[@name='csrfmiddlewaretoken']", NS)
     assert len(values) == 2
     assert all(len(node.attrib["value"]) == 64 for node in values)
@@ -63,8 +92,14 @@ def csrf(root):
 
 @pytest.mark.parametrize("authenticated", (False, True))
 def test_recovery_uses_real_public_navigator_and_original_cookie_csrf(
-    user, authenticated
-):
+    user: AbstractUser, authenticated: bool
+) -> None:
+    """Recovery uses the real public navigator and the cookie session's CSRF token.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        authenticated: Whether the original request belongs to a signed-in session.
+    """
     client = Client(enforce_csrf_checks=True)
     if authenticated:
         Profile.objects.create(user=user, theme="dark", language="es")
@@ -107,8 +142,14 @@ PROBE = (
 
 @pytest.mark.parametrize("fragment", (False, True))
 def test_database_templates_never_receive_original_request_or_bound_password(
-    user, fragment
-):
+    user: AbstractUser, fragment: bool
+) -> None:
+    """Database templates never receive the original request or the bound password.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        fragment: Whether the template is rendered as a fragment.
+    """
     client = Client()
     Profile.objects.create(user=user, theme="dark", language="es")
     client.force_login(user)
@@ -158,7 +199,14 @@ def test_database_templates_never_receive_original_request_or_bound_password(
     assert client.session["_messages"] == stored_messages
 
 
-def test_neutral_requests_do_not_query_profile_or_publish_theme(user):
+def test_neutral_requests_do_not_query_profile_or_publish_theme(
+    user: AbstractUser,
+) -> None:
+    """Neutral requests neither query the profile nor publish a theme.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     Profile.objects.create(user=user, theme="dark", language="es")
     client = Client()
     client.force_login(user)
@@ -183,7 +231,16 @@ def test_neutral_requests_do_not_query_profile_or_publish_theme(user):
         ("/hv/biometric/login/", "post"),
     ],
 )
-def test_recovery_never_bypasses_expected_binding(user, url, method):
+def test_recovery_never_bypasses_expected_binding(
+    user: AbstractUser, url: str, method: str
+) -> None:
+    """Recovery never bypasses the expected session binding.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        url: Recovery URL that is requested.
+        method: Lower-case name of the client method that sends the request.
+    """
     client = Client()
     client.force_login(user)
     response = getattr(client, method)(
@@ -219,7 +276,16 @@ def test_recovery_never_bypasses_expected_binding(user, url, method):
         ("/admin/", "get"),
     ],
 )
-def test_recovery_scope_rejects_before_business_work(user, url, method):
+def test_recovery_scope_rejects_before_business_work(
+    user: AbstractUser, url: str, method: str
+) -> None:
+    """Requests outside the recovery scope are rejected before any business work.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        url: Recovery URL that is requested.
+        method: Lower-case name of the client method that sends the request.
+    """
     client = Client()
     client.force_login(user)
     head = headers(client)
@@ -254,7 +320,15 @@ def test_recovery_scope_rejects_before_business_work(user, url, method):
         ("realtime-v1", "login-v1 "),
     ],
 )
-def test_header_grammar_does_not_grant_recovery(contract, recovery):
+def test_header_grammar_does_not_grant_recovery(
+    contract: str | None, recovery: str
+) -> None:
+    """A malformed contract or recovery header does not grant recovery.
+
+    Args:
+        contract: Value of the client contract header, or None to omit it.
+        recovery: Value of the recovery header.
+    """
     head = {RECOVERY: recovery}
     if contract is not None:
         head[CONTRACT] = contract
@@ -264,14 +338,27 @@ def test_header_grammar_does_not_grant_recovery(contract, recovery):
 
 
 @pytest.mark.parametrize("modern", (False, True))
-def test_recovery_route_requires_explicit_selector(modern):
+def test_recovery_route_requires_explicit_selector(modern: bool) -> None:
+    """The recovery route requires an explicit screen selector.
+
+    Args:
+        modern: Whether the client negotiates the realtime contract.
+    """
     client = Client()
     head = _headers(_confirm(client, False)[0]) if modern else {}
     response = client.get(ROOT, headers=head)
     assert response.status_code == 404
 
 
-def test_explicit_password_success_keeps_actual_rotation_and_outcome(user, other_user):
+def test_explicit_password_success_keeps_actual_rotation_and_outcome(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """An explicit password sign-in keeps the actual rotation and auth outcome.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     client = Client(enforce_csrf_checks=True)
     client.force_login(other_user)
     head = headers(client)
@@ -301,7 +388,16 @@ def test_explicit_password_success_keeps_actual_rotation_and_outcome(user, other
     "case,status",
     [("biometric-invalid", 401), ("biometric-throttled", 429), ("csrf", 403)],
 )
-def test_recovery_auth_failure_semantics_stay_authoritative(user, case, status):
+def test_recovery_auth_failure_semantics_stay_authoritative(
+    user: AbstractUser, case: str, status: int
+) -> None:
+    """Authentication failures keep their authoritative status during recovery.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        case: Authentication failure that is exercised.
+        status: Status code the failure must keep.
+    """
     client = Client(enforce_csrf_checks=True)
     client.force_login(user)
     head = headers(client)
@@ -332,7 +428,15 @@ def test_recovery_auth_failure_semantics_stay_authoritative(user, case, status):
     assert client.session["_auth_user_id"] == str(user.pk)
 
 
-def test_neutral_render_failure_cannot_return_debug_request_data(user, settings):
+def test_neutral_render_failure_cannot_return_debug_request_data(
+    user: AbstractUser, settings: Settings
+) -> None:
+    """A neutral render failure cannot return debug request data.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        settings: Django settings overridden by this test.
+    """
     settings.DEBUG = True
     client = Client(raise_request_exception=False)
     client.force_login(user)
@@ -359,8 +463,14 @@ def test_neutral_render_failure_cannot_return_debug_request_data(user, settings)
 
 @pytest.mark.parametrize("modern", (False, True))
 def test_normal_login_keeps_actual_account_theme_language_and_lazy_response(
-    user, modern
-):
+    user: AbstractUser, modern: bool
+) -> None:
+    """A normal login keeps the actual account theme, language and lazy response.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        modern: Whether the client negotiates the realtime contract.
+    """
     Profile.objects.create(user=user, theme="dark", language="es")
     client = Client()
     client.force_login(user)
@@ -374,7 +484,8 @@ def test_normal_login_keeps_actual_account_theme_language_and_lazy_response(
     assert bool(response.get(BINDING)) is modern
 
 
-def test_recovery_get_still_requires_expected_binding():
+def test_recovery_get_still_requires_expected_binding() -> None:
+    """A recovery GET still requires the expected session binding."""
     response = Client().get(
         ROOT, headers={CONTRACT: "realtime-v1", RECOVERY: "login-v1"}
     )
@@ -383,7 +494,15 @@ def test_recovery_get_still_requires_expected_binding():
     assert BINDING not in response and OUTCOME not in response
 
 
-def test_explicit_biometric_recovery_rotates_actual_session_and_token(user, other_user):
+def test_explicit_biometric_recovery_rotates_actual_session_and_token(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """An explicit biometric recovery rotates the actual session and the token.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     token = issue_biometric_token(user=user)
     client = Client(enforce_csrf_checks=True)
     client.force_login(other_user)
@@ -405,8 +524,14 @@ def test_explicit_biometric_recovery_rotates_actual_session_and_token(user, othe
 
 
 def test_original_session_csrf_storage_is_not_copied_into_render_context(
-    user, settings
-):
+    user: AbstractUser, settings: Settings
+) -> None:
+    """The CSRF storage of the original session is not copied into the render context.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        settings: Django settings overridden by this test.
+    """
     settings.CSRF_USE_SESSIONS = True
     client = Client(enforce_csrf_checks=True)
     client.force_login(user)
@@ -425,8 +550,14 @@ def test_original_session_csrf_storage_is_not_copied_into_render_context(
 
 
 def test_failed_neutral_transition_never_claims_successful_auth_outcome(
-    user, other_user
-):
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A failed neutral transition never claims a successful authentication outcome.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     client = Client()
     client.force_login(other_user)
     head = headers(client)

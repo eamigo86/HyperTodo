@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 
 import pytest
+from django.contrib.auth.models import AbstractUser
 from django.http import Http404
 from django.utils import timezone
 
@@ -20,7 +21,15 @@ from todo.services import (
 pytestmark = pytest.mark.django_db
 
 
-def test_category_lifecycle_is_owned(user, other_user):
+def test_category_lifecycle_is_owned(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """The category lifecycle only affects the owner's categories.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     category = create_category(user=user, name="Work", color=Category.Color.LAVENDER)
     category = update_category(
         user=user, category_id=category.pk, name="Deep work", color=Category.Color.GREEN
@@ -37,7 +46,15 @@ def test_category_lifecycle_is_owned(user, other_user):
     assert not Category.objects.filter(pk=category.pk).exists()
 
 
-def test_task_lifecycle_and_toggle_are_owned(user, other_user):
+def test_task_lifecycle_and_toggle_are_owned(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """The task lifecycle and toggle only affect the owner's tasks.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     due_at = timezone.now() + timedelta(days=1)
     task = create_task(
         user=user, title="Write tests", notes="First", category=None, due_at=due_at
@@ -61,7 +78,14 @@ def test_task_lifecycle_and_toggle_are_owned(user, other_user):
     assert not Task.objects.filter(pk=task.pk).exists()
 
 
-def test_the_all_day_flag_is_stored_and_replaced_with_the_deadline(user):
+def test_the_all_day_flag_is_stored_and_replaced_with_the_deadline(
+    user: AbstractUser,
+) -> None:
+    """The all-day flag is stored and replaced together with the deadline.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     due_at = timezone.make_aware(datetime(2026, 9, 6, 23, 59, 59, 999999))
     task = create_task(
         user=user,
@@ -87,7 +111,14 @@ def test_the_all_day_flag_is_stored_and_replaced_with_the_deadline(user):
     assert task.due_all_day is False
 
 
-def test_a_save_that_leaves_the_schedule_alone_keeps_the_stored_deadline(user):
+def test_a_save_that_leaves_the_schedule_alone_keeps_the_stored_deadline(
+    user: AbstractUser,
+) -> None:
+    """A save that leaves the schedule alone keeps the stored deadline.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = create_task(
         user=user,
         title="Call",
@@ -113,7 +144,12 @@ def test_a_save_that_leaves_the_schedule_alone_keeps_the_stored_deadline(user):
     assert (task.title, task.due_at, task.due_all_day) == ("Renamed", newer, True)
 
 
-def test_a_task_is_timed_unless_the_caller_says_otherwise(user):
+def test_a_task_is_timed_unless_the_caller_says_otherwise(user: AbstractUser) -> None:
+    """A task is timed unless the caller says otherwise.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = create_task(
         user=user,
         title="Call",

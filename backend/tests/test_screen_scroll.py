@@ -7,8 +7,11 @@ the fix and the assumptions it rests on.
 """
 
 from xml.etree import ElementTree
+from xml.etree.ElementTree import Element
 
 import pytest
+from django.contrib.auth.models import AbstractUser
+from django.http import HttpResponse
 from django.test import Client
 from django.urls import reverse
 
@@ -17,20 +20,43 @@ MEDIA_TYPE = "application/vnd.hyperview+xml"
 NS = {"hv": "https://hyperview.org/hyperview"}
 
 
-def assert_hxml(response, *, status=200, media_type=MEDIA_TYPE):
-    """Assert a response is parseable UTF-8 Hyperview XML."""
+def assert_hxml(
+    response: HttpResponse, *, status: int = 200, media_type: str = MEDIA_TYPE
+) -> Element:
+    """Assert a response is parseable UTF-8 Hyperview XML.
+
+    Args:
+        response: Response that must carry Hyperview XML.
+        status: Status code the response must have.
+        media_type: Media type the response must declare.
+
+    Returns:
+        The root element of the response body.
+    """
     assert response.status_code == status
     assert response.headers["Content-Type"] == f"{media_type}; charset=utf-8"
     return ElementTree.fromstring(response.content)
 
 
-def style_by_id(root, style_id):
-    """Return the screen stylesheet rule with the given id."""
+def style_by_id(root: Element, style_id: str) -> Element | None:
+    """Return the screen stylesheet rule with the given id.
+
+    Args:
+        root: Parsed screen document.
+        style_id: Identifier of the style rule.
+
+    Returns:
+        The style element, or None when the screen has no such rule.
+    """
     return root.find(f".//hv:style[@id='{style_id}']", NS)
 
 
-def test_dashboard_scroll_container_disables_over_scroll(user):
-    """The dashboard scroller must refuse to bounce, exactly as the client reads it."""
+def test_dashboard_scroll_container_disables_over_scroll(user: AbstractUser) -> None:
+    """The dashboard scroller must refuse to bounce, exactly as the client reads it.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
     root = assert_hxml(client.get(reverse("todo:dashboard")))
@@ -43,8 +69,12 @@ def test_dashboard_scroll_container_disables_over_scroll(user):
     assert content.attrib["over-scroll"] == "false"
 
 
-def test_dashboard_hero_scrolls_over_an_unpainted_container(user):
-    """Document why over-scroll is load-bearing: the exposed band would be canvas."""
+def test_dashboard_hero_scrolls_over_an_unpainted_container(user: AbstractUser) -> None:
+    """Document why over-scroll is load-bearing: the exposed band would be canvas.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
     root = assert_hxml(client.get(reverse("todo:dashboard")))
@@ -59,7 +89,7 @@ def test_dashboard_hero_scrolls_over_an_unpainted_container(user):
     assert content.find(".//hv:view[@id='dashboard-hero']", NS) is not None
 
 
-def test_login_body_disables_over_scroll_over_its_blue_canvas():
+def test_login_body_disables_over_scroll_over_its_blue_canvas() -> None:
     """The login sheet has the same shape as the dashboard: light card on blue."""
     root = assert_hxml(Client().get(reverse("todo:login")))
 
@@ -76,8 +106,16 @@ def test_login_body_disables_over_scroll_over_its_blue_canvas():
     ("url_name", "list_id"),
     [("todo:tasks", "task-list"), ("todo:categories", "category-list")],
 )
-def test_refresh_lists_keep_their_over_scroll(user, url_name, list_id):
-    """Pull-to-refresh needs the bounce; hv-list reads the same attribute."""
+def test_refresh_lists_keep_their_over_scroll(
+    user: AbstractUser, url_name: str, list_id: str
+) -> None:
+    """Pull-to-refresh needs the bounce; hv-list reads the same attribute.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        url_name: Name of the URL route of the list screen.
+        list_id: Identifier of the list element.
+    """
     client = Client()
     client.force_login(user)
     root = assert_hxml(client.get(reverse(url_name)))
