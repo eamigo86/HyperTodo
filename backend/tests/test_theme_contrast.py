@@ -12,7 +12,10 @@ in this list must STILL FAIL, so the day one is repaired the list has to shrink.
 DARK has no exemptions at all.
 """
 
+from xml.etree.ElementTree import Element
+
 import pytest
+from pytest_django.plugin import DjangoDbBlocker
 
 from tests.test_forms_ui import contrast_ratio, over, style_by_id
 from tests.test_theme_tokens import SCREENS, render_screen
@@ -514,8 +517,18 @@ LIGHT_EXEMPT = frozenset(
 
 
 @pytest.fixture(scope="module")
-def documents(django_db_setup, django_db_blocker):
-    """Render every screen once per palette rather than once per ledger row."""
+def documents(
+    django_db_setup: None, django_db_blocker: DjangoDbBlocker
+) -> dict[tuple[str, str], Element]:
+    """Render every screen once per palette rather than once per ledger row.
+
+    Args:
+        django_db_setup: Creates the test database before the documents are rendered.
+        django_db_blocker: Lifts the database block while the documents are rendered.
+
+    Returns:
+        Rendered screen documents keyed by palette and screen.
+    """
     from django.contrib.auth import get_user_model
 
     from todo.models import Profile
@@ -535,7 +548,7 @@ def documents(django_db_setup, django_db_blocker):
     return rendered
 
 
-def resolve(root, spec):
+def resolve(root: Element, spec: str) -> str:
     """Return one colour named as rule[:state].attribute from a stylesheet.
 
     Args:
@@ -562,7 +575,18 @@ def resolve(root, spec):
 
 @pytest.mark.parametrize("palette", ["light", "dark"])
 @pytest.mark.parametrize("row", PAIRS, ids=lambda r: f"{r[0]}-{r[1]}-on-{r[2]}")
-def test_every_declared_pair_clears_its_floor(palette, row, documents):
+def test_every_declared_pair_clears_its_floor(
+    palette: str,
+    row: tuple[str, str, str, float],
+    documents: dict[tuple[str, str], Element],
+) -> None:
+    """Every declared pair clears its floor.
+
+    Args:
+        palette: Theme palette under test, light or dark.
+        row: Ledger row naming the screen, the two colours and the contrast floor.
+        documents: Screens rendered once per palette, keyed by palette and screen.
+    """
     screen, foreground, background, floor = row
     root = documents[palette, screen]
     ratio = contrast_ratio(resolve(root, foreground), resolve(root, background))
@@ -584,7 +608,19 @@ def test_every_declared_pair_clears_its_floor(palette, row, documents):
 
 @pytest.mark.parametrize("palette", ["light", "dark"])
 @pytest.mark.parametrize("row", PRESSED, ids=lambda r: f"{r[0]}-{r[1]}")
-def test_every_pressed_row_stays_readable_while_it_is_held(palette, row, documents):
+def test_every_pressed_row_stays_readable_while_it_is_held(
+    palette: str,
+    row: tuple[str, str, str, str, str, float],
+    documents: dict[tuple[str, str], Element],
+) -> None:
+    """Every pressed row stays readable while it is held.
+
+    Args:
+        palette: Theme palette under test, light or dark.
+        row: Ledger row naming the screen, the pressed fill, its surface, the ink, the
+        pressed ink and the floor.
+        documents: Screens rendered once per palette, keyed by palette and screen.
+    """
     screen, fill_spec, surface_spec, ink_spec, pressed_ink_spec, floor = row
     root = documents[palette, screen]
     fill = resolve(root, fill_spec)
@@ -608,7 +644,14 @@ def test_every_pressed_row_stays_readable_while_it_is_held(palette, row, documen
     )
 
 
-def test_every_ledger_row_names_a_style_the_screen_actually_declares(documents):
+def test_every_ledger_row_names_a_style_the_screen_actually_declares(
+    documents: dict[tuple[str, str], Element],
+) -> None:
+    """Every ledger row names a style the screen actually declares.
+
+    Args:
+        documents: Screens rendered once per palette, keyed by palette and screen.
+    """
     # A renamed style id must fail loudly here instead of quietly dropping the row.
     for screen, foreground, background, _ in PAIRS:
         for spec in (foreground, background):
@@ -618,7 +661,8 @@ def test_every_ledger_row_names_a_style_the_screen_actually_declares(documents):
             resolve(documents["light", screen], spec)
 
 
-def test_the_light_exemption_list_has_no_stale_entries():
+def test_the_light_exemption_list_has_no_stale_entries() -> None:
+    """The light exemption list has no stale entries."""
     declared = {(screen, fg, bg) for screen, fg, bg, _ in PAIRS}
 
     assert LIGHT_EXEMPT <= declared, sorted(LIGHT_EXEMPT - declared)

@@ -10,10 +10,11 @@ resolved to something other than the literal it replaced.
 import json
 import re
 from pathlib import Path
+from xml.etree.ElementTree import Element
 
 import pytest
-from django.contrib.auth.models import AnonymousUser
-from django.test import Client
+from django.contrib.auth.models import AbstractUser, AnonymousUser
+from django.test import Client, RequestFactory
 from django.urls import reverse
 
 from tests.test_forms_ui import NS, assert_hxml, contrast_ratio, style_by_id
@@ -40,7 +41,13 @@ SCREENS = {
 }
 
 
-def render_screen(user, screen, *, headers=None, palette=None):
+def render_screen(
+    user: AbstractUser,
+    screen: str,
+    *,
+    headers: dict[str, str] | None = None,
+    palette: str | None = None,
+) -> Element:
     """Return the parsed document for one named screen of the golden set.
 
     Args:
@@ -65,7 +72,7 @@ def render_screen(user, screen, *, headers=None, palette=None):
     return assert_hxml(response, status=expected)
 
 
-def stylesheet_rules(root):
+def stylesheet_rules(root: Element) -> dict[str, dict[str, str]]:
     """Return one screen's stylesheet as {rule key: {attribute: value}}.
 
     A rule key is the style id, or id:modifier for a <modifier> block, so a
@@ -93,8 +100,14 @@ def stylesheet_rules(root):
 
 @pytest.mark.parametrize("screen", sorted(SCREENS))
 def test_the_light_stylesheet_still_resolves_to_the_literals_it_shipped_with(
-    screen, user
-):
+    screen: str, user: AbstractUser
+) -> None:
+    """The light stylesheet still resolves to the literals it shipped with.
+
+    Args:
+        screen: Screen under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # This is the falsifiable half of "the extraction did not touch light". Every
     # (rule, attribute) the screen shipped with before todo/theme.py existed must
     # still resolve to the same value. ADDING an attribute is allowed -- tintColor
@@ -125,28 +138,50 @@ COLOUR_ATTRIBUTES = (
 HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
-def test_light_and_dark_declare_the_same_token_names():
+def test_light_and_dark_declare_the_same_token_names() -> None:
+    """Light and dark declare the same token names."""
     assert set(theme.LIGHT) == set(theme.DARK)
     for name, table in (("light", theme.LIGHT), ("dark", theme.DARK)):
         for token, value in table.items():
             assert HEX.match(value), f"{name}.{token} = {value!r}"
 
 
-def test_an_account_with_no_profile_row_still_gets_a_palette(user, rf):
+def test_an_account_with_no_profile_row_still_gets_a_palette(
+    user: AbstractUser, rf: RequestFactory
+) -> None:
+    """An account with no profile row still gets a palette.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        rf: Factory that builds the requests under test.
+    """
     request = rf.get("/hv/dashboard/")
     request.user = user
 
     assert context_processors.theme(request)["theme"] is theme.LIGHT
 
 
-def test_an_anonymous_request_gets_the_light_palette(rf):
+def test_an_anonymous_request_gets_the_light_palette(rf: RequestFactory) -> None:
+    """An anonymous request gets the light palette.
+
+    Args:
+        rf: Factory that builds the requests under test.
+    """
     request = rf.get("/hv/login/")
     request.user = AnonymousUser()
 
     assert context_processors.theme(request)["theme"] is theme.LIGHT
 
 
-def test_a_profile_set_to_dark_selects_the_dark_palette(user, rf):
+def test_a_profile_set_to_dark_selects_the_dark_palette(
+    user: AbstractUser, rf: RequestFactory
+) -> None:
+    """A profile set to dark selects the dark palette.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        rf: Factory that builds the requests under test.
+    """
     Profile.objects.create(user=user, theme=Profile.Theme.DARK)
     user.refresh_from_db()
     request = rf.get("/hv/dashboard/")
@@ -157,7 +192,17 @@ def test_a_profile_set_to_dark_selects_the_dark_palette(user, rf):
 
 @pytest.mark.parametrize("screen", sorted(SCREENS))
 @pytest.mark.parametrize("palette", ["light", "dark"])
-def test_no_colour_attribute_on_any_screen_renders_empty(palette, screen, request):
+def test_no_colour_attribute_on_any_screen_renders_empty(
+    palette: str, screen: str, request: pytest.FixtureRequest
+) -> None:
+    """No colour attribute on any screen renders empty.
+
+    Args:
+        palette: Theme palette under test, light or dark.
+        screen: Screen under test.
+        request: Pytest request used to look up the user fixture of the palette under
+        test.
+    """
     # A mistyped {{ theme.surfce }} resolves to the empty string and Hyperview's
     # `string` converter passes it straight through to React Native, so a typo
     # ships a colourless screen instead of raising. Both palettes are scanned
@@ -173,7 +218,7 @@ def test_no_colour_attribute_on_any_screen_renders_empty(palette, screen, reques
                 )
 
 
-def _placeholder_fill(root, node):
+def _placeholder_fill(root: Element, node: Element) -> str:
     """Return the fill of the box a placeholder string is drawn inside.
 
     Args:
@@ -195,7 +240,17 @@ def _placeholder_fill(root, node):
 
 @pytest.mark.parametrize("screen", sorted(SCREENS))
 @pytest.mark.parametrize("palette", ["light", "dark"])
-def test_every_placeholder_states_its_own_colour(palette, screen, request):
+def test_every_placeholder_states_its_own_colour(
+    palette: str, screen: str, request: pytest.FixtureRequest
+) -> None:
+    """Every placeholder states its own colour.
+
+    Args:
+        palette: Theme palette under test, light or dark.
+        screen: Screen under test.
+        request: Pytest request used to look up the user fixture of the palette under
+        test.
+    """
     # An omitted placeholderTextColor is not neutral: React Native paints its own
     # grey, which is a hard-coded literal no palette owns, and on <picker-field>
     # the empty-value label falls back to the FULL field ink instead -- so "No
@@ -224,7 +279,14 @@ def test_every_placeholder_states_its_own_colour(palette, screen, request):
         )
 
 
-def test_the_sign_in_screens_follow_the_theme_cookie_because_they_have_no_profile(rf):
+def test_the_sign_in_screens_follow_the_theme_cookie_because_they_have_no_profile(
+    rf: RequestFactory,
+) -> None:
+    """The sign-in screens follow the theme cookie because they have no profile.
+
+    Args:
+        rf: Factory that builds the requests under test.
+    """
     # Anonymous by construction: a user whose session lapses at night must not be
     # handed a full-brightness white screen because the server has nobody to ask.
     request = rf.get("/hv/login/")
@@ -234,7 +296,15 @@ def test_the_sign_in_screens_follow_the_theme_cookie_because_they_have_no_profil
     assert context_processors.theme(request)["theme"] is theme.DARK
 
 
-def test_a_stored_profile_outranks_the_cookie(user, rf):
+def test_a_stored_profile_outranks_the_cookie(
+    user: AbstractUser, rf: RequestFactory
+) -> None:
+    """A stored profile outranks the cookie.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        rf: Factory that builds the requests under test.
+    """
     # The cookie is a fallback, never a second source of truth: a preference
     # changed on another device must not lose to a stale copy on this one.
     Profile.objects.create(user=user, theme=Profile.Theme.LIGHT)
@@ -246,7 +316,14 @@ def test_a_stored_profile_outranks_the_cookie(user, rf):
     assert context_processors.theme(request)["theme"] is theme.LIGHT
 
 
-def test_a_junk_cookie_cannot_select_anything_but_a_shipped_palette(rf):
+def test_a_junk_cookie_cannot_select_anything_but_a_shipped_palette(
+    rf: RequestFactory,
+) -> None:
+    """A junk cookie cannot select anything but a shipped palette.
+
+    Args:
+        rf: Factory that builds the requests under test.
+    """
     request = rf.get("/hv/login/")
     request.user = AnonymousUser()
     request.COOKIES[THEME_COOKIE] = "../../etc/passwd"
@@ -254,7 +331,8 @@ def test_a_junk_cookie_cannot_select_anything_but_a_shipped_palette(rf):
     assert context_processors.theme(request)["theme"] is theme.LIGHT
 
 
-def test_no_template_still_holds_a_colour_literal():
+def test_no_template_still_holds_a_colour_literal() -> None:
+    """No template still holds a colour literal."""
     # Every colour must come from the palette, or the dark theme silently keeps a
     # light value on one attribute nobody looked at.
     root = Path(__file__).resolve().parents[1] / "hyperview"
@@ -271,7 +349,8 @@ def test_no_template_still_holds_a_colour_literal():
     assert not offenders, offenders
 
 
-def test_no_xml_comment_can_break_the_template_validator():
+def test_no_xml_comment_can_break_the_template_validator() -> None:
+    """No XML comment can break the template validator."""
     # dj_hyperview raises TemplateValidationError[malformed_xml] for a comment
     # containing a double hyphen, and this work added a lot of comments.
     root = Path(__file__).resolve().parents[1] / "hyperview"

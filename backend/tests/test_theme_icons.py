@@ -10,8 +10,10 @@ the STYLE is the only thing left to hold to account.
 
 from base64 import b64decode
 from io import BytesIO
+from xml.etree.ElementTree import Element
 
 import pytest
+from django.contrib.auth.models import AbstractUser
 from django.test import Client
 from django.urls import reverse
 from PIL import Image
@@ -34,8 +36,17 @@ NAV_HOSTS = ("todo:dashboard", "todo:tasks", "todo:categories", "todo:settings")
 UNTINTED = {"list.png", "sun.png", "alert.png", "calendar.png"}
 
 
-def screen(who, route, **query):
-    """Sign in and render one screen document."""
+def screen(who: AbstractUser, route: str, **query: str) -> Element:
+    """Sign in and render one screen document.
+
+    Args:
+        who: Account that signs in to see the screen.
+        route: Route name of the screen under test.
+        **query: Query parameters of the request.
+
+    Returns:
+        Parsed document of the rendered screen.
+    """
     client = Client()
     client.force_login(who)
     return assert_hxml(client.get(reverse(route), query))
@@ -44,8 +55,16 @@ def screen(who, route, **query):
 @pytest.mark.parametrize("route", NAV_HOSTS)
 @pytest.mark.parametrize("palette", ["light", "dark"])
 def test_the_nav_glyph_is_tinted_the_colour_the_nav_label_declares(
-    palette, route, request
-):
+    palette: str, route: str, request: pytest.FixtureRequest
+) -> None:
+    """The navigation glyph is tinted the colour the nav label declares.
+
+    Args:
+        palette: Theme palette under test, light or dark.
+        route: Route name of the screen under test.
+        request: Pytest request used to look up the user fixture of the palette under
+        test.
+    """
     # The tie the deleted PNG-decoding guard made, one level up: the glyph and the
     # word under it are still two declarations of one colour, and they still must
     # not drift into a grey icon beside a blue word.
@@ -62,7 +81,16 @@ def test_the_nav_glyph_is_tinted_the_colour_the_nav_label_declares(
 
 
 @pytest.mark.parametrize("palette", ["light", "dark"])
-def test_the_sign_out_glyph_is_tinted_the_colour_its_label_declares(palette, request):
+def test_the_sign_out_glyph_is_tinted_the_colour_its_label_declares(
+    palette: str, request: pytest.FixtureRequest
+) -> None:
+    """The sign-out glyph is tinted the colour its label declares.
+
+    Args:
+        palette: Theme palette under test, light or dark.
+        request: Pytest request used to look up the user fixture of the palette under
+        test.
+    """
     root = screen(request.getfixturevalue(f"{palette}_user"), "todo:dashboard")
     tint = style_by_id(root, "side-menu-logout-icon").attrib["tintColor"]
 
@@ -76,7 +104,16 @@ def test_the_sign_out_glyph_is_tinted_the_colour_its_label_declares(palette, req
 
 
 @pytest.mark.parametrize("palette", ["light", "dark"])
-def test_the_side_menu_glyphs_stay_visible_on_every_row_state(palette, request):
+def test_the_side_menu_glyphs_stay_visible_on_every_row_state(
+    palette: str, request: pytest.FixtureRequest
+) -> None:
+    """The side menu glyphs stay visible on every row state.
+
+    Args:
+        palette: Theme palette under test, light or dark.
+        request: Pytest request used to look up the user fixture of the palette under
+        test.
+    """
     # Same contract as before the migration -- a glyph carries the row's identity
     # and owes 3:1 idle, active and pressed -- read from the tint instead of the
     # file, and now checked in both palettes rather than only the one that ships.
@@ -86,7 +123,7 @@ def test_the_side_menu_glyphs_stay_visible_on_every_row_state(palette, request):
     client.force_login(who)
     opened = assert_hxml(client.get(reverse("todo:menu"), {"active": "tasks"}))
 
-    def fill(style_id):
+    def fill(style_id: str) -> str | None:
         return style_by_id(root, style_id).attrib.get("backgroundColor")
 
     pressed = root.find(
@@ -113,7 +150,17 @@ def test_the_side_menu_glyphs_stay_visible_on_every_row_state(palette, request):
 
 @pytest.mark.parametrize("route", NAV_HOSTS + ("todo:task-new", "todo:category-new"))
 @pytest.mark.parametrize("palette", ["light", "dark"])
-def test_every_glyph_on_a_themed_surface_declares_a_tint(palette, route, request):
+def test_every_glyph_on_a_themed_surface_declares_a_tint(
+    palette: str, route: str, request: pytest.FixtureRequest
+) -> None:
+    """Every glyph on a themed surface declares a tint.
+
+    Args:
+        palette: Theme palette under test, light or dark.
+        route: Route name of the screen under test.
+        request: Pytest request used to look up the user fixture of the palette under
+        test.
+    """
     # The completeness half: a NEW glyph dropped onto a card cannot ship untinted,
     # because in the dark palette it would keep whatever colour it was exported in
     # and there is no test that would otherwise notice.
@@ -151,7 +198,8 @@ def test_every_glyph_on_a_themed_surface_declares_a_tint(palette, route, request
             assert any(tints), f"{palette}/{route}: {source} declares no tintColor"
 
 
-def test_the_two_palettes_tint_the_navigation_differently():
+def test_the_two_palettes_tint_the_navigation_differently() -> None:
+    """The two palettes tint the navigation differently."""
     # A tint that is identical in both palettes is a token someone forgot to give
     # a dark value; this is what stops the migration being cosmetic.
     assert theme.LIGHT["ink_nav"] != theme.DARK["ink_nav"]
@@ -160,8 +208,15 @@ def test_the_two_palettes_tint_the_navigation_differently():
 
 @pytest.mark.parametrize("palette", ["light", "dark"])
 def test_every_style_the_side_menu_uses_is_declared_by_the_screen_that_hosts_it(
-    palette, request
-):
+    palette: str, request: pytest.FixtureRequest
+) -> None:
+    """Every style the side menu uses is declared by the screen that hosts it.
+
+    Args:
+        palette: Theme palette under test, light or dark.
+        request: Pytest request used to look up the user fixture of the palette under
+        test.
+    """
     # `replace` does not rebuild stylesheets, so the menu fragment may only name ids
     # its HOST SCREEN declares, and dashboard.xml is the only screen that includes
     # side_menu_host.xml. Select screen-level style rules, never nested modifiers.

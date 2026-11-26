@@ -26,7 +26,8 @@ BACKEND = Path(__file__).resolve().parents[1]
 ONE_WINS_ONE_IS_REFUSED = [201, 422]
 
 
-def test_the_default_database_takes_the_write_lock_up_front_and_waits_for_it():
+def test_the_default_database_takes_the_write_lock_up_front_and_waits_for_it() -> None:
+    """The default database takes the write lock up front and waits for it."""
     options = project.DATABASES["default"]["OPTIONS"]
 
     assert options["transaction_mode"] == "IMMEDIATE"
@@ -34,8 +35,19 @@ def test_the_default_database_takes_the_write_lock_up_front_and_waits_for_it():
     assert options["timeout"] >= 10
 
 
-def run_race(database, settings_module="tests.settings_file_database", **env):
-    """Run the race in a clean child interpreter and return the finished process."""
+def run_race(
+    database: Path, settings_module: str = "tests.settings_file_database", **env: str
+) -> subprocess.CompletedProcess[str]:
+    """Run the race in a clean child interpreter and return the finished process.
+
+    Args:
+        database: Path of the SQLite database file the race uses.
+        settings_module: Settings module the child interpreter loads.
+        **env: Environment variables added to the child interpreter.
+
+    Returns:
+        The finished child process with its output captured.
+    """
     return subprocess.run(
         [sys.executable, "-m", "tests.sqlite_race"],
         cwd=BACKEND,
@@ -56,39 +68,81 @@ def run_race(database, settings_module="tests.settings_file_database", **env):
 
 
 @pytest.fixture(scope="module")
-def races(tmp_path_factory):
-    """Run the scenarios once and return each one's list of per-trial statuses."""
+def races(tmp_path_factory: pytest.TempPathFactory) -> dict[str, list[object]]:
+    """Run the scenarios once and return each one's list of per-trial statuses.
+
+    Args:
+        tmp_path_factory: Factory for the temporary directory of the race database.
+
+    Returns:
+        Per-trial statuses of each race scenario.
+    """
     result = run_race(tmp_path_factory.mktemp("races") / "race.sqlite3")
     assert result.returncode == 0, result.stderr[-2000:]
     return json.loads(result.stdout.splitlines()[-1])
 
 
-def test_no_race_between_two_requests_answers_a_500(races):
+def test_no_race_between_two_requests_answers_a_500(
+    races: dict[str, list[object]],
+) -> None:
+    """No race between two requests answers a 500.
+
+    Args:
+        races: Per-trial statuses of each race scenario, run once.
+    """
     for scenario, trials in races.items():
         failed = [statuses for statuses in trials if 500 in statuses]
         assert not failed, f"{scenario}: {len(failed)} of {len(trials)} trials"
 
 
-def test_a_duplicate_category_created_twice_at_once_keeps_one_and_refuses_one(races):
+def test_a_duplicate_category_created_twice_at_once_keeps_one_and_refuses_one(
+    races: dict[str, list[object]],
+) -> None:
+    """A duplicate category created twice at once keeps one and refuses one.
+
+    Args:
+        races: Per-trial statuses of each race scenario, run once.
+    """
     assert all(
         sorted(statuses) == ONE_WINS_ONE_IS_REFUSED
         for statuses in races["duplicate_category"]
     )
 
 
-def test_two_renames_to_the_same_name_keep_one_and_refuse_one(races):
+def test_two_renames_to_the_same_name_keep_one_and_refuse_one(
+    races: dict[str, list[object]],
+) -> None:
+    """Two renames to the same name keep one and refuse one.
+
+    Args:
+        races: Per-trial statuses of each race scenario, run once.
+    """
     assert all(
         sorted(statuses) == [200, 422] for statuses in races["colliding_renames"]
     )
 
 
-def test_a_task_created_while_its_category_is_deleted_never_errors(races):
+def test_a_task_created_while_its_category_is_deleted_never_errors(
+    races: dict[str, list[object]],
+) -> None:
+    """A task created while its category is deleted never errors.
+
+    Args:
+        races: Per-trial statuses of each race scenario, run once.
+    """
     for created, deleted in races["task_against_category_delete"]:
         assert created in (201, 422)
         assert deleted == 200
 
 
-def test_two_accounts_creating_tasks_at_once_both_succeed(races):
+def test_two_accounts_creating_tasks_at_once_both_succeed(
+    races: dict[str, list[object]],
+) -> None:
+    """Two accounts creating tasks at once both succeed.
+
+    Args:
+        races: Per-trial statuses of each race scenario, run once.
+    """
     assert all(statuses == [201, 201] for statuses in races["two_users_create_tasks"])
 
 
@@ -102,7 +156,15 @@ SETTINGS_PROBE = (
 
 
 @pytest.mark.parametrize("redis_cache", ["0", "1"], ids=["cache-off", "cache-on"])
-def test_the_race_settings_publish_nothing_and_cache_in_memory(tmp_path, redis_cache):
+def test_the_race_settings_publish_nothing_and_cache_in_memory(
+    tmp_path: Path, redis_cache: str
+) -> None:
+    """The race settings publish nothing and cache in memory.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+        redis_cache: Whether the cache switch is set to on (1) or off (0).
+    """
     # The project settings turn on realtime and, with ENABLE_REDIS_CACHE, a Redis
     # template cache. The races used to inherit both: 240 hints published to the
     # development channels of the users with ids 1 and 2.
@@ -136,7 +198,15 @@ LEAKS = {
 
 
 @pytest.mark.parametrize("leak", LEAKS)
-def test_the_race_refuses_to_run_when_settings_would_reach_redis(tmp_path, leak):
+def test_the_race_refuses_to_run_when_settings_would_reach_redis(
+    tmp_path: Path, leak: str
+) -> None:
+    """The race refuses to run when the settings would reach Redis.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+        leak: Name of the settings leak the race must refuse to run with.
+    """
     (tmp_path / "leaky_race_settings.py").write_text(
         f"from tests.settings_file_database import *\n{LEAKS[leak]}\n"
     )

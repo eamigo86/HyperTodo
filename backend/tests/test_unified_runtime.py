@@ -9,8 +9,11 @@ from pathlib import Path
 
 import pytest
 from dj_hyperview.contrib.database.services import publish_template
+from django.contrib.auth.models import AbstractUser
 from django.db import transaction
+from django.test import Client
 from django.urls import reverse
+from pytest_django.fixtures import DjangoCaptureOnCommitCallbacks, Settings
 
 from config import settings as base
 from tests.test_session_contract import _confirm, _headers
@@ -38,8 +41,17 @@ SOURCES = [
     ],
 )
 def test_launchers_execute_one_settings_and_asgi_contract(
-    tmp_path, target, cache, host, lan_ip
-):
+    tmp_path: Path, target: str, cache: bool, host: str, lan_ip: str
+) -> None:
+    """Launchers execute one settings and ASGI contract.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+        target: Make target the launcher runs.
+        cache: Whether the Redis cache is expected to be enabled.
+        host: Host the backend is expected to bind and allow.
+        lan_ip: LAN address given to the launcher, or an empty string.
+    """
     # Execute Make, replacing only uv: inspect actual argv/settings without a server,
     # network connection, migration, or opening the application database.
     uv = tmp_path / "uv"
@@ -119,7 +131,8 @@ def test_launchers_execute_one_settings_and_asgi_contract(
         assert state["csrf"][:2] == ["http://127.0.0.1:8000", "http://10.0.2.2:8000"]
 
 
-def test_only_the_device_launcher_may_bind_every_interface():
+def test_only_the_device_launcher_may_bind_every_interface() -> None:
+    """Only the device launcher may bind every interface."""
     # The development seed can create admin/admin123 while DEBUG is on, so a bind to
     # 0.0.0.0 exposes that account to the whole network. Only the launcher that a
     # physical phone needs may do it.
@@ -144,7 +157,8 @@ def test_only_the_device_launcher_may_bind_every_interface():
     assert "local-memory" not in makefile
 
 
-def test_device_launcher_requires_lan_ip_before_starting_backend():
+def test_device_launcher_requires_lan_ip_before_starting_backend() -> None:
+    """Device launcher requires LAN IP before starting backend."""
     result = subprocess.run(
         ["make", "--no-print-directory", "backend-run-device", "LAN_IP="],
         cwd=ROOT,
@@ -157,18 +171,29 @@ def test_device_launcher_requires_lan_ip_before_starting_backend():
     assert "uvicorn" not in result.stdout
 
 
-def test_no_alternate_application_settings_remain():
+def test_no_alternate_application_settings_remain() -> None:
+    """No alternate application settings remain."""
     assert not (ROOT / "backend/config/settings_sse.py").exists()
 
 
 @pytest.mark.django_db
 def test_normal_db_about_commit_hint_and_rollback_refresh(
-    settings,
-    client,
-    user,
-    monkeypatch,
-    django_capture_on_commit_callbacks,
-):
+    settings: Settings,
+    client: Client,
+    user: AbstractUser,
+    monkeypatch: pytest.MonkeyPatch,
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """The normal database publishes after commit and refreshes after a rollback.
+
+    Args:
+        settings: Django settings overridden by this test.
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     from todo import realtime_notifications
 
     # Use production sources and realtime, but KEEP the isolated pytest DB/cache.

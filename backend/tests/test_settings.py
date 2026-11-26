@@ -2,12 +2,15 @@
 
 from pathlib import Path
 from xml.etree import ElementTree
+from xml.etree.ElementTree import Element
 
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractUser
 from django.contrib.staticfiles import finders
 from django.forms.models import model_to_dict
+from django.http import HttpResponse
 from django.test import Client
 from django.urls import reverse
 
@@ -28,20 +31,30 @@ from todo.services import issue_biometric_token, update_profile
 pytestmark = pytest.mark.django_db
 
 
-def _bound(user, **overrides):
+def _bound(user: AbstractUser, **overrides: str) -> ProfileForm:
     """Bind ProfileForm to a full payload with the given overrides."""
     data = {"first_name": "Ada", "last_name": "Lovelace", "email": "ada@example.com"}
     return ProfileForm({**data, **overrides}, instance=user)
 
 
-def test_a_blank_email_is_valid_because_the_model_allows_it(user):
+def test_a_blank_email_is_valid_because_the_model_allows_it(user: AbstractUser) -> None:
+    """A blank email is valid because the model allows it.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     form = _bound(user, email="")
 
     assert form.is_valid(), form.errors
     assert form.cleaned_data["email"] == ""
 
 
-def test_a_blank_profile_is_valid_and_clears_every_field(user):
+def test_a_blank_profile_is_valid_and_clears_every_field(user: AbstractUser) -> None:
+    """A blank profile is valid and clears every field.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # All three model fields are blank=True, so an empty POST is a legitimate
     # "clear my profile", not a validation failure.
     form = ProfileForm({"first_name": "", "last_name": "", "email": ""}, instance=user)
@@ -49,14 +62,29 @@ def test_a_blank_profile_is_valid_and_clears_every_field(user):
     assert form.is_valid(), form.errors
 
 
-def test_the_email_domain_is_normalised_the_way_django_normalises_it(user):
+def test_the_email_domain_is_normalised_the_way_django_normalises_it(
+    user: AbstractUser,
+) -> None:
+    """The email domain is normalised the way Django normalises it.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     form = _bound(user, email="Ada@EXAMPLE.COM")
 
     assert form.is_valid(), form.errors
     assert form.cleaned_data["email"] == "Ada@example.com"
 
 
-def test_an_email_another_account_already_holds_is_rejected(user, other_user):
+def test_an_email_another_account_already_holds_is_rejected(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """An email another account already holds is rejected.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     other_user.email = "ADA@example.com"
     other_user.save(update_fields=("email",))
 
@@ -66,21 +94,40 @@ def test_an_email_another_account_already_holds_is_rejected(user, other_user):
     assert form.errors["email"] == ["This email is already in use."]
 
 
-def test_resaving_your_own_email_is_not_a_collision(user):
+def test_resaving_your_own_email_is_not_a_collision(user: AbstractUser) -> None:
+    """Resaving your own email is not a collision.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     user.email = "ada@example.com"
     user.save(update_fields=("email",))
 
     assert _bound(user, email="ada@example.com").is_valid()
 
 
-def test_a_first_name_longer_than_the_model_allows_is_rejected(user):
+def test_a_first_name_longer_than_the_model_allows_is_rejected(
+    user: AbstractUser,
+) -> None:
+    """A first name longer than the model allows is rejected.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     form = _bound(user, first_name="A" * 151)
 
     assert not form.is_valid()
     assert "first_name" in form.errors
 
 
-def test_update_profile_writes_every_field_and_returns_the_instance(user):
+def test_update_profile_writes_every_field_and_returns_the_instance(
+    user: AbstractUser,
+) -> None:
+    """The update_profile function writes every field and returns the instance.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     saved = update_profile(
         user=user, first_name="Ada", last_name="Lovelace", email="ada@example.com"
     )
@@ -94,7 +141,12 @@ def test_update_profile_writes_every_field_and_returns_the_instance(user):
     )
 
 
-def test_update_profile_leaves_credentials_alone(user):
+def test_update_profile_leaves_credentials_alone(user: AbstractUser) -> None:
+    """The update_profile function leaves credentials alone.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     password = user.password
 
     update_profile(user=user, first_name="Ada", last_name="", email="")
@@ -107,7 +159,15 @@ def test_update_profile_leaves_credentials_alone(user):
 # --- endpoint -------------------------------------------------------------
 
 
-def test_the_settings_screen_prefills_the_signed_in_account(client, user):
+def test_the_settings_screen_prefills_the_signed_in_account(
+    client: Client, user: AbstractUser
+) -> None:
+    """The settings screen prefills the signed-in account.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     user.first_name = "Ada"
     user.email = "ada@example.com"
     user.save(update_fields=("first_name", "email"))
@@ -125,13 +185,28 @@ def test_the_settings_screen_prefills_the_signed_in_account(client, user):
     assert values["email"] == "ada@example.com"
 
 
-def test_settings_sends_an_expired_session_to_the_sign_in_screen(client, user):
+def test_settings_sends_an_expired_session_to_the_sign_in_screen(
+    client: Client, user: AbstractUser
+) -> None:
+    """The settings screen sends an expired session to the sign-in screen.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     root = assert_hxml(client.get(reverse("todo:settings")), status=401)
 
     assert root.find(".//hv:screen[@id='session-expired-screen']", NS) is not None
 
 
-def test_a_settings_post_without_a_session_answers_a_recoverable_fragment(client):
+def test_a_settings_post_without_a_session_answers_a_recoverable_fragment(
+    client: Client,
+) -> None:
+    """A settings POST without a session answers a recoverable fragment.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     response = client.post(reverse("todo:settings"), {"first_name": "Ada"})
     root = assert_hxml(response, status=401)
 
@@ -140,7 +215,15 @@ def test_a_settings_post_without_a_session_answers_a_recoverable_fragment(client
     assert root.find("./hv:behavior[@action='reload']", NS) is not None
 
 
-def test_settings_rejects_unsupported_methods(client, user):
+def test_settings_rejects_unsupported_methods(
+    client: Client, user: AbstractUser
+) -> None:
+    """Settings rejects unsupported methods.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
 
     response = client.put(reverse("todo:settings"))
@@ -149,7 +232,14 @@ def test_settings_rejects_unsupported_methods(client, user):
     assert response.headers["Allow"] == "GET, POST"
 
 
-def test_a_settings_post_without_a_csrf_token_stays_a_bare_fragment(user):
+def test_a_settings_post_without_a_csrf_token_stays_a_bare_fragment(
+    user: AbstractUser,
+) -> None:
+    """A settings POST without a CSRF token stays a bare fragment.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     enforcing = Client(enforce_csrf_checks=True)
     enforcing.force_login(user)
 
@@ -165,7 +255,15 @@ def test_a_settings_post_without_a_csrf_token_stays_a_bare_fragment(user):
         assert root.find(f".//hv:{forbidden}", NS) is None
 
 
-def test_saving_a_valid_profile_answers_a_bare_reloading_confirmation(client, user):
+def test_saving_a_valid_profile_answers_a_bare_reloading_confirmation(
+    client: Client, user: AbstractUser
+) -> None:
+    """Saving a valid profile answers a bare reloading confirmation.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
 
     response = client.post(
@@ -194,7 +292,15 @@ def test_saving_a_valid_profile_answers_a_bare_reloading_confirmation(client, us
     )
 
 
-def test_saving_a_profile_announces_the_change_to_the_screens_underneath(client, user):
+def test_saving_a_profile_announces_the_change_to_the_screens_underneath(
+    client: Client, user: AbstractUser
+) -> None:
+    """Saving a profile announces the change to the screens underneath.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # The href-less reload above only refreshes the settings route. Home is
     # `#root-route`, a StackRouter NAVIGATE truncation that merges params without
     # touching params.url, so HvDoc never refetches (hv-doc.tsx:178-193) and the
@@ -213,7 +319,16 @@ def test_saving_a_profile_announces_the_change_to_the_screens_underneath(client,
     assert event.attrib["once"] == "true"
 
 
-def test_an_invalid_profile_answers_the_form_panel_at_422(client, user, other_user):
+def test_an_invalid_profile_answers_the_form_panel_at_422(
+    client: Client, user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """An invalid profile answers the form panel at 422.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     other_user.email = "ada@example.com"
     other_user.save(update_fields=("email",))
     client.force_login(user)
@@ -233,7 +348,15 @@ def test_an_invalid_profile_answers_the_form_panel_at_422(client, user, other_us
     assert user.first_name == ""
 
 
-def test_an_empty_profile_post_clears_the_account_instead_of_failing(client, user):
+def test_an_empty_profile_post_clears_the_account_instead_of_failing(
+    client: Client, user: AbstractUser
+) -> None:
+    """An empty profile post clears the account instead of failing.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     user.first_name = "Ada"
     user.save(update_fields=("first_name",))
     client.force_login(user)
@@ -245,7 +368,15 @@ def test_an_empty_profile_post_clears_the_account_instead_of_failing(client, use
     assert user.first_name == ""
 
 
-def test_saving_a_profile_survives_a_username_the_form_never_shows(client, db):
+def test_saving_a_profile_survives_a_username_the_form_never_shows(
+    client: Client, db: None
+) -> None:
+    """Saving a profile survives a username the form never shows.
+
+    Args:
+        client: Client that requests the screens under test.
+        db: Gives the test access to the database.
+    """
     # A username stored before UnicodeUsernameValidator ran over it (data import,
     # management command, shell create_user) must not make the settings screen
     # unusable: the form does not expose username, so the user could never fix it.
@@ -261,7 +392,15 @@ def test_saving_a_profile_survives_a_username_the_form_never_shows(client, db):
     assert legacy.first_name == "Ada"
 
 
-def test_a_settings_post_cannot_escalate_or_rename_the_account(client, user):
+def test_a_settings_post_cannot_escalate_or_rename_the_account(
+    client: Client, user: AbstractUser
+) -> None:
+    """A settings POST cannot escalate or rename the account.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # The allowlist itself is the thing under test: `fields = "__all__"` is the
     # single most common ModelForm mistake and would hand every signed-in user
     # is_staff, is_superuser and a password overwrite.
@@ -288,7 +427,16 @@ def test_a_settings_post_cannot_escalate_or_rename_the_account(client, user):
     assert user.password == password
 
 
-def test_a_settings_post_cannot_reach_another_account(client, user, other_user):
+def test_a_settings_post_cannot_reach_another_account(
+    client: Client, user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A settings POST cannot reach another account.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     client.force_login(user)
     before = model_to_dict(other_user)
 
@@ -309,12 +457,20 @@ def test_a_settings_post_cannot_reach_another_account(client, user, other_user):
 # --- app version ----------------------------------------------------------
 
 
-def _version_text(response):
+def _version_text(response: HttpResponse) -> str | None:
     root = ElementTree.fromstring(response.content)
     return root.find(".//hv:text[@id='app-version']", NS).text
 
 
-def test_the_screen_renders_the_version_the_binary_reports(client, user):
+def test_the_screen_renders_the_version_the_binary_reports(
+    client: Client, user: AbstractUser
+) -> None:
+    """The screen renders the version the binary reports.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
 
     response = client.get(reverse("todo:settings"), headers={"x-app-version": "1.4.2"})
@@ -322,7 +478,15 @@ def test_the_screen_renders_the_version_the_binary_reports(client, user):
     assert _version_text(response) == "Version 1.4.2"
 
 
-def test_an_old_binary_that_sends_no_version_says_so(client, user):
+def test_an_old_binary_that_sends_no_version_says_so(
+    client: Client, user: AbstractUser
+) -> None:
+    """An old binary that sends no version says so.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
 
     assert _version_text(client.get(reverse("todo:settings"))) == "Version unknown"
@@ -331,7 +495,16 @@ def test_an_old_binary_that_sends_no_version_says_so(client, user):
 @pytest.mark.parametrize(
     "junk", ["A" * 200, "<script>alert(1)</script>", "1.0 OR 1=1", "1.0\n2.0"]
 )
-def test_a_junk_version_header_never_reaches_the_document(client, user, junk):
+def test_a_junk_version_header_never_reaches_the_document(
+    client: Client, user: AbstractUser, junk: str
+) -> None:
+    """A junk version header never reaches the document.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        junk: Version header value that is hostile or not a version.
+    """
     # The header is attacker-controlled text rendered into XML. Escaping is not
     # enough on its own: a 4KB value would still wreck the layout.
     client.force_login(user)
@@ -346,7 +519,15 @@ def test_a_junk_version_header_never_reaches_the_document(client, user, junk):
 # --- screen contract ------------------------------------------------------
 
 
-def test_the_settings_screen_only_uses_styles_it_declares(client, user):
+def test_the_settings_screen_only_uses_styles_it_declares(
+    client: Client, user: AbstractUser
+) -> None:
+    """The settings screen only uses styles it declares.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
     issue_biometric_token(user=user)
 
@@ -355,7 +536,7 @@ def test_the_settings_screen_only_uses_styles_it_declares(client, user):
     assert style_ids(root) <= declared_ids(root)
 
 
-def _every_settings_shape(user):
+def _every_settings_shape(user: AbstractUser) -> list[Element]:
     """Render every branch of the settings screen and its 422 fragment.
 
     The screen's markup is conditional four ways: the client can or cannot pick a
@@ -377,7 +558,15 @@ def _every_settings_shape(user):
     ]
 
 
-def test_the_settings_screen_declares_no_style_it_no_longer_uses(client, user):
+def test_the_settings_screen_declares_no_style_it_no_longer_uses(
+    client: Client, user: AbstractUser
+) -> None:
+    """The settings screen declares no style it no longer uses.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # The converse of the test above, and the half that was missing. `used <=
     # declared` catches a style id that resolves to nothing; it says nothing at
     # all about twelve rules left behind by markup that moved to another screen,
@@ -393,7 +582,14 @@ def test_the_settings_screen_declares_no_style_it_no_longer_uses(client, user):
     assert declared <= used, sorted(declared - used)
 
 
-def test_the_settings_fragments_only_use_styles_the_screen_declares(user):
+def test_the_settings_fragments_only_use_styles_the_screen_declares(
+    user: AbstractUser,
+) -> None:
+    """The settings fragments only use styles the screen declares.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     enforcing = Client(enforce_csrf_checks=True)
     enforcing.force_login(user)
     screen = enforcing.get(reverse("todo:settings"))
@@ -423,7 +619,15 @@ def test_the_settings_fragments_only_use_styles_the_screen_declares(user):
     assert style_ids(assert_hxml(saved)) <= declared
 
 
-def test_the_settings_save_button_stays_readable_on_blue(client, user):
+def test_the_settings_save_button_stays_readable_on_blue(
+    client: Client, user: AbstractUser
+) -> None:
+    """The settings save button stays readable on blue.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
 
     root = assert_hxml(client.get(reverse("todo:settings")))
@@ -435,7 +639,15 @@ def test_the_settings_save_button_stays_readable_on_blue(client, user):
     assert text.attrib["fontWeight"] == "700"
 
 
-def test_the_settings_version_line_is_readable_body_text(client, user):
+def test_the_settings_version_line_is_readable_body_text(
+    client: Client, user: AbstractUser
+) -> None:
+    """The settings version line is readable body text.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # 13px is not WCAG large text, so the one line a user is asked to read out during
     # support owes the full 4.5:1 against the `screen` canvas it is drawn on. #6E738A
     # was 4.41:1: a fail nobody could see because the string, not the colour, was
@@ -450,7 +662,15 @@ def test_the_settings_version_line_is_readable_body_text(client, user):
     assert contrast_ratio(version.attrib["color"], canvas) >= 4.5
 
 
-def test_every_settings_field_is_labelled_and_tall_enough_to_tap(client, user):
+def test_every_settings_field_is_labelled_and_tall_enough_to_tap(
+    client: Client, user: AbstractUser
+) -> None:
+    """Every settings field is labelled and tall enough to tap.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
 
     root = assert_hxml(client.get(reverse("todo:settings")))
@@ -501,12 +721,20 @@ SETTINGS_ORDER = (
 )
 
 
-def _ordering_key(node):
+def _ordering_key(node: Element) -> str | None:
     """Return whatever names this node in SETTINGS_ORDER, if anything does."""
     return node.attrib.get("id") or node.attrib.get("name") or node.attrib.get("href")
 
 
-def test_the_settings_screen_is_one_column_in_the_order_it_was_asked_for(client, user):
+def test_the_settings_screen_is_one_column_in_the_order_it_was_asked_for(
+    client: Client, user: AbstractUser
+) -> None:
+    """The settings screen is one column in the order it was asked for.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
     # The switch only exists for an enrolled account, and it is part of the order.
     issue_biometric_token(user=user)
@@ -529,7 +757,15 @@ def test_the_settings_screen_is_one_column_in_the_order_it_was_asked_for(client,
     )
 
 
-def test_the_settings_scroll_view_pads_its_content_not_itself(client, user):
+def test_the_settings_scroll_view_pads_its_content_not_itself(
+    client: Client, user: AbstractUser
+) -> None:
+    """The settings scroll view pads its content, not itself.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # Rule 4: on a scroll view, padding of the scrolled content belongs in
     # content-container-style; padding on the view itself clips the scroll.
     client.force_login(user)
@@ -552,7 +788,16 @@ PRIMARY_SCREENS = ("dashboard", "tasks", "categories", "settings")
 
 
 @pytest.mark.parametrize("screen", PRIMARY_SCREENS)
-def test_every_primary_screen_reaches_settings_from_the_tab_bar(client, user, screen):
+def test_every_primary_screen_reaches_settings_from_the_tab_bar(
+    client: Client, user: AbstractUser, screen: str
+) -> None:
+    """Every primary screen reaches settings from the tab bar.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        screen: Primary screen whose tab bar is inspected.
+    """
     client.force_login(user)
 
     root = assert_hxml(client.get(reverse(f"todo:{screen}")))
@@ -564,7 +809,15 @@ def test_every_primary_screen_reaches_settings_from_the_tab_bar(client, user, sc
     assert root.find(".//hv:view[@id='open-side-menu']", NS) is None
 
 
-def test_the_dashboard_avatar_is_the_door_to_the_side_menu(client, user):
+def test_the_dashboard_avatar_is_the_door_to_the_side_menu(
+    client: Client, user: AbstractUser
+) -> None:
+    """The dashboard avatar is the door to the side menu.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # The trigger is the avatar disc alone, sized to be its own hit area. It used
     # to be the whole identity row plus a chevron; the row-wide target forced a
     # minHeight, a pressed modifier and a margin workaround on the sibling, all of
@@ -642,7 +895,15 @@ def test_the_dashboard_avatar_is_the_door_to_the_side_menu(client, user):
     assert host is not None and len(host) == 0
 
 
-def test_the_dashboard_avatar_survives_its_own_press_state(client, user):
+def test_the_dashboard_avatar_survives_its_own_press_state(
+    client: Client, user: AbstractUser
+) -> None:
+    """The dashboard avatar survives its own press state.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # `pressed` propagates to every descendant and each one with a style attribute
     # but no pressed rule falls back to opacity 0.7 (services/index.ts:20-41,
     # DEFAULT_PRESS_OPACITY at services/types.ts:1). The disc IS the whole visual
@@ -677,7 +938,15 @@ def test_the_dashboard_avatar_survives_its_own_press_state(client, user):
     assert contrast_ratio(over(ink, pressed_face, 0.7), pressed_face) >= 3
 
 
-def test_no_side_menu_destination_is_stranded(client, user):
+def test_no_side_menu_destination_is_stranded(
+    client: Client, user: AbstractUser
+) -> None:
+    """No side menu destination is stranded.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # The enumerated guard: every href the side menu offers must also be reachable
     # from the tab bar or from the settings screen, so nothing can only live behind
     # a menu a future edit might drop.
@@ -720,7 +989,15 @@ def test_no_side_menu_destination_is_stranded(client, user):
     assert offered <= tabs | elsewhere, f"stranded: {offered - tabs - elsewhere}"
 
 
-def test_the_side_menu_links_to_settings_and_no_longer_owns_biometrics(client, user):
+def test_the_side_menu_links_to_settings_and_no_longer_owns_biometrics(
+    client: Client, user: AbstractUser
+) -> None:
+    """The side menu links to settings and no longer owns biometrics.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
     issue_biometric_token(user=user)
 
@@ -731,7 +1008,15 @@ def test_the_side_menu_links_to_settings_and_no_longer_owns_biometrics(client, u
     assert menu.find(".//hv:view[@id='biometric-panel']", NS) is None
 
 
-def test_settings_offers_forgetting_biometrics_only_when_enrolled(client, user):
+def test_settings_offers_forgetting_biometrics_only_when_enrolled(
+    client: Client, user: AbstractUser
+) -> None:
+    """Settings offers forgetting biometrics only when enrolled.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # Was a "Forget biometrics on this phone" row posting to its own endpoint.
     # That endpoint is gone: it was an immediate writer on a screen that also
     # holds unsaved text. The control is a pending <switch> inside settings-form
@@ -756,7 +1041,12 @@ def test_settings_offers_forgetting_biometrics_only_when_enrolled(client, user):
     assert not {"href", "verb", "action", "target"} & set(switch.attrib)
 
 
-def test_sign_out_lives_only_in_the_side_menu(user):
+def test_sign_out_lives_only_in_the_side_menu(user: AbstractUser) -> None:
+    """Sign-out lives only in the side menu.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # One exit, not two. The Settings sign-out card was deleted so the side menu
     # is the single place the session can end; this pins both halves of that.
     enforcing = Client(enforce_csrf_checks=True)
@@ -789,8 +1079,15 @@ def test_sign_out_lives_only_in_the_side_menu(user):
 
 @pytest.mark.parametrize("screen", ["tasks", "categories"])
 def test_screens_that_cannot_open_the_side_menu_carry_none_of_its_contract(
-    client, user, screen
-):
+    client: Client, user: AbstractUser, screen: str
+) -> None:
+    """Screens that cannot open the side menu carry none of its contract.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        screen: Screen that cannot open the side menu.
+    """
     # The menu opens from the dashboard hero only, so its host and its sixteen
     # style declarations were dead markup here. This pins the deletion: anyone
     # adding a second trigger has to re-add the declarations deliberately.
@@ -804,7 +1101,8 @@ def test_screens_that_cannot_open_the_side_menu_carry_none_of_its_contract(
     ]
 
 
-def test_no_template_still_asks_for_the_retired_menu_icon():
+def test_no_template_still_asks_for_the_retired_menu_icon() -> None:
+    """No template still asks for the retired menu icon."""
     sources = [
         path.read_text()
         for path in Path(settings.HYPERVIEW["TEMPLATE_DIRS"][0]).rglob("*.xml")
@@ -838,8 +1136,16 @@ MIN_PRESS_FILL_CONTRAST = 1.2
     ],
 )
 def test_pressing_a_row_does_not_dim_its_own_label_out_of_contrast(
-    client, user, route, rows
-):
+    client: Client, user: AbstractUser, route: str, rows: tuple[tuple[str, ...], ...]
+) -> None:
+    """Pressing a row does not dim its own label out of contrast.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        route: Route name of the screen whose rows are pressed.
+        rows: Style ids of each row, its label and the surface it sits on.
+    """
     # `pressed` reaches every descendant (hyper-ref.tsx:445 puts it in options,
     # hv-view/index.tsx:196-212 spreads options into renderChildren) and every styled
     # element whose ids declare NO pressed rule falls back to opacity 0.7
@@ -892,7 +1198,15 @@ def test_pressing_a_row_does_not_dim_its_own_label_out_of_contrast(
         assert held_text.attrib["color"] == ink, text_id
 
 
-def test_the_side_menu_glyph_does_not_dim_with_the_row_it_sits_in(client, user):
+def test_the_side_menu_glyph_does_not_dim_with_the_row_it_sits_in(
+    client: Client, user: AbstractUser
+) -> None:
+    """The side menu glyph does not dim with the row it sits in.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
 
     root = assert_hxml(client.get(reverse("todo:dashboard")))
@@ -903,7 +1217,15 @@ def test_the_side_menu_glyph_does_not_dim_with_the_row_it_sits_in(client, user):
     )
 
 
-def test_the_sign_out_icon_is_baked_in_the_colour_its_label_declares(client, user):
+def test_the_sign_out_icon_is_baked_in_the_colour_its_label_declares(
+    client: Client, user: AbstractUser
+) -> None:
+    """The sign-out icon is baked in the colour its label declares.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # A pre-tinted PNG carries no tintColor, so the file and the style beside it are
     # two independent copies of one colour. Decoding is what stops them drifting.
     client.force_login(user)

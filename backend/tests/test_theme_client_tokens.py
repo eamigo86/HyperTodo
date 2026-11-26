@@ -63,7 +63,8 @@ def client_palettes() -> dict[str, dict[str, str]]:
 @pytest.mark.skipif(
     not CLIENT_TOKENS.exists(), reason="mobile tree is not checked out here"
 )
-def test_every_colour_the_shell_paints_is_the_token_this_repo_owns():
+def test_every_colour_the_shell_paints_is_the_token_this_repo_owns() -> None:
+    """Every colour the shell paints is the token this repo owns."""
     palettes = client_palettes()
 
     assert set(palettes) == {"light", "dark"}, (
@@ -89,7 +90,8 @@ def test_every_colour_the_shell_paints_is_the_token_this_repo_owns():
 @pytest.mark.skipif(
     not CLIENT_SESSION.exists(), reason="mobile tree is not checked out here"
 )
-def test_the_client_reads_the_header_this_repo_actually_sends():
+def test_the_client_reads_the_header_this_repo_actually_sends() -> None:
+    """The client reads the header this repo actually sends."""
     # The two halves name the header independently -- there is no shared constant
     # across a Python and a TypeScript build -- so a rename on either side would
     # otherwise leave both suites green and the shell permanently light.

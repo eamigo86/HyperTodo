@@ -11,16 +11,34 @@ ROOT = Path(__file__).resolve().parents[2]
 GUIDE = ROOT / "backend/docs/installed-adoption.md"
 
 
-def section(text, heading):
+def section(text: str, heading: str) -> str:
+    """Return the body of the README section that follows a heading.
+
+    Args:
+        text: Markdown text of the README.
+        heading: Heading line that opens the section.
+
+    Returns:
+        The text of the section under the heading.
+    """
     body = text.split(heading + "\n", 1)[1]
     return re.split(r"\n#{2,3} ", body, maxsplit=1)[0]
 
 
-def console_commands(text):
+def console_commands(text: str) -> str:
+    """Return the console code blocks of a document joined into one text.
+
+    Args:
+        text: Markdown text of the README.
+
+    Returns:
+        Every console command of the text, one per line.
+    """
     return "\n".join(re.findall(r"```console\n(.*?)\n```", text, re.DOTALL))
 
 
-def test_readme_is_a_short_landing_page_with_ordered_sections():
+def test_readme_is_a_short_landing_page_with_ordered_sections() -> None:
+    """The README is a short landing page with ordered sections."""
     readme = (ROOT / "README.md").read_text()
     headings = [
         "## What HyperTodo tests",
@@ -41,7 +59,8 @@ def test_readme_is_a_short_landing_page_with_ordered_sections():
     assert "Realtime Gate 0" not in readme and "../evidence/" not in readme
 
 
-def test_readme_names_the_seeded_accounts_and_how_to_replace_their_passwords():
+def test_readme_names_the_seeded_accounts_and_how_to_replace_their_passwords() -> None:
+    """README names the seeded accounts and how to replace their passwords."""
     readme = (ROOT / "README.md").read_text()
     for needle in (
         "`admin` / `admin123`",
@@ -54,7 +73,8 @@ def test_readme_names_the_seeded_accounts_and_how_to_replace_their_passwords():
     assert "local-memory" not in readme
 
 
-def test_fresh_setup_is_separate_from_existing_database_upgrade():
+def test_fresh_setup_is_separate_from_existing_database_upgrade() -> None:
+    """Fresh setup is separate from existing database upgrade."""
     guide = GUIDE.read_text()
     fresh = section(guide, "### New disposable database")
     existing = section(guide, "### Existing database")
@@ -64,7 +84,8 @@ def test_fresh_setup_is_separate_from_existing_database_upgrade():
     assert "backup" in existing and "migration" in existing
 
 
-def test_documented_sse_and_go_commands_expand_without_starting_services():
+def test_documented_sse_and_go_commands_expand_without_starting_services() -> None:
+    """Documented SSE and Go commands expand without starting services."""
     guide = GUIDE.read_text()
     backend = section(guide, "### Backend terminal")
     mobile = section(guide, "### Expo Go terminal")
@@ -92,7 +113,8 @@ def test_documented_sse_and_go_commands_expand_without_starting_services():
     )
 
 
-def test_admin_example_checks_real_owner_refresh_and_draft_protection():
+def test_admin_example_checks_real_owner_refresh_and_draft_protection() -> None:
+    """Admin example checks real owner refresh and draft protection."""
     example = section(GUIDE.read_text(), "## Check a real Admin update")
     assert "http://192.168.1.20:8000/admin/" in example
     assert "owner" in example and "without" in example and "refresh" in example
@@ -101,7 +123,8 @@ def test_admin_example_checks_real_owner_refresh_and_draft_protection():
     assert "native" in example.lower() and "not" in example.lower()
 
 
-def test_custom_inventory_matches_native_registration_and_backend_schema():
+def test_custom_inventory_matches_native_registration_and_backend_schema() -> None:
+    """Custom inventory matches native registration and backend schema."""
     readme = (ROOT / "README.md").read_text()
     components = section(readme, "### HXML components")
     sources = (
@@ -127,7 +150,8 @@ def test_custom_inventory_matches_native_registration_and_backend_schema():
     assert documented_actions == native_actions == set(schema_extensions()["BEHAVIORS"])
 
 
-def test_readme_keeps_the_mobile_gallery_and_existing_admin_asset_path():
+def test_readme_keeps_the_mobile_gallery_and_existing_admin_asset_path() -> None:
+    """README keeps the mobile gallery and existing admin asset path."""
     readme = (ROOT / "README.md").read_text()
     gallery = re.findall(r'<img src="([^"]+)"', section(readme, "## Screenshots"))
     expected = {
@@ -151,7 +175,8 @@ def test_readme_keeps_the_mobile_gallery_and_existing_admin_asset_path():
         assert (ROOT / target).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
 
 
-def test_readme_distinguishes_realtime_listeners_and_mutation_producers():
+def test_readme_distinguishes_realtime_listeners_and_mutation_producers() -> None:
+    """README distinguishes realtime listeners and mutation producers."""
     realtime = section((ROOT / "README.md").read_text(), "## Realtime SSE")
     rows = re.findall(r"^\| ([^|]+) \| ([^|]+) \| ([^|]+) \|$", realtime, re.MULTILINE)
     areas = {area.strip(): (changes, behavior) for area, changes, behavior in rows}

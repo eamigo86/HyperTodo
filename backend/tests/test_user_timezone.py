@@ -6,14 +6,18 @@ Overdue flip at New York midnight. The header names the zone the person is reall
 """
 
 from datetime import UTC, datetime
+from typing import Never
 from zoneinfo import ZoneInfo
 
 import pytest
+from _pytest.mark import ParameterSet
 from asgiref.sync import async_to_sync
-from django.http import HttpResponse
+from django.contrib.auth.models import AbstractUser
+from django.http import HttpRequest, HttpResponse
 from django.test import AsyncClient, Client, RequestFactory
 from django.urls import reverse
 from django.utils import timezone
+from pytest_django.fixtures import Settings
 
 from tests.test_hxml_views import (
     NS,
@@ -37,21 +41,48 @@ AUCKLAND = "Pacific/Auckland"
 
 
 @pytest.fixture(autouse=True)
-def new_york_server_at_a_fixed_instant(settings, monkeypatch):
+def new_york_server_at_a_fixed_instant(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run the server in New York at a fixed instant.
+
+    Args:
+        settings: Django settings overridden by this test.
+        monkeypatch: Patches the code under test for this test.
+    """
     settings.TIME_ZONE = "America/New_York"
     monkeypatch.setattr("django.utils.timezone.now", lambda: NOW)
 
 
-def get(user, name, zone=None, query=""):
-    """Request one authenticated screen, reporting a zone when one is given."""
+def get(
+    user: AbstractUser, name: str, zone: str | None = None, query: str = ""
+) -> HttpResponse:
+    """Request one authenticated screen, reporting a zone when one is given.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        name: Route name of the screen requested.
+        zone: Time zone the client reports, or None for no header.
+        query: Query string appended to the URL.
+
+    Returns:
+        The response of the requested screen.
+    """
     client = Client()
     client.force_login(user)
     headers = {} if zone is None else {TIMEZONE_HEADER: zone}
     return client.get(reverse(name) + query, headers=headers)
 
 
-def listed(response):
-    """Return the titles a task list screen shows, in document order."""
+def listed(response: HttpResponse) -> list[str]:
+    """Return the titles a task list screen shows, in document order.
+
+    Args:
+        response: Response whose document is read.
+
+    Returns:
+        Task titles in the order the screen shows them.
+    """
     root = assert_hxml(response)
     return [
         "".join(node.itertext()).removeprefix("✓ ")
@@ -70,8 +101,16 @@ def listed(response):
     ids=["no-header", "server-zone", "madrid", "auckland"],
 )
 def test_the_greeting_and_the_date_follow_the_clients_zone(
-    user, zone, greeting, caption
-):
+    user: AbstractUser, zone: str | None, greeting: str, caption: str
+) -> None:
+    """The greeting and the date follow the client's zone.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        zone: Time zone the client reports, or None for no header.
+        greeting: Greeting the dashboard is expected to show.
+        caption: Date caption the dashboard is expected to show.
+    """
     hero = text_of(assert_hxml(get(user, "todo:dashboard", zone)), "dashboard-hero")
 
     assert greeting in hero
@@ -79,8 +118,12 @@ def test_the_greeting_and_the_date_follow_the_clients_zone(
 
 
 @pytest.fixture
-def three_deadlines(user):
-    """One task per boundary, each due at an instant that moves between zones."""
+def three_deadlines(user: AbstractUser) -> None:
+    """One task per boundary, each due at an instant that moves between zones.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     due = {
         # New York 22:00 the 15th, Madrid 04:00 the 16th, Auckland 14:00 the 16th.
         "alpha": datetime(2026, 7, 16, 2, 0, tzinfo=UTC),
@@ -103,8 +146,21 @@ def three_deadlines(user):
     ids=["server-zone", "madrid", "auckland"],
 )
 def test_today_and_scheduled_follow_the_clients_zone(
-    user, three_deadlines, zone, today, scheduled
-):
+    user: AbstractUser,
+    three_deadlines: None,
+    zone: str | None,
+    today: list[str],
+    scheduled: list[str],
+) -> None:
+    """Today and scheduled follow the client's zone.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        three_deadlines: Creates the three deadline tasks of the user.
+        zone: Time zone the client reports, or None for no header.
+        today: Titles expected on the Today list.
+        scheduled: Titles expected on the Scheduled list.
+    """
     for status, expected in (("today", today), ("scheduled", scheduled)):
         response = get(user, "todo:tasks", zone, f"?status={status}")
         assert sorted(listed(response)) == expected, status
@@ -112,8 +168,15 @@ def test_today_and_scheduled_follow_the_clients_zone(
 
 @pytest.mark.parametrize("zone", [None, MADRID, AUCKLAND])
 def test_overdue_is_the_same_instant_comparison_in_every_zone(
-    user, three_deadlines, zone
-):
+    user: AbstractUser, three_deadlines: None, zone: str | None
+) -> None:
+    """Overdue is the same instant comparison in every zone.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        three_deadlines: Creates the three deadline tasks of the user.
+        zone: Time zone the client reports, or None for no header.
+    """
     response = get(user, "todo:tasks", zone, "?status=overdue")
 
     assert listed(response) == ["bravo"]
@@ -128,7 +191,17 @@ def test_overdue_is_the_same_instant_comparison_in_every_zone(
     ],
     ids=["server-zone", "madrid", "auckland"],
 )
-def test_deadlines_are_shown_in_the_clients_zone(user, three_deadlines, zone, shown):
+def test_deadlines_are_shown_in_the_clients_zone(
+    user: AbstractUser, three_deadlines: None, zone: str | None, shown: str
+) -> None:
+    """Deadlines are shown in the client's zone.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        three_deadlines: Creates the three deadline tasks of the user.
+        zone: Time zone the client reports, or None for no header.
+        shown: Deadline text expected on the task row.
+    """
     body = get(user, "todo:tasks", zone).content.decode()
 
     assert f"Due {shown}" in body
@@ -151,26 +224,39 @@ def test_deadlines_are_shown_in_the_clients_zone(user, three_deadlines, zone, sh
     ],
     ids=lambda value: repr(value)[:24],
 )
-def test_a_header_that_names_no_zone_is_ignored(user, value):
+def test_a_header_that_names_no_zone_is_ignored(user: AbstractUser, value: str) -> None:
+    """A header that names no zone is ignored.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        value: Header value that names no usable zone.
+    """
     response = get(user, "todo:dashboard", value)
 
     assert "Good afternoon" in text_of(assert_hxml(response), "dashboard-hero")
     assert "X-Timezone" in response["Vary"]
 
 
-def test_a_header_over_the_length_bound_never_reaches_the_tz_lookup(monkeypatch):
+def test_a_header_over_the_length_bound_never_reaches_the_tz_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A header over the length bound never reaches the time zone lookup.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     # The names in the test above would be refused by the lookup anyway, so only a spy
     # tells the bound from the lookup. 64 characters is the documented ceiling.
     looked_up = []
 
-    def lookup(name):
+    def lookup(name: str) -> ZoneInfo:
         looked_up.append(name)
         return ZoneInfo(MADRID)
 
     monkeypatch.setattr("todo.middleware.ZoneInfo", lookup)
     seen = []
 
-    def view(request):
+    def view(request: HttpRequest) -> HttpResponse:
         seen.append(timezone.get_current_timezone_name())
         return HttpResponse()
 
@@ -186,17 +272,26 @@ def test_a_header_over_the_length_bound_never_reaches_the_tz_lookup(monkeypatch)
     "failure",
     [KeyError, ValueError, OSError, IsADirectoryError, PermissionError],
 )
-def test_whatever_way_the_tz_lookup_fails_the_zone_is_ignored(monkeypatch, failure):
+def test_whatever_way_the_tz_lookup_fails_the_zone_is_ignored(
+    monkeypatch: pytest.MonkeyPatch, failure: type[Exception]
+) -> None:
+    """Whatever way the time zone lookup fails, the zone is ignored.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        failure: Exception the zone lookup raises.
+    """
+
     # ZoneInfoNotFoundError is a KeyError, a key that is not a normalized relative path
     # is a ValueError, and a name that hits a directory or a file the process cannot
     # read is an OSError. Each one is a client that sent rubbish, never a server error.
-    def lookup(name):
+    def lookup(name: str) -> Never:
         raise failure(name)
 
     monkeypatch.setattr("todo.middleware.ZoneInfo", lookup)
     seen = []
 
-    def view(request):
+    def view(request: HttpRequest) -> HttpResponse:
         seen.append(timezone.get_current_timezone_name())
         return HttpResponse()
 
@@ -207,10 +302,16 @@ def test_whatever_way_the_tz_lookup_fails_the_zone_is_ignored(monkeypatch, failu
     assert seen == [timezone.get_default_timezone_name()]
 
 
-def test_the_zone_reaches_the_views_through_the_asgi_chain(user):
+def test_the_zone_reaches_the_views_through_the_asgi_chain(user: AbstractUser) -> None:
+    """The zone reaches the views through the ASGI chain.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
+
     # Production runs under ASGI, where the sync middleware and views are adapted: the
     # active zone has to survive those hops, not only the plain WSGI test client.
-    async def run():
+    async def run() -> HttpResponse:
         client = AsyncClient()
         await client.aforce_login(user)
         return await client.get(
@@ -223,13 +324,23 @@ def test_the_zone_reaches_the_views_through_the_asgi_chain(user):
     assert "X-Timezone" in response["Vary"]
 
 
-def test_without_a_header_the_server_zone_stays_in_force(user):
+def test_without_a_header_the_server_zone_stays_in_force(user: AbstractUser) -> None:
+    """Without a header, the server zone stays in force.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     response = get(user, "todo:dashboard")
 
     assert "Good afternoon" in text_of(assert_hxml(response), "dashboard-hero")
 
 
-def test_the_zone_is_active_only_for_the_request(user):
+def test_the_zone_is_active_only_for_the_request(user: AbstractUser) -> None:
+    """The zone is active only for the request.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     default = timezone.get_current_timezone_name()
 
     get(user, "todo:dashboard", AUCKLAND)
@@ -237,15 +348,24 @@ def test_the_zone_is_active_only_for_the_request(user):
     assert timezone.get_current_timezone_name() == default
 
 
-def test_a_zone_that_was_already_active_is_restored_afterwards(user):
+def test_a_zone_that_was_already_active_is_restored_afterwards(
+    user: AbstractUser,
+) -> None:
+    """A zone that was already active is restored afterwards.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     with timezone.override("Asia/Tokyo"):
         get(user, "todo:dashboard", MADRID)
 
         assert timezone.get_current_timezone_name() == "Asia/Tokyo"
 
 
-def test_the_zone_is_restored_when_the_request_fails():
-    def failing(request):
+def test_the_zone_is_restored_when_the_request_fails() -> None:
+    """The zone is restored when the request fails."""
+
+    def failing(request: HttpRequest) -> Never:
         raise RuntimeError("the view failed")
 
     request = RequestFactory().get("/hv/", headers={TIMEZONE_HEADER: AUCKLAND})
@@ -257,10 +377,11 @@ def test_the_zone_is_restored_when_the_request_fails():
     assert timezone.get_current_timezone_name() == default
 
 
-def test_the_view_sees_the_clients_zone():
+def test_the_view_sees_the_clients_zone() -> None:
+    """The view sees the client's zone."""
     seen = []
 
-    def view(request):
+    def view(request: HttpRequest) -> HttpResponse:
         seen.append(timezone.get_current_timezone_name())
         return HttpResponse()
 
@@ -276,15 +397,28 @@ def test_the_view_sees_the_clients_zone():
     [("todo:dashboard", 200), ("todo:login", 200)],
 )
 def test_responses_vary_on_the_header_whether_or_not_it_was_sent(
-    user, zone, name, status
-):
+    user: AbstractUser, zone: str | None, name: str, status: int
+) -> None:
+    """Responses vary on the header whether or not it was sent.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        zone: Time zone the client reports, or None for no header.
+        name: Route name of the screen requested.
+        status: Status code the screen is expected to answer.
+    """
     response = get(user, name, zone)
 
     assert response.status_code == status
     assert "X-Timezone" in response["Vary"]
 
 
-def test_error_responses_vary_on_the_header_too(user):
+def test_error_responses_vary_on_the_header_too(user: AbstractUser) -> None:
+    """Error responses vary on the header too.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -295,10 +429,11 @@ def test_error_responses_vary_on_the_header_too(user):
     assert refused.status_code == 405 and "X-Timezone" in refused["Vary"]
 
 
-def test_the_event_stream_neither_reads_the_header_nor_varies_on_it():
+def test_the_event_stream_neither_reads_the_header_nor_varies_on_it() -> None:
+    """The event stream neither reads the header nor varies on it."""
     seen = []
 
-    def view(request):
+    def view(request: HttpRequest) -> HttpResponse:
         seen.append(timezone.get_current_timezone_name())
         return HttpResponse()
 
@@ -314,7 +449,20 @@ def test_the_event_stream_neither_reads_the_header_nor_varies_on_it():
 # --- a date-only deadline is the end of the day wherever the person is ----------
 
 
-def create_deadline(user, due_date, due_time, zone=None):
+def create_deadline(
+    user: AbstractUser, due_date: str, due_time: str, zone: str | None = None
+) -> tuple[Client, Task]:
+    """Create a task through the form, reporting a zone when one is given.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        due_date: Due date the task is created with, as YYYY-MM-DD.
+        due_time: Time of day the task is created with.
+        zone: Time zone the client reports, or None for no header.
+
+    Returns:
+        Signed-in client and the task that was created.
+    """
     client = csrf_client()
     client.force_login(user)
     headers = {} if zone is None else {TIMEZONE_HEADER: zone}
@@ -333,11 +481,30 @@ def create_deadline(user, due_date, due_time, zone=None):
     return client, Task.objects.get(user=user)
 
 
-def create_all_day(user, due_date, zone=None):
+def create_all_day(
+    user: AbstractUser, due_date: str, zone: str | None = None
+) -> tuple[Client, Task]:
+    """Create a date-only task through the form.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        due_date: Due date the task is created with, as YYYY-MM-DD.
+        zone: Time zone the client reports, or None for no header.
+
+    Returns:
+        Signed-in client and the all-day task that was created.
+    """
     return create_deadline(user, due_date, "", zone)
 
 
-def test_a_date_only_deadline_ends_the_day_in_the_clients_zone(user):
+def test_a_date_only_deadline_ends_the_day_in_the_clients_zone(
+    user: AbstractUser,
+) -> None:
+    """A date-only deadline ends the day in the client's zone.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     _, task = create_all_day(user, "2026-07-15", MADRID)
 
     assert task.due_all_day is True
@@ -345,14 +512,28 @@ def test_a_date_only_deadline_ends_the_day_in_the_clients_zone(user):
     assert task.due_at == datetime(2026, 7, 15, 21, 59, 59, 999999, tzinfo=UTC)
 
 
-def test_the_same_date_ends_the_day_in_the_server_zone_without_a_header(user):
+def test_the_same_date_ends_the_day_in_the_server_zone_without_a_header(
+    user: AbstractUser,
+) -> None:
+    """The same date ends the day in the server zone without a header.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     _, task = create_all_day(user, "2026-07-15")
 
     # 23:59:59.999999 in New York, four hours behind UTC in July.
     assert task.due_at == datetime(2026, 7, 16, 3, 59, 59, 999999, tzinfo=UTC)
 
 
-def test_an_all_day_deadline_round_trips_through_the_clients_zone(user):
+def test_an_all_day_deadline_round_trips_through_the_clients_zone(
+    user: AbstractUser,
+) -> None:
+    """An all-day deadline round-trips through the client's zone.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, task = create_all_day(user, "2026-07-15", MADRID)
 
     edit = client.get(
@@ -364,14 +545,20 @@ def test_an_all_day_deadline_round_trips_through_the_clients_zone(user):
 
 
 def test_a_date_only_deadline_is_open_through_a_repeated_hour_and_late_after_it(
-    user, monkeypatch
-):
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A date-only deadline is open through a repeated hour and late after it.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+    """
     # Santiago turns its clocks back at midnight, so 23:xx on 4 April happens twice.
     # The deadline used to be the first 23:59:59, an hour before the day really ended.
     santiago = ZoneInfo("America/Santiago")
     create_all_day(user, "2026-04-04", "America/Santiago")
 
-    def overdue_at(*wall_clock, fold):
+    def overdue_at(*wall_clock: int, fold: int) -> list[str]:
         now = datetime(*wall_clock, fold=fold, tzinfo=santiago).astimezone(UTC)
         monkeypatch.setattr("django.utils.timezone.now", lambda: now)
         return listed(get(user, "todo:tasks", "America/Santiago", "?status=overdue"))
@@ -383,7 +570,14 @@ def test_a_date_only_deadline_is_open_through_a_repeated_hour_and_late_after_it(
     assert overdue_at(2026, 4, 5, 0, 0, fold=0) == ["Pay rent"]
 
 
-def test_a_title_only_edit_from_another_zone_does_not_move_the_deadline(user):
+def test_a_title_only_edit_from_another_zone_does_not_move_the_deadline(
+    user: AbstractUser,
+) -> None:
+    """A title-only edit from another zone does not move the deadline.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Created for the 10th in New York, the deadline is 03:59:59 UTC on the 11th, and
     # Madrid shows the 11th for it. Posting that date back used to rebuild the end of
     # the Madrid day: the same task, 18 hours later, after nothing but a new title.
@@ -410,7 +604,14 @@ def test_a_title_only_edit_from_another_zone_does_not_move_the_deadline(user):
     assert (task.due_at, task.due_all_day) == (stored, True)
 
 
-def test_a_date_only_deadline_is_still_open_until_the_clients_day_ends(user):
+def test_a_date_only_deadline_is_still_open_until_the_clients_day_ends(
+    user: AbstractUser,
+) -> None:
+    """A date-only deadline is still open until the client's day ends.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # It is 23:30 in Madrid on the 15th: the task due that day is due today and not
     # overdue yet, because its deadline is the last instant of the Madrid day.
     create_all_day(user, "2026-07-15", MADRID)
@@ -429,8 +630,16 @@ LOS_ANGELES = "America/Los_Angeles"
 TOKYO = "Asia/Tokyo"
 
 
-def screen_values(response, *, status=200):
-    """Return every named value a form screen posts back, as the client reads it."""
+def screen_values(response: HttpResponse, *, status: int = 200) -> dict[str, str]:
+    """Return every named value a form screen posts back, as the client reads it.
+
+    Args:
+        response: Response whose document is read.
+        status: Status code the screen is expected to answer.
+
+    Returns:
+        Posted-back values keyed by field name.
+    """
     root = assert_hxml(response, status=status)
     return {
         node.attrib["name"]: node.attrib.get("value", "")
@@ -438,22 +647,68 @@ def screen_values(response, *, status=200):
     }
 
 
-def open_form(client, task, zone):
+def open_form(client: Client, task: Task, zone: str) -> dict[str, str]:
+    """Open the edit form of a task from a zone and return the values it carries.
+
+    Args:
+        client: Client that requests the screens under test.
+        task: Task whose form is requested or saved.
+        zone: Time zone the client reports, or None for no header.
+
+    Returns:
+        Values the opened edit form carries.
+    """
     url = reverse("todo:task-edit", args=(task.pk,))
     return screen_values(client.get(url, headers={TIMEZONE_HEADER: zone}))
 
 
-def save_form(client, task, zone, values, **changes):
+def save_form(
+    client: Client, task: Task, zone: str, values: dict[str, str], **changes: str
+) -> HttpResponse:
+    """Post the edit form of a task from a zone with some values replaced.
+
+    Args:
+        client: Client that requests the screens under test.
+        task: Task whose form is requested or saved.
+        zone: Time zone the client reports, or None for no header.
+        values: Values the form carried when it was opened.
+        **changes: Form fields that replace the values the form carries.
+
+    Returns:
+        Response of the saved form.
+    """
     url = reverse("todo:task-edit", args=(task.pk,))
     return client.post(url, {**values, **changes}, headers={TIMEZONE_HEADER: zone})
 
 
-def stored_deadline(task):
+def stored_deadline(task: Task) -> tuple[datetime | None, bool]:
+    """Read the deadline a task has stored in the database.
+
+    Args:
+        task: Task whose form is requested or saved.
+
+    Returns:
+        Stored due instant and all-day flag.
+    """
     task.refresh_from_db()
     return task.due_at, task.due_all_day
 
 
-def switch(name, due_time, made_in, opened_in, saved_in):
+def switch(
+    name: str, due_time: str, made_in: str, opened_in: str, saved_in: str
+) -> ParameterSet:
+    """Build the parameters of a zone switch scenario.
+
+    Args:
+        name: Scenario name used as the test id.
+        due_time: Time of day the task is created with.
+        made_in: Zone the task is created in.
+        opened_in: Zone the edit form is opened in.
+        saved_in: Zone the form is saved in.
+
+    Returns:
+        Parameter set that carries the scenario name as its id.
+    """
     return pytest.param(due_time, made_in, opened_in, saved_in, id=name)
 
 
@@ -486,8 +741,17 @@ def switch(name, due_time, made_in, opened_in, saved_in):
     ],
 )
 def test_a_title_only_save_keeps_the_deadline_after_a_zone_change_with_the_form_open(
-    user, due_time, made_in, opened_in, saved_in
-):
+    user: AbstractUser, due_time: str, made_in: str, opened_in: str, saved_in: str
+) -> None:
+    """A title-only save keeps the deadline after a zone change with the form open.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        due_time: Time of day the task is created with.
+        made_in: Zone the task is created in.
+        opened_in: Zone the edit form is opened in.
+        saved_in: Zone the form is saved in.
+    """
     # The form shows the stored instant in the zone that opened it. Saved from another
     # zone, the date and time it posted used to be read in that other one: a 09:30 task
     # moved six hours from New York to Madrid after nothing but a new title.
@@ -542,8 +806,21 @@ def test_a_title_only_save_keeps_the_deadline_after_a_zone_change_with_the_form_
     ],
 )
 def test_a_real_change_after_a_zone_change_is_read_in_the_zone_that_saves(
-    user, due_time, changes, due_at, all_day
-):
+    user: AbstractUser,
+    due_time: str,
+    changes: dict[str, str],
+    due_at: datetime,
+    all_day: bool,
+) -> None:
+    """A real change after a zone change is read in the zone that saves.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        due_time: Time of day the task is created with.
+        changes: Form fields that replace the values the form carries.
+        due_at: Deadline expected to be stored.
+        all_day: Whether the stored deadline is expected to be all-day.
+    """
     client, task = create_deadline(user, "2026-06-10", due_time, NEW_YORK)
     values = open_form(client, task, NEW_YORK)
 
@@ -552,7 +829,14 @@ def test_a_real_change_after_a_zone_change_is_read_in_the_zone_that_saves(
     assert stored_deadline(task) == (due_at, all_day)
 
 
-def test_the_form_carries_the_schedule_it_shows_in_hidden_fields(user):
+def test_the_form_carries_the_schedule_it_shows_in_hidden_fields(
+    user: AbstractUser,
+) -> None:
+    """The form carries the schedule it shows in hidden fields.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
 
     in_new_york = open_form(client, task, NEW_YORK)
@@ -570,7 +854,14 @@ def test_the_form_carries_the_schedule_it_shows_in_hidden_fields(user):
     assert in_madrid["due_time_shown"] == in_madrid["due_time"]
 
 
-def test_the_form_of_a_task_with_no_deadline_carries_empty_hidden_fields(user):
+def test_the_form_of_a_task_with_no_deadline_carries_empty_hidden_fields(
+    user: AbstractUser,
+) -> None:
+    """The form of a task with no deadline carries empty hidden fields.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, task = create_deadline(user, "", "", NEW_YORK)
 
     values = open_form(client, task, NEW_YORK)
@@ -578,7 +869,14 @@ def test_the_form_of_a_task_with_no_deadline_carries_empty_hidden_fields(user):
     assert (values["due_date_shown"], values["due_time_shown"]) == ("", "")
 
 
-def test_a_refused_save_hands_back_the_schedule_the_form_showed(user):
+def test_a_refused_save_hands_back_the_schedule_the_form_showed(
+    user: AbstractUser,
+) -> None:
+    """A refused save hands back the schedule the form showed.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The refusal is drawn in Madrid, but the hidden values must stay the ones New York
     # showed: recomputed in Madrid they would say 15:30 and the next save would move it.
     client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
@@ -597,7 +895,14 @@ def test_a_refused_save_hands_back_the_schedule_the_form_showed(user):
     assert stored_deadline(task) == stored
 
 
-def test_a_title_only_save_from_a_stale_form_keeps_the_newer_deadline(user):
+def test_a_title_only_save_from_a_stale_form_keeps_the_newer_deadline(
+    user: AbstractUser,
+) -> None:
+    """A title-only save from a stale form keeps the newer deadline.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
     values = open_form(client, task, NEW_YORK)
     newer = datetime(2026, 6, 20, 14, 0, tzinfo=UTC)
@@ -609,7 +914,14 @@ def test_a_title_only_save_from_a_stale_form_keeps_the_newer_deadline(user):
     assert stored_deadline(task) == (newer, False)
 
 
-def test_a_stale_form_that_showed_no_deadline_keeps_the_one_set_since(user):
+def test_a_stale_form_that_showed_no_deadline_keeps_the_one_set_since(
+    user: AbstractUser,
+) -> None:
+    """A stale form that showed no deadline keeps the one set since.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, task = create_deadline(user, "", "", NEW_YORK)
     values = open_form(client, task, NEW_YORK)
     newer = datetime(2026, 6, 20, 14, 0, tzinfo=UTC)
@@ -620,7 +932,14 @@ def test_a_stale_form_that_showed_no_deadline_keeps_the_one_set_since(user):
     assert stored_deadline(task) == (newer, False)
 
 
-def test_a_stale_form_still_applies_a_schedule_the_person_changed(user):
+def test_a_stale_form_still_applies_a_schedule_the_person_changed(
+    user: AbstractUser,
+) -> None:
+    """A stale form still applies a schedule the person changed.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
     values = open_form(client, task, NEW_YORK)
     Task.objects.filter(pk=task.pk).update(
@@ -632,11 +951,19 @@ def test_a_stale_form_still_applies_a_schedule_the_person_changed(user):
     assert stored_deadline(task) == (datetime(2026, 6, 10, 15, 0, tzinfo=UTC), False)
 
 
-def race_a_deadline_change(monkeypatch, task, due_at):
-    """Have another device move the deadline after the view read the task."""
+def race_a_deadline_change(
+    monkeypatch: pytest.MonkeyPatch, task: Task, due_at: datetime
+) -> None:
+    """Have another device move the deadline after the view read the task.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        task: Task whose form is requested or saved.
+        due_at: Deadline expected to be stored.
+    """
     save = views.update_task
 
-    def raced(**kwargs):
+    def raced(**kwargs: object) -> object:
         Task.objects.filter(pk=task.pk).update(due_at=due_at)
         return save(**kwargs)
 
@@ -644,8 +971,14 @@ def race_a_deadline_change(monkeypatch, task, due_at):
 
 
 def test_a_title_only_save_keeps_a_deadline_set_while_it_is_being_saved(
-    user, monkeypatch
-):
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A title-only save keeps a deadline set while it is being saved.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+    """
     client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
     values = open_form(client, task, NEW_YORK)
     newer = datetime(2026, 6, 20, 14, 0, tzinfo=UTC)
@@ -658,8 +991,14 @@ def test_a_title_only_save_keeps_a_deadline_set_while_it_is_being_saved(
 
 
 def test_a_schedule_the_person_changed_wins_over_one_set_while_saving(
-    user, monkeypatch
-):
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A schedule the person changed wins over one set while saving.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+    """
     client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
     values = open_form(client, task, NEW_YORK)
     race_a_deadline_change(monkeypatch, task, datetime(2026, 6, 20, 14, 0, tzinfo=UTC))
@@ -669,7 +1008,14 @@ def test_a_schedule_the_person_changed_wins_over_one_set_while_saving(
     assert stored_deadline(task) == (datetime(2026, 6, 10, 15, 0, tzinfo=UTC), False)
 
 
-def test_a_new_task_stores_its_deadline_though_the_hidden_values_match(user):
+def test_a_new_task_stores_its_deadline_though_the_hidden_values_match(
+    user: AbstractUser,
+) -> None:
+    """A new task stores its deadline though the hidden values match.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # A task that is not saved yet already has a primary key (the id has a default), so
     # "has a key" cannot tell a new task from an edited one.
     client = csrf_client()
@@ -696,7 +1042,14 @@ def test_a_new_task_stores_its_deadline_though_the_hidden_values_match(user):
     )
 
 
-def test_hidden_values_that_equal_a_forged_new_schedule_only_keep_the_stored_one(user):
+def test_hidden_values_that_equal_a_forged_new_schedule_only_keep_the_stored_one(
+    user: AbstractUser,
+) -> None:
+    """Hidden values that equal a forged new schedule only keep the stored one.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
     stored = stored_deadline(task)
     values = open_form(client, task, NEW_YORK)
@@ -715,7 +1068,14 @@ def test_hidden_values_that_equal_a_forged_new_schedule_only_keep_the_stored_one
     assert stored_deadline(task) == stored
 
 
-def test_hidden_values_that_are_not_a_schedule_fall_back_to_the_visible_fields(user):
+def test_hidden_values_that_are_not_a_schedule_fall_back_to_the_visible_fields(
+    user: AbstractUser,
+) -> None:
+    """Hidden values that are not a schedule fall back to the visible fields.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
     values = open_form(client, task, NEW_YORK)
 
@@ -735,7 +1095,14 @@ def test_hidden_values_that_are_not_a_schedule_fall_back_to_the_visible_fields(u
     assert stored_deadline(task) == (datetime(2026, 6, 16, 12, 0, tzinfo=UTC), False)
 
 
-def test_a_null_character_in_a_hidden_value_falls_back_instead_of_refusing(user):
+def test_a_null_character_in_a_hidden_value_falls_back_instead_of_refusing(
+    user: AbstractUser,
+) -> None:
+    """A null character in a hidden value falls back instead of refusing.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
     stored = stored_deadline(task)
     values = open_form(client, task, NEW_YORK)
@@ -756,7 +1123,14 @@ def test_a_null_character_in_a_hidden_value_falls_back_instead_of_refusing(user)
     assert stored_deadline(task) == stored
 
 
-def test_oversized_hidden_values_are_bounded_and_scrubbed_in_a_refused_form(user):
+def test_oversized_hidden_values_are_bounded_and_scrubbed_in_a_refused_form(
+    user: AbstractUser,
+) -> None:
+    """Oversized hidden values are bounded and scrubbed in a refused form.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, task = create_deadline(user, "2026-06-10", "09:30", NEW_YORK)
     stored = stored_deadline(task)
     values = open_form(client, task, NEW_YORK)

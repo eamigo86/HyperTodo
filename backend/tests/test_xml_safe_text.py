@@ -7,12 +7,15 @@ screen that listed it into a permanent 500.
 
 import importlib
 from types import SimpleNamespace
+from xml.etree.ElementTree import Element
 
 import pytest
 from django.apps import apps
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.db import connection
+from django.http import HttpResponse
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -52,12 +55,22 @@ MESSAGE = "Remove control characters."
 
 
 @pytest.mark.parametrize("value", ALLOWED)
-def test_the_validator_accepts_everything_xml_can_carry(value):
+def test_the_validator_accepts_everything_xml_can_carry(value: str) -> None:
+    """The validator accepts everything XML can carry.
+
+    Args:
+        value: Text XML can carry.
+    """
     xml_safe_text(value)
 
 
 @pytest.mark.parametrize("character", FORBIDDEN)
-def test_the_validator_rejects_each_forbidden_character(character):
+def test_the_validator_rejects_each_forbidden_character(character: str) -> None:
+    """The validator rejects each forbidden character.
+
+    Args:
+        character: One character XML cannot carry.
+    """
     with pytest.raises(ValidationError) as caught:
         xml_safe_text(f"Buy{character}milk")
 
@@ -65,14 +78,22 @@ def test_the_validator_rejects_each_forbidden_character(character):
     assert caught.value.messages == [MESSAGE]
 
 
-def test_scrubbing_replaces_only_what_xml_forbids():
+def test_scrubbing_replaces_only_what_xml_forbids() -> None:
+    """Scrubbing replaces only what XML forbids."""
     dirty = "a\x01b\U0000d800c\U0000ffff\td\n"
 
     assert scrub_xml(dirty) == f"a{FFFD}b{FFFD}c{FFFD}\td\n"
     assert scrub_xml("clean \xe9") == "clean \xe9"
 
 
-def test_the_models_refuse_forbidden_characters_and_overlong_notes(user):
+def test_the_models_refuse_forbidden_characters_and_overlong_notes(
+    user: AbstractUser,
+) -> None:
+    """The models refuse forbidden characters and overlong notes.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = Task(user=user, title="Buy\x01milk", notes="a\x0bb")
     category = Category(user=user, name="Work\x02", color=Category.Color.MINT)
 
@@ -90,7 +111,12 @@ def test_the_models_refuse_forbidden_characters_and_overlong_notes(user):
     assert Task._meta.get_field("notes").max_length == 10_000
 
 
-def test_the_forms_report_the_error_on_the_offending_field(user):
+def test_the_forms_report_the_error_on_the_offending_field(user: AbstractUser) -> None:
+    """The forms report the error on the offending field.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     category = CategoryForm({"name": "a\x01", "color": "mint"}, user=user)
     task = TaskForm({"title": "a\x01", "notes": "b\x0cc"}, user=user)
     profile = ProfileForm(
@@ -114,7 +140,12 @@ def test_the_forms_report_the_error_on_the_offending_field(user):
             assert form.errors.as_data()[field][0].code == "xml_chars"
 
 
-def test_overlong_notes_are_refused_by_the_form(user):
+def test_overlong_notes_are_refused_by_the_form(user: AbstractUser) -> None:
+    """Overlong notes are refused by the form.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     assert TaskForm({"title": "ok", "notes": "n" * 10_000}, user=user).is_valid()
 
     form = TaskForm({"title": "ok", "notes": "n" * 10_001}, user=user)
@@ -123,15 +154,22 @@ def test_overlong_notes_are_refused_by_the_form(user):
     assert list(form.errors) == ["notes"]
 
 
-def _errors(root):
+def _errors(root: Element) -> list[str | None]:
     return [node.text for node in root.findall(".//hv:text[@style='field-error']", NS)]
 
 
-def _value(root, name):
+def _value(root: Element, name: str) -> str:
     return root.find(f".//hv:text-field[@name='{name}']", NS).attrib["value"]
 
 
-def test_a_task_with_control_characters_is_refused_and_the_screens_survive(user):
+def test_a_task_with_control_characters_is_refused_and_the_screens_survive(
+    user: AbstractUser,
+) -> None:
+    """A task with control characters is refused and the screens survive.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -150,7 +188,14 @@ def test_a_task_with_control_characters_is_refused_and_the_screens_survive(user)
     assert_hxml(client.get(reverse("todo:dashboard")))
 
 
-def test_editing_a_task_with_control_characters_keeps_the_stored_title(user):
+def test_editing_a_task_with_control_characters_keeps_the_stored_title(
+    user: AbstractUser,
+) -> None:
+    """Editing a task with control characters keeps the stored title.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
     task = Task.objects.create(user=user, title="Original")
@@ -164,7 +209,14 @@ def test_editing_a_task_with_control_characters_keeps_the_stored_title(user):
     assert task.title == "Original"
 
 
-def test_notes_beyond_the_limit_answer_422_with_a_field_error(user):
+def test_notes_beyond_the_limit_answer_422_with_a_field_error(
+    user: AbstractUser,
+) -> None:
+    """Notes beyond the limit answer 422 with a field error.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -177,7 +229,12 @@ def test_notes_beyond_the_limit_answer_422_with_a_field_error(user):
     assert not Task.objects.exists()
 
 
-def test_a_category_with_control_characters_is_refused(user):
+def test_a_category_with_control_characters_is_refused(user: AbstractUser) -> None:
+    """A category with control characters is refused.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -192,7 +249,14 @@ def test_a_category_with_control_characters_is_refused(user):
     assert_hxml(client.get(reverse("todo:categories")))
 
 
-def test_a_rejected_color_choice_never_echoes_raw_control_characters(user):
+def test_a_rejected_color_choice_never_echoes_raw_control_characters(
+    user: AbstractUser,
+) -> None:
+    """A rejected color choice never echoes raw control characters.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -204,7 +268,14 @@ def test_a_rejected_color_choice_never_echoes_raw_control_characters(user):
     assert FFFD in "".join(_errors(root))
 
 
-def test_profile_names_with_control_characters_leave_settings_usable(user):
+def test_profile_names_with_control_characters_leave_settings_usable(
+    user: AbstractUser,
+) -> None:
+    """Profile names with control characters leave settings usable.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -227,7 +298,8 @@ def test_profile_names_with_control_characters_leave_settings_usable(user):
     assert_hxml(client.get(reverse("todo:dashboard")))
 
 
-def test_a_username_with_control_characters_cannot_break_the_login_panel():
+def test_a_username_with_control_characters_cannot_break_the_login_panel() -> None:
+    """A username with control characters cannot break the login panel."""
     root = assert_hxml(
         Client().post(reverse("todo:login"), {"username": "a\x01b", "password": "x"}),
         status=422,
@@ -238,8 +310,14 @@ def test_a_username_with_control_characters_cannot_break_the_login_panel():
 
 
 def test_a_row_stored_before_the_validators_still_opens_its_edit_screen(
-    user, other_user
-):
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A row stored before the validators still opens its edit screen.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     # The task screen also lists its owner's categories, which only the data
     # migration can heal, so the two poisoned rows belong to different owners.
     task = Task.objects.create(user=user, title="Buy\x01milk", notes="a\x0bb")
@@ -263,12 +341,20 @@ def test_a_row_stored_before_the_validators_still_opens_its_edit_screen(
 # --- data migration ---------------------------------------------------------
 
 
-def _run_cleaning():
+def _run_cleaning() -> None:
     migration = importlib.import_module("todo.migrations.0005_clean_xml_illegal_text")
     migration.clean_xml_text(apps, SimpleNamespace(connection=connection))
 
 
-def test_the_data_migration_heals_every_poisoned_column(user, other_user):
+def test_the_data_migration_heals_every_poisoned_column(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """The data migration heals every poisoned column.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     get_user_model().objects.filter(pk=user.pk).update(
         first_name="Ada\x01", last_name="\U0000fffeLove", email='"a\x01"@x.io'
     )
@@ -296,7 +382,15 @@ def test_the_data_migration_heals_every_poisoned_column(user, other_user):
     assert other_user.first_name == ""
 
 
-def test_the_data_migration_numbers_categories_that_now_collide(user, other_user):
+def test_the_data_migration_numbers_categories_that_now_collide(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """The data migration numbers categories that now collide.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     first = Category.objects.create(user=user, name="a\x01b", color="mint")
     second = Category.objects.create(user=user, name="a\x02b", color="pink")
     existing = Category.objects.create(user=user, name=f"A{FFFD}B", color="green")
@@ -315,7 +409,12 @@ def test_the_data_migration_numbers_categories_that_now_collide(user, other_user
     assert len({name.lower() for name in owned}) == 3
 
 
-def test_the_data_migration_can_run_twice(user):
+def test_the_data_migration_can_run_twice(user: AbstractUser) -> None:
+    """The data migration can run twice.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     Task.objects.create(user=user, title="Buy\x01milk")
 
     _run_cleaning()
@@ -324,7 +423,15 @@ def test_the_data_migration_can_run_twice(user):
     assert Task.objects.get().title == f"Buy{FFFD}milk"
 
 
-def test_the_data_migration_reads_each_table_in_primary_key_chunks(user, monkeypatch):
+def test_the_data_migration_reads_each_table_in_primary_key_chunks(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The data migration reads each table in primary-key chunks.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+    """
     migration = importlib.import_module("todo.migrations.0005_clean_xml_illegal_text")
     monkeypatch.setattr(migration, "CHUNK", 2)
     poisoned = {0, 1, 2, 5, 6}
@@ -356,7 +463,15 @@ def test_the_data_migration_reads_each_table_in_primary_key_chunks(user, monkeyp
 
 
 @pytest.fixture
-def admin_session(client):
+def admin_session(client: Client) -> Client:
+    """Sign the client in as a superuser and return it.
+
+    Args:
+        client: Client that requests the screens under test.
+
+    Returns:
+        The client, signed in as a superuser.
+    """
     root = get_user_model().objects.create_superuser(
         "root", "root@example.com", "correct-horse"
     )
@@ -364,7 +479,7 @@ def admin_session(client):
     return client
 
 
-def _change_user(client, target, **fields):
+def _change_user(client: Client, target: AbstractUser, **fields: str) -> HttpResponse:
     joined = timezone.localtime(target.date_joined)
     data = {
         "username": target.username,
@@ -389,8 +504,16 @@ def _change_user(client, target, **fields):
     ],
 )
 def test_the_admin_user_form_refuses_what_a_document_cannot_carry(
-    admin_session, user, field, value
-):
+    admin_session: Client, user: AbstractUser, field: str, value: str
+) -> None:
+    """The admin user form refuses what a document cannot carry.
+
+    Args:
+        admin_session: Client signed in as a superuser.
+        user: Signed-in user who owns the data in this test.
+        field: Name of the user field the admin form is given a bad value for.
+        value: Text a document cannot carry.
+    """
     response = _change_user(admin_session, user, **{field: value})
 
     assert response.status_code == 200
@@ -399,7 +522,15 @@ def test_the_admin_user_form_refuses_what_a_document_cannot_carry(
     assert getattr(user, field) == ""
 
 
-def test_the_admin_user_form_still_saves_ordinary_text(admin_session, user):
+def test_the_admin_user_form_still_saves_ordinary_text(
+    admin_session: Client, user: AbstractUser
+) -> None:
+    """The admin user form still saves ordinary text.
+
+    Args:
+        admin_session: Client signed in as a superuser.
+        user: Signed-in user who owns the data in this test.
+    """
     response = _change_user(
         admin_session,
         user,

@@ -2,6 +2,8 @@
 
 import multiprocessing
 import os
+from multiprocessing.connection import Connection
+from pathlib import Path
 from uuid import uuid4
 from xml.etree import ElementTree
 
@@ -11,10 +13,13 @@ from dj_hyperview.cache import TemplateCache
 from dj_hyperview.contrib.database.models import HyperviewTemplate
 from dj_hyperview.contrib.database.services import delete_template, publish_template
 from django.conf import settings
+from django.contrib.admin.sites import AdminSite
+from django.contrib.auth.models import AbstractUser
 from django.core.cache import caches
 from django.db import connections, transaction
 from django.test import Client, override_settings
 from django.urls import reverse
+from pytest_django.plugin import DjangoDbBlocker
 
 pytestmark = pytest.mark.django_db
 NAMESPACE = "https://hyperview.org/hyperview"
@@ -28,7 +33,7 @@ UPDATED_DATABASE_XML = DATABASE_XML.replace("Database source", "Updated source")
 ROLLED_BACK_XML = DATABASE_XML.replace("Database source", "Rolled back source")
 
 
-def _shared_cache_reader(channel):
+def _shared_cache_reader(channel: Connection) -> None:
     """Resolve commands in a long-lived process with independent connections."""
     connections.close_all()
     caches.close_all()
@@ -53,7 +58,7 @@ def _shared_cache_reader(channel):
         channel.close()
 
 
-def _worker_value(channel, command):
+def _worker_value(channel: Connection, command: str) -> object:
     channel.send(command)
     assert channel.poll(10), f"Redis worker timed out during {command}"
     state, value = channel.recv()
@@ -61,12 +66,14 @@ def _worker_value(channel, command):
     return value
 
 
-def test_filesystem_source_is_the_default_fallback():
+def test_filesystem_source_is_the_default_fallback() -> None:
+    """Filesystem source is the default fallback."""
     template = TemplateResolver.from_settings().resolve(NAME)
     assert "filesystem-probe" in template.content
 
 
-def test_active_database_template_overrides_filesystem_immediately():
+def test_active_database_template_overrides_filesystem_immediately() -> None:
+    """Active database template overrides filesystem immediately."""
     publish_template(NAME, DATABASE_XML, using="default")
     response = Client().get(reverse("todo:source-probe"))
     root = ElementTree.fromstring(response.content)
@@ -74,7 +81,14 @@ def test_active_database_template_overrides_filesystem_immediately():
     assert root.find(f"{{{NAMESPACE}}}screen").attrib["id"] == "database-probe"
 
 
-def test_database_overrides_categories_document_and_refresh_fragment(user):
+def test_database_overrides_categories_document_and_refresh_fragment(
+    user: AbstractUser,
+) -> None:
+    """Database templates override the categories document and the refresh fragment.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     document_name = "screens/categories.xml"
     fragment_name = "fragments/category_list.xml"
     document = (
@@ -103,13 +117,15 @@ def test_database_overrides_categories_document_and_refresh_fragment(user):
     assert refreshed.attrib["id"] == "database-category-list"
 
 
-def test_inactive_database_template_falls_through_to_filesystem():
+def test_inactive_database_template_falls_through_to_filesystem() -> None:
+    """Inactive database template falls through to filesystem."""
     publish_template(NAME, DATABASE_XML, active=False, using="default")
     response = Client().get(reverse("todo:source-probe"))
     assert b"filesystem-probe" in response.content
 
 
-def test_locmem_cache_is_invalidated_after_database_publication():
+def test_locmem_cache_is_invalidated_after_database_publication() -> None:
+    """The locmem cache is invalidated after database publication."""
     hyperview = {
         **settings.HYPERVIEW,
         "CACHE": {
@@ -131,7 +147,8 @@ def test_locmem_cache_is_invalidated_after_database_publication():
 
 
 @pytest.mark.redis
-def test_existing_redis_service_uses_isolated_namespace_without_flushing():
+def test_existing_redis_service_uses_isolated_namespace_without_flushing() -> None:
+    """Existing Redis service uses isolated namespace without flushing."""
     # The same opt-in as the other Redis tests: a plain `make backend-test` must not
     # connect to whatever Redis happens to listen on this machine.
     if os.environ.get("HYPERTODO_REDIS_INTEGRATION") != "1":
@@ -191,9 +208,16 @@ def test_existing_redis_service_uses_isolated_namespace_without_flushing():
     "ignore:Overriding setting DATABASES can lead to unexpected behavior.:UserWarning"
 )
 def test_redis_shares_committed_mutations_and_preserves_rollback_across_processes(
-    tmp_path,
-    django_db_blocker,
-):
+    tmp_path: Path,
+    django_db_blocker: DjangoDbBlocker,
+) -> None:
+    """Redis shares committed mutations and preserves rollback across processes.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+        django_db_blocker: Lifts the database block so worker processes can reach the
+        test database.
+    """
     if os.environ.get("HYPERTODO_REDIS_INTEGRATION") != "1":
         pytest.skip("Redis multi-process acceptance is explicitly opt-in")
     assert os.environ.get("HYPERTODO_REDIS_TEST_OWNED") == "1", (
@@ -316,5 +340,10 @@ def test_redis_shares_committed_mutations_and_preserves_rollback_across_processe
             connections.__dict__.pop("settings", None)
 
 
-def test_database_template_model_is_registered_in_admin(admin_site):
+def test_database_template_model_is_registered_in_admin(admin_site: AdminSite) -> None:
+    """Database template model is registered in admin.
+
+    Args:
+        admin_site: Admin site the template model must be registered with.
+    """
     assert HyperviewTemplate in admin_site._registry
