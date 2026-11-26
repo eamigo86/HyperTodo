@@ -13,7 +13,9 @@ from typing import NamedTuple
 from xml.etree import ElementTree
 
 import pytest
+from django.contrib.auth.models import AbstractUser
 from django.contrib.staticfiles import finders
+from django.http import HttpResponse
 from django.test import Client
 from django.urls import reverse
 
@@ -40,8 +42,16 @@ STYLE_ATTRIBUTES = (
 )
 
 
-def assert_hxml(response, *, status=200):
-    """Assert a response is parseable UTF-8 Hyperview XML."""
+def assert_hxml(response: HttpResponse, *, status: int = 200) -> ElementTree.Element:
+    """Assert a response is parseable UTF-8 Hyperview XML.
+
+    Args:
+        response: Response to check.
+        status: HTTP status the response must carry.
+
+    Returns:
+        The parsed document.
+    """
     assert response.status_code == status
     assert response.headers["Content-Type"] in {
         f"{MEDIA_TYPE}; charset=utf-8",
@@ -50,21 +60,39 @@ def assert_hxml(response, *, status=200):
     return ElementTree.fromstring(response.content)
 
 
-def csrf_client():
-    """Create a client that enforces Django CSRF checks."""
+def csrf_client() -> Client:
+    """Create a client that enforces Django CSRF checks.
+
+    Returns:
+        Client that enforces CSRF checks.
+    """
     return Client(enforce_csrf_checks=True)
 
 
-def token_from(response):
-    """Extract the CSRF value embedded for Hyperview forms."""
+def token_from(response: HttpResponse) -> str:
+    """Extract the CSRF value embedded for Hyperview forms.
+
+    Args:
+        response: Response that embeds the token.
+
+    Returns:
+        The CSRF token found in the document.
+    """
     root = ElementTree.fromstring(response.content)
     field = root.find(".//hv:text-field[@name='csrfmiddlewaretoken']", NS)
     assert field is not None
     return field.attrib["value"]
 
 
-def style_ids(root):
-    """Collect every style id referenced by a subtree."""
+def style_ids(root: ElementTree.Element) -> set[str]:
+    """Collect every style id referenced by a subtree.
+
+    Args:
+        root: Subtree to scan.
+
+    Returns:
+        The referenced style ids.
+    """
     used = set()
     for element in root.iter():
         for attribute in STYLE_ATTRIBUTES:
@@ -72,19 +100,34 @@ def style_ids(root):
     return used
 
 
-def declared_ids(root):
-    """Collect every style id declared by a screen stylesheet."""
+def declared_ids(root: ElementTree.Element) -> set[str]:
+    """Collect every style id declared by a screen stylesheet.
+
+    Args:
+        root: Screen document with its stylesheet.
+
+    Returns:
+        The declared style ids.
+    """
     return {node.attrib["id"] for node in root.findall(".//hv:styles/hv:style", NS)}
 
 
-def style_by_id(root, style_id):
-    """Return one declared style rule by id."""
+def style_by_id(root: ElementTree.Element, style_id: str) -> ElementTree.Element:
+    """Return one declared style rule by id.
+
+    Args:
+        root: Screen document with its stylesheet.
+        style_id: Identifier of the style to return.
+
+    Returns:
+        The style element.
+    """
     node = root.find(f".//hv:styles/hv:style[@id='{style_id}']", NS)
     assert node is not None, f"missing style {style_id}"
     return node
 
 
-def _relative_luminance(color):
+def _relative_luminance(color: str) -> float:
     """Return the WCAG relative luminance of a #RRGGBB colour."""
     channels = [int(color[index : index + 2], 16) / 255 for index in (1, 3, 5)]
     linear = [
@@ -94,11 +137,19 @@ def _relative_luminance(color):
     return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 
 
-def over(colour, backdrop, alpha):
+def over(colour: str, backdrop: str, alpha: float) -> str:
     """Return the #RRGGBB a colour composites to when drawn at alpha on a backdrop.
 
     Hyperview's press feedback is opacity, not a colour swap, so the only way to
     check a pressed state's contrast is to composite it first.
+
+    Args:
+        colour: Colour drawn on top, as #RRGGBB.
+        backdrop: Colour underneath, as #RRGGBB.
+        alpha: Opacity of the colour drawn on top.
+
+    Returns:
+        The composited colour as #RRGGBB.
     """
     top, bottom = (
         [int(value[index : index + 2], 16) for index in (1, 3, 5)]
@@ -110,8 +161,16 @@ def over(colour, backdrop, alpha):
     )
 
 
-def contrast_ratio(foreground, background):
-    """Return the WCAG contrast ratio between two #RRGGBB colours."""
+def contrast_ratio(foreground: str, background: str) -> float:
+    """Return the WCAG contrast ratio between two #RRGGBB colours.
+
+    Args:
+        foreground: Foreground colour as #RRGGBB.
+        background: Background colour as #RRGGBB.
+
+    Returns:
+        The ratio, from 1 to 21.
+    """
     lighter, darker = sorted(
         (_relative_luminance(foreground), _relative_luminance(background)), reverse=True
     )
@@ -132,7 +191,7 @@ _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _PNG_CHANNELS = {2: 3, 6: 4}  # truecolour, truecolour + alpha
 
 
-def _unfilter(raw, height, stride, bpp):
+def _unfilter(raw: bytes, height: int, stride: int, bpp: int) -> bytearray:
     """Undo the per-scanline filters of a decompressed PNG image (spec 9.2)."""
     pixels, previous, offset = bytearray(), bytearray(stride), 0
     for _ in range(height):
@@ -166,13 +225,19 @@ def _unfilter(raw, height, stride, bpp):
     return pixels
 
 
-def read_png_icon(path):
+def read_png_icon(path: Path | str | None) -> PngIcon:
     """Decode a PNG with the standard library and report the colour it ships in.
 
     Only zlib is needed: parse IHDR, inflate the IDAT stream, undo the scanline
     filters. Every icon in this app is one flat glyph on transparency, so colour
     is the most common fully opaque pixel — the colour the file actually renders
     in, which is the thing a test asserting a literal never checks.
+
+    Args:
+        path: Location of the PNG file, or None when it cannot be found.
+
+    Returns:
+        The icon's size, bit depth, colour type and dominant opaque colour.
     """
     assert path is not None, "icon is not on the static files path"
     data = Path(path).read_bytes()
@@ -210,7 +275,12 @@ def read_png_icon(path):
 
 
 @pytest.mark.parametrize("icon", ICON_FILES)
-def test_every_icon_ships_at_the_one_size_and_format_the_app_draws(icon):
+def test_every_icon_ships_at_the_one_size_and_format_the_app_draws(icon: str) -> None:
+    """Every icon ships at the one size and format the app draws.
+
+    Args:
+        icon: File name of the icon under test.
+    """
     # One convention for the whole directory: 72x72, 8-bit, RGBA. The nav icons
     # used to sit at 24 and the nav draws them at ~24pt, so every 2x and 3x phone
     # upscaled them into a soft glyph while nothing here complained. Exporting all
@@ -226,8 +296,14 @@ def test_every_icon_ships_at_the_one_size_and_format_the_app_draws(icon):
     "route", ["todo:dashboard", "todo:tasks", "todo:categories", "todo:settings"]
 )
 def test_the_bottom_navigation_labels_are_readable_wherever_the_bar_is_hosted(
-    route, user
-):
+    route: str, user: AbstractUser
+) -> None:
+    """The bottom navigation labels are readable wherever the bar is hosted.
+
+    Args:
+        route: Route name of the screen under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # `nav-label-active` composes over `nav-label`, so the label of the tab you are
     # standing on inherits fontSize 10 and overrides only the colour: 10px is normal
     # text and owes 4.5:1. #278CFF on the bar's own #F7F8FC is 3.15:1, which made the
@@ -255,7 +331,16 @@ def test_the_bottom_navigation_labels_are_readable_wherever_the_bar_is_hosted(
         ("todo:category-new", {"name": "", "color": "lavender"}),
     ],
 )
-def test_form_fragments_only_use_styles_declared_by_their_screen(user, route, payload):
+def test_form_fragments_only_use_styles_declared_by_their_screen(
+    user: AbstractUser, route: str, payload: dict[str, str]
+) -> None:
+    """Form fragments only use styles declared by their screen.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        route: Route name of the screen under test.
+        payload: Form data that makes the endpoint refuse the request.
+    """
     client = csrf_client()
     client.force_login(user)
     screen = client.get(reverse(route))
@@ -272,7 +357,12 @@ def test_form_fragments_only_use_styles_declared_by_their_screen(user, route, pa
     assert style_ids(fragment_root) <= declared
 
 
-def test_task_form_category_uses_a_collapsed_picker_field(user):
+def test_task_form_category_uses_a_collapsed_picker_field(user: AbstractUser) -> None:
+    """Task form category uses a collapsed picker field.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
     work = Category.objects.create(
@@ -301,7 +391,12 @@ def test_task_form_category_uses_a_collapsed_picker_field(user):
     assert edit_picker.attrib["value"] == str(work.pk)
 
 
-def test_picker_field_submits_the_same_category_field_name(user):
+def test_picker_field_submits_the_same_category_field_name(user: AbstractUser) -> None:
+    """Picker field submits the same category field name.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = csrf_client()
     client.force_login(user)
     work = Category.objects.create(
@@ -334,7 +429,12 @@ def test_picker_field_submits_the_same_category_field_name(user):
     assert Task.objects.get(title="Loose").category_id is None
 
 
-def test_task_form_fields_are_legible_and_reachable(user):
+def test_task_form_fields_are_legible_and_reachable(user: AbstractUser) -> None:
+    """Task form fields are legible and reachable.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -392,7 +492,12 @@ def test_task_form_fields_are_legible_and_reachable(user):
     assert "padding" not in style_by_id(root, "screen-content-style").attrib
 
 
-def test_category_form_reports_field_level_errors(user):
+def test_category_form_reports_field_level_errors(user: AbstractUser) -> None:
+    """Category form reports field level errors.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = csrf_client()
     client.force_login(user)
     Category.objects.create(user=user, name="Work", color=Category.Color.LAVENDER)
@@ -418,7 +523,14 @@ def test_category_form_reports_field_level_errors(user):
     assert summary.text == "Review the fields marked in red."
 
 
-def test_colour_options_are_a_compact_row_with_non_colour_selection_state(user):
+def test_colour_options_are_a_compact_row_with_non_colour_selection_state(
+    user: AbstractUser,
+) -> None:
+    """Colour options are a compact row with non colour selection state.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -440,7 +552,12 @@ def test_colour_options_are_a_compact_row_with_non_colour_selection_state(user):
     assert selected.attrib["fontWeight"] == "700"
 
 
-def test_task_list_meets_touch_and_contrast_minimums(user):
+def test_task_list_meets_touch_and_contrast_minimums(user: AbstractUser) -> None:
+    """Task list meets touch and contrast minimums.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -474,7 +591,12 @@ def test_task_list_meets_touch_and_contrast_minimums(user):
     assert empty.find(".//hv:text[@style='empty-copy']", NS) is not None
 
 
-def test_category_cards_keep_text_off_the_pastel_fill(user):
+def test_category_cards_keep_text_off_the_pastel_fill(user: AbstractUser) -> None:
+    """Category cards keep text off the pastel fill.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
     for index, color in enumerate(Category.Color):
@@ -513,7 +635,15 @@ def test_category_cards_keep_text_off_the_pastel_fill(user):
 
 
 @pytest.mark.parametrize("route", ["todo:login", "todo:task-new", "todo:category-new"])
-def test_white_on_blue_labels_are_only_used_at_large_bold_sizes(user, route):
+def test_white_on_blue_labels_are_only_used_at_large_bold_sizes(
+    user: AbstractUser, route: str
+) -> None:
+    """White on blue labels are only used at large bold sizes.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        route: Route name of the screen under test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -530,7 +660,8 @@ def test_white_on_blue_labels_are_only_used_at_large_bold_sizes(user, route):
     assert button_text.attrib["fontWeight"] == "700"
 
 
-def test_the_session_expired_escape_button_stays_readable_on_blue():
+def test_the_session_expired_escape_button_stays_readable_on_blue() -> None:
+    """The session expired escape button stays readable on blue."""
     # The one control on the screen a dead session lands on, white on #278CFF.
     # Hyperview styles do not cascade, so an unset fontSize is React Native's
     # 14px default, not the sibling screens' 19.
@@ -546,7 +677,16 @@ def test_the_session_expired_escape_button_stays_readable_on_blue():
 
 @pytest.mark.parametrize("route", ["todo:tasks", "todo:categories"])
 @pytest.mark.parametrize("populated", [False, True])
-def test_list_partials_only_use_styles_declared_by_their_screen(user, route, populated):
+def test_list_partials_only_use_styles_declared_by_their_screen(
+    user: AbstractUser, route: str, populated: bool
+) -> None:
+    """List partials only use styles declared by their screen.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        route: Route name of the screen under test.
+        populated: Whether the list holds any records.
+    """
     if populated:
         category = Category.objects.create(
             user=user, name="Work", color=Category.Color.LAVENDER
@@ -560,7 +700,8 @@ def test_list_partials_only_use_styles_declared_by_their_screen(user, route, pop
     assert style_ids(root) <= declared_ids(root)
 
 
-def test_no_icon_ships_without_a_template_that_draws_it():
+def test_no_icon_ships_without_a_template_that_draws_it() -> None:
+    """No icon ships without a template that draws it."""
     # Both directions. An orphan is dead weight that still has to clear the 72x72
     # guard above, and a reference with no file renders an invisible <image> rather
     # than failing, so neither shows up anywhere else in this suite.
@@ -589,8 +730,15 @@ PRIMARY_BUTTONS = (
 )
 
 
-def primary_button_screens(user):
-    """Fetch every screen in PRIMARY_BUTTONS, in that order."""
+def primary_button_screens(user: AbstractUser) -> tuple[HttpResponse, ...]:
+    """Fetch every screen in PRIMARY_BUTTONS, in that order.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+
+    Returns:
+        One response per screen, in the order of the buttons.
+    """
     anonymous, client = Client(), Client()
     client.force_login(user)
     return (
@@ -604,7 +752,14 @@ def primary_button_screens(user):
     )
 
 
-def test_every_primary_button_stays_readable_while_it_is_held(user):
+def test_every_primary_button_stays_readable_while_it_is_held(
+    user: AbstractUser,
+) -> None:
+    """Every primary button stays readable while it is held.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # A styled descendant with no pressed rule of its own falls back to opacity 0.7
     # (services/index.ts:33-41), and `pressed` reaches every descendant. With no
     # rules at all a #278CFF button composites to #68AEFF over the card and its
@@ -631,7 +786,14 @@ def test_every_primary_button_stays_readable_while_it_is_held(user):
         assert contrast_ratio(pressed_text.attrib["color"], held) >= 3, label
 
 
-def test_text_drawn_on_a_category_fill_clears_aa_on_every_colour(user):
+def test_text_drawn_on_a_category_fill_clears_aa_on_every_colour(
+    user: AbstractUser,
+) -> None:
+    """Text drawn on a category fill clears aa on every colour.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The five fills are declared once per screen and the ink on them is a separate
     # literal, so a colour added to the model drifts silently. Green #3B9B70 is the
     # binding constraint on all five and nothing lighter than roughly #1E2338
@@ -655,7 +817,15 @@ def test_text_drawn_on_a_category_fill_clears_aa_on_every_colour(user):
 
 
 @pytest.mark.parametrize("route", ["todo:tasks", "todo:categories"])
-def test_the_pagination_spinner_is_visible_against_the_canvas_it_spins_on(user, route):
+def test_the_pagination_spinner_is_visible_against_the_canvas_it_spins_on(
+    user: AbstractUser, route: str
+) -> None:
+    """The pagination spinner is visible against the canvas it spins on.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        route: Route name of the screen under test.
+    """
     # HvSpinner falls back to #8d9494 (hv-spinner/index.tsx:9), 2.91:1 on the
     # #F7F8FC canvas -- under the 3:1 that 1.4.11 asks of a graphical object which
     # carries meaning. A user on a slow connection scrolls to the end of the list and
@@ -674,14 +844,26 @@ def test_the_pagination_spinner_is_visible_against_the_canvas_it_spins_on(user, 
         assert contrast_ratio(colour, canvas) >= 3, f"{route}: {colour} on {canvas}"
 
 
-def swipe_client(user):
-    """Sign a client in and make it announce a version past the capability gate."""
+def swipe_client(user: AbstractUser) -> Client:
+    """Sign a client in and make it announce a version past the capability gate.
+
+    Args:
+        user: User the client is signed in as.
+
+    Returns:
+        Signed-in client that announces a recent app version.
+    """
     client = Client(headers={"x-app-version": "1.1.0"})
     client.force_login(user)
     return client
 
 
-def test_a_category_card_is_painted_by_its_own_colour_again(user):
+def test_a_category_card_is_painted_by_its_own_colour_again(user: AbstractUser) -> None:
+    """A category card is painted by its own colour again.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The fill moves onto the swipe-row itself, because SwipeRow spreads
     # createStyleProp FIRST into the outer View and its content layer sets no
     # background of its own. The padding cannot come with it: the action tray is
@@ -729,7 +911,14 @@ def test_a_category_card_is_painted_by_its_own_colour_again(user):
     assert style_ids(root) <= declared_ids(root)
 
 
-def test_a_category_row_declares_the_two_actions_it_actually_has(user):
+def test_a_category_row_declares_the_two_actions_it_actually_has(
+    user: AbstractUser,
+) -> None:
+    """A category row declares the two actions it actually has.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = swipe_client(user)
     category = Category.objects.create(
         user=user, name="Work", color=Category.Color.LAVENDER
@@ -770,7 +959,14 @@ def test_a_category_row_declares_the_two_actions_it_actually_has(user):
     )
 
 
-def test_a_client_that_predates_the_component_still_gets_the_old_category_card(user):
+def test_a_client_that_predates_the_component_still_gets_the_old_category_card(
+    user: AbstractUser,
+) -> None:
+    """A client that predates the component still gets the old category card.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # A backend deploy reaches every installed binary at once. An old bundle handed
     # the new markup draws no row at all for <app:swipe-action> and, worse, would
     # have shown a "Complete" button that does nothing if the actions had stayed

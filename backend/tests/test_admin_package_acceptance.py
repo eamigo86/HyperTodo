@@ -5,13 +5,19 @@ import json
 import pytest
 from dj_hyperview.contrib.database.models import HyperviewTemplate
 from django.conf import settings
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import AbstractUser, Permission
+from django.test import Client
 from django.urls import reverse
 from django.utils.html import escape
 
 
 @pytest.mark.django_db
-def test_real_template_survives_admin_save_and_reopen(admin_client):
+def test_real_template_survives_admin_save_and_reopen(admin_client: Client) -> None:
+    """Real template survives admin save and reopen.
+
+    Args:
+        admin_client: Client signed in as a superuser that requests the admin.
+    """
     source = (
         (settings.BASE_DIR / "hyperview/screens/about.xml")
         .read_text(encoding="utf-8")
@@ -55,8 +61,16 @@ def test_real_template_survives_admin_save_and_reopen(admin_client):
     ],
 )
 def test_view_only_user_sees_real_template_without_edit_controls(
-    client, django_user_model, name, marker
-):
+    client: Client, django_user_model: type[AbstractUser], name: str, marker: bytes
+) -> None:
+    """View only user sees real template without edit controls.
+
+    Args:
+        client: Client that requests the screens under test.
+        django_user_model: Django user model class.
+        name: Name of the real template.
+        marker: Bytes that must appear in the rendered template.
+    """
     source = (settings.BASE_DIR / "hyperview" / name).read_text(encoding="utf-8")
     template = HyperviewTemplate.objects.create(
         name="screens/admin-read-only.xml",
@@ -97,7 +111,14 @@ def test_view_only_user_sees_real_template_without_edit_controls(
 
 
 @pytest.mark.django_db
-def test_installed_package_validates_an_unsaved_hxml_source(admin_client):
+def test_installed_package_validates_an_unsaved_hxml_source(
+    admin_client: Client,
+) -> None:
+    """Installed package validates an unsaved hxml source.
+
+    Args:
+        admin_client: Client signed in as a superuser that requests the admin.
+    """
     source = (
         '<doc xmlns="https://hyperview.org/hyperview">'
         '<screen id="draft-screen"><body><text>Stored copy</text></body></screen>'

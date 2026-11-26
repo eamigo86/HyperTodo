@@ -5,9 +5,14 @@ so each of these has to come back as a refusal in the shape the action can load.
 """
 
 import logging
+from collections.abc import Callable
 from types import SimpleNamespace
+from typing import Never
+from xml.etree.ElementTree import Element
 
 import pytest
+from django.contrib.auth.models import AbstractUser
+from django.db.models import Model
 from django.http import HttpResponse
 from django.test import Client, RequestFactory
 from django.urls import get_resolver
@@ -32,8 +37,15 @@ NOT_FOUND = "The requested item was not found."
 UNAVAILABLE = "We could not complete that request. Try again in a moment."
 
 
-def field_error(root):
-    """Return the text of the first field error on a refused form panel."""
+def field_error(root: Element) -> str | None:
+    """Return the text of the first field error on a refused form panel.
+
+    Args:
+        root: Parsed Hyperview document or fragment.
+
+    Returns:
+        The text of the error, or None when it has none.
+    """
     node = root.find(".//hv:text[@style='field-error']", NS)
     assert node is not None
     return node.text
@@ -42,13 +54,19 @@ def field_error(root):
 FIELD_TAGS = {"text-field", "select-single", "picker-field", "date-field"}
 
 
-def errors_by_field(root):
+def errors_by_field(root: Element) -> dict[str | None, str | None]:
     """Map every field of a refused form panel to the error copy shown under it.
 
     The panel puts a field's error straight after the field, so an error belongs to
     the nearest named field before it. One that comes before any field is a
     form-level error and is filed under None. Unlike field_error, this fails when
     the right copy sits under the wrong field.
+
+    Args:
+        root: Parsed Hyperview document or fragment.
+
+    Returns:
+        Field name to error text, with None for a form-level error.
     """
     found = {}
     current = None
@@ -62,8 +80,15 @@ def errors_by_field(root):
     return found
 
 
-def invalid_fields(root):
-    """Return the names of the fields a refused form panel marks in red."""
+def invalid_fields(root: Element) -> set[str]:
+    """Return the names of the fields a refused form panel marks in red.
+
+    Args:
+        root: Parsed Hyperview document or fragment.
+
+    Returns:
+        Names of the fields styled as invalid.
+    """
     return {
         node.attrib["name"]
         for node in root.iter()
@@ -76,26 +101,46 @@ def invalid_fields(root):
 # --- a parallel write gets in between a form's check and the write ---------------
 
 
-def race(monkeypatch, service, before):
-    """Run a callback the instant a view calls a service, like a parallel request."""
+def race(
+    monkeypatch: pytest.MonkeyPatch, service: str, before: Callable[..., object]
+) -> None:
+    """Run a callback the instant a view calls a service, like a parallel request.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        service: Name of the service function in the views module to wrap.
+        before: Callback that runs with the service's keyword arguments first.
+    """
     real = getattr(views, service)
 
-    def wrapper(**kwargs):
+    def wrapper(**kwargs: object) -> object:
         before(**kwargs)
         return real(**kwargs)
 
     monkeypatch.setattr(views, service, wrapper)
 
 
-def without_validation(monkeypatch, model):
-    """Skip full_clean so the database constraint is the one that answers."""
+def without_validation(monkeypatch: pytest.MonkeyPatch, model: type[Model]) -> None:
+    """Skip full_clean so the database constraint is the one that answers.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        model: Model class whose full_clean is replaced by a no-op.
+    """
     monkeypatch.setattr(model, "full_clean", lambda self, *args, **kwargs: None)
 
 
 @pytest.mark.parametrize("failure", ["validation", "integrity"])
 def test_a_duplicate_category_created_in_parallel_is_a_422_and_not_a_500(
-    user, monkeypatch, failure
-):
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """A duplicate category created in parallel is a 422 and not a 500.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+        failure: Kind of failure the parallel request causes.
+    """
     # clean_name looks the name up and the service writes it later, so a double tap
     # or two devices can both pass the lookup. The service then raises
     # ValidationError (full_clean sees the row) or IntegrityError (the constraint does).
@@ -128,8 +173,15 @@ def test_a_duplicate_category_created_in_parallel_is_a_422_and_not_a_500(
 
 @pytest.mark.parametrize("failure", ["validation", "integrity"])
 def test_a_rename_that_collides_in_parallel_is_a_422_and_not_a_500(
-    user, monkeypatch, failure
-):
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """A rename that collides in parallel is a 422 and not a 500.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+        failure: Kind of failure the parallel request causes.
+    """
     home = Category.objects.create(user=user, name="Home", color=Category.Color.MINT)
     client = csrf_client()
     client.force_login(user)
@@ -160,8 +212,15 @@ def test_a_rename_that_collides_in_parallel_is_a_422_and_not_a_500(
 
 @pytest.mark.parametrize("route", ["new", "edit"])
 def test_a_category_deleted_in_parallel_is_a_422_on_the_task_form(
-    user, monkeypatch, route
-):
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    """A category deleted in parallel is a 422 on the task form.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+        route: Path of the form under test.
+    """
     work = Category.objects.create(user=user, name="Work", color=Category.Color.MINT)
     task = Task.objects.create(user=user, title="Old")
     client = csrf_client()
@@ -228,8 +287,18 @@ OVERSIZED_ECHOES = [
     ],
 )
 def test_a_refused_form_never_echoes_more_than_the_field_can_hold(
-    user, route, posted, field, tag, limit
-):
+    user: AbstractUser, route: str, posted: str, field: str, tag: str, limit: int
+) -> None:
+    """A refused form never echoes more than the field can hold.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        route: Path of the form under test.
+        posted: Value the client posts.
+        field: Name of the field under test.
+        tag: Hyperview tag that renders the field.
+        limit: Maximum number of characters the field accepts.
+    """
     # The panel hands back what was posted so nobody retypes it, and a bound form
     # returns the RAW submission. A 1.5 MB one took the whole document over the cap
     # and the refusal became a 500 the client cannot read.
@@ -244,7 +313,14 @@ def test_a_refused_form_never_echoes_more_than_the_field_can_hold(
     assert len(node.attrib["value"]) <= limit + 1
 
 
-def test_a_refused_form_echoes_the_text_django_validated_not_the_raw_submission(user):
+def test_a_refused_form_echoes_the_text_django_validated_not_the_raw_submission(
+    user: AbstractUser,
+) -> None:
+    """A refused form echoes the text django validated not the raw submission.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Django validates the STRIPPED value, so a title of 80 spaces and 150 characters is
     # valid. Cutting the raw text at the limit echoed 80 spaces and 80 characters, and
     # posting that back stored the cut text without a word of warning.
@@ -270,8 +346,16 @@ def test_a_refused_form_echoes_the_text_django_validated_not_the_raw_submission(
     ],
 )
 def test_a_padded_date_or_time_is_echoed_without_losing_its_meaning(
-    user, field, tag, posted
-):
+    user: AbstractUser, field: str, tag: str, posted: str
+) -> None:
+    """A padded date or time is echoed without losing its meaning.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        field: Name of the field under test.
+        tag: Hyperview tag that renders the field.
+        posted: Value the client posts.
+    """
     # Django reads a date or a time stripped, but neither field has a `strip` flag. Cut
     # raw at 65 characters the padded time came back as "9:3", which parses as 09:03.
     client = Client()
@@ -292,8 +376,16 @@ def test_a_padded_date_or_time_is_echoed_without_losing_its_meaning(
     [("due_time", "text-field", "09:30"), ("due_date", "date-field", "2026-09-07")],
 )
 def test_an_over_long_date_or_time_stays_refused_when_its_echo_is_saved(
-    user, field, tag, valid
-):
+    user: AbstractUser, field: str, tag: str, valid: str
+) -> None:
+    """An over long date or time stays refused when its echo is saved.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        field: Name of the field under test.
+        tag: Hyperview tag that renders the field.
+        valid: Value the field accepts.
+    """
     # Cut at 65 characters, a valid value followed by 60 spaces and a stray "x" came
     # back as the value and trailing spaces, which Django strips on the next Save: the
     # refused input turned into an accepted one.
@@ -312,7 +404,12 @@ def test_an_over_long_date_or_time_stays_refused_when_its_echo_is_saved(
     assert not Task.objects.exists()
 
 
-def test_notes_that_only_fit_once_stripped_come_back_whole(user):
+def test_notes_that_only_fit_once_stripped_come_back_whole(user: AbstractUser) -> None:
+    """Notes that only fit once stripped come back whole.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -325,7 +422,14 @@ def test_notes_that_only_fit_once_stripped_come_back_whole(user):
     assert notes.attrib["value"] == "n" * 9_990
 
 
-def test_an_over_long_title_is_echoed_one_character_past_the_limit(user):
+def test_an_over_long_title_is_echoed_one_character_past_the_limit(
+    user: AbstractUser,
+) -> None:
+    """An over long title is echoed one character past the limit.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Cut at exactly 160 the echo looks valid, and a second Save stores the cut text.
     # One more character keeps it refused: the person has to trim it themselves.
     client = Client()
@@ -341,7 +445,14 @@ def test_an_over_long_title_is_echoed_one_character_past_the_limit(user):
     assert not Task.objects.filter(user=user).exists()
 
 
-def test_a_notes_field_over_its_limit_is_echoed_one_character_past_it(user):
+def test_a_notes_field_over_its_limit_is_echoed_one_character_past_it(
+    user: AbstractUser,
+) -> None:
+    """A notes field over its limit is echoed one character past it.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -352,7 +463,14 @@ def test_a_notes_field_over_its_limit_is_echoed_one_character_past_it(user):
     assert notes.attrib["value"] == "n" * 10_001
 
 
-def test_a_refused_choice_does_not_quote_an_oversized_value_back(user):
+def test_a_refused_choice_does_not_quote_an_oversized_value_back(
+    user: AbstractUser,
+) -> None:
+    """A refused choice does not quote an oversized value back.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Django's own copy for a bad choice quotes the value, and the form scrubs and
     # echoes that copy, so the error text alone could outgrow the document.
     client = Client()
@@ -367,7 +485,14 @@ def test_a_refused_choice_does_not_quote_an_oversized_value_back(user):
     assert field_error(root).startswith("Select a valid choice.")
 
 
-def test_an_edit_that_is_refused_keeps_the_stored_text_whole(user):
+def test_an_edit_that_is_refused_keeps_the_stored_text_whole(
+    user: AbstractUser,
+) -> None:
+    """An edit that is refused keeps the stored text whole.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Only a submission is bounded. Text that is already stored, up to the field's own
     # limit, is what the edit form was opened with and goes back unchanged.
     task = Task.objects.create(user=user, title="T" * 160, notes="N" * 10_000)
@@ -386,7 +511,14 @@ def test_an_edit_that_is_refused_keeps_the_stored_text_whole(user):
     )
 
 
-def test_stored_text_over_the_limit_is_shown_whole_when_the_edit_form_opens(user):
+def test_stored_text_over_the_limit_is_shown_whole_when_the_edit_form_opens(
+    user: AbstractUser,
+) -> None:
+    """Stored text over the limit is shown whole when the edit form opens.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # A row written before the limit existed is not cut by the form: truncating what
     # is stored would lose text on the next save without a word.
     task = Task.objects.create(user=user, title="Old", notes="N" * 12_000)
@@ -406,7 +538,15 @@ def test_stored_text_over_the_limit_is_shown_whole_when_the_edit_form_opens(user
 @pytest.mark.parametrize(
     "due_date", ["0001-01-01", "1999-12-31", "2101-01-01", "9999-12-31"]
 )
-def test_a_due_date_outside_the_supported_years_is_a_field_error(user, due_date):
+def test_a_due_date_outside_the_supported_years_is_a_field_error(
+    user: AbstractUser, due_date: str
+) -> None:
+    """A due date outside the supported years is a field error.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        due_date: Posted due date.
+    """
     form = TaskForm(
         {"title": "Plan", "due_date": due_date, "due_time": "23:59"}, user=user
     )
@@ -417,7 +557,12 @@ def test_a_due_date_outside_the_supported_years_is_a_field_error(user, due_date)
     assert "due_time" not in form.errors
 
 
-def test_the_due_date_range_is_stated_in_the_users_language(user):
+def test_the_due_date_range_is_stated_in_the_users_language(user: AbstractUser) -> None:
+    """The due date range is stated in the users language.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     form = TaskForm({"title": "Plan", "due_date": "9999-12-31"}, user=user)
 
     with translation.override("es"):
@@ -426,7 +571,16 @@ def test_the_due_date_range_is_stated_in_the_users_language(user):
 
 @pytest.mark.parametrize("due_time", ["23:59", ""], ids=["timed", "all-day"])
 @pytest.mark.parametrize("due_date", ["2000-01-01", "2100-12-31"])
-def test_the_first_and_last_supported_days_can_be_stored(user, due_date, due_time):
+def test_the_first_and_last_supported_days_can_be_stored(
+    user: AbstractUser, due_date: str, due_time: str
+) -> None:
+    """The first and last supported days can be stored.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        due_date: Posted due date.
+        due_time: Posted due time.
+    """
     form = TaskForm(
         {"title": "Plan", "due_date": due_date, "due_time": due_time}, user=user
     )
@@ -444,7 +598,14 @@ def test_the_first_and_last_supported_days_can_be_stored(user, due_date, due_tim
     assert task.due_at == form.cleaned_data["due_at"]
 
 
-def test_the_overflowing_date_from_the_audit_answers_422_and_not_500(user):
+def test_the_overflowing_date_from_the_audit_answers_422_and_not_500(
+    user: AbstractUser,
+) -> None:
+    """The overflowing date from the audit answers 422 and not 500.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # 9999-12-31 23:59 overflows when it is converted to UTC for the database, which
     # no handler turned into anything but a plain HTML 500.
     client = csrf_client()
@@ -472,14 +633,16 @@ def test_the_overflowing_date_from_the_audit_answers_422_and_not_500(user):
 # --- errors outside any view -----------------------------------------------------
 
 
-def test_the_error_handlers_are_the_hyperview_aware_ones():
+def test_the_error_handlers_are_the_hyperview_aware_ones() -> None:
+    """The error handlers are the hyperview aware ones."""
     resolver = get_resolver()
 
     assert resolver.resolve_error_handler(404) is views.not_found
     assert resolver.resolve_error_handler(500) is views.server_error
 
 
-def test_an_unknown_hyperview_route_gets_an_hxml_document():
+def test_an_unknown_hyperview_route_gets_an_hxml_document() -> None:
+    """An unknown hyperview route gets an hxml document."""
     response = Client().get("/hv/nothing-here/")
 
     assert response.status_code == 404
@@ -492,7 +655,14 @@ def test_an_unknown_hyperview_route_gets_an_hxml_document():
     assert way_out.attrib["href"] == "/hv/login/"
 
 
-def test_an_unknown_hyperview_route_gets_a_bare_fragment_for_a_fragment_load(user):
+def test_an_unknown_hyperview_route_gets_a_bare_fragment_for_a_fragment_load(
+    user: AbstractUser,
+) -> None:
+    """An unknown hyperview route gets a bare fragment for a fragment load.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -502,7 +672,14 @@ def test_an_unknown_hyperview_route_gets_a_bare_fragment_for_a_fragment_load(use
     assert_bare_fragment(response, "unknown route, fragment load")
 
 
-def test_a_modern_client_gets_the_hxml_404_with_its_session_binding(user):
+def test_a_modern_client_gets_the_hxml_404_with_its_session_binding(
+    user: AbstractUser,
+) -> None:
+    """A modern client gets the hxml 404 with its session binding.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The mobile app always negotiates the realtime contract, which adds a realtime
     # boundary to the error screen and a binding to the response. The handler has to
     # build the same answer for it, or the unknown-route fix would only work for old
@@ -522,7 +699,8 @@ def test_a_modern_client_gets_the_hxml_404_with_its_session_binding(user):
     assert b"app:realtime" in response.content
 
 
-def test_an_unknown_post_is_a_404_in_hxml_and_not_a_csrf_failure():
+def test_an_unknown_post_is_a_404_in_hxml_and_not_a_csrf_failure() -> None:
+    """An unknown post is a 404 in hxml and not a csrf failure."""
     response = Client(enforce_csrf_checks=True).post("/hv/nothing-here/", {"a": "b"})
 
     assert response.status_code == 404
@@ -530,7 +708,14 @@ def test_an_unknown_post_is_a_404_in_hxml_and_not_a_csrf_failure():
 
 
 @pytest.mark.parametrize("path", ["/nothing-here/", "/realtime/nothing-here/"])
-def test_an_unknown_route_outside_the_hyperview_api_keeps_djangos_html_page(path):
+def test_an_unknown_route_outside_the_hyperview_api_keeps_djangos_html_page(
+    path: str,
+) -> None:
+    """An unknown route outside the hyperview api keeps djangos html page.
+
+    Args:
+        path: Request path that matches no route.
+    """
     response = Client().get(path)
 
     assert response.status_code == 404
@@ -538,8 +723,20 @@ def test_an_unknown_route_outside_the_hyperview_api_keeps_djangos_html_page(path
     assert b"hyperview.org" not in response.content
 
 
-def test_an_unhandled_error_in_a_screen_is_an_hxml_500(user, monkeypatch, caplog):
-    def broken(*args, **kwargs):
+def test_an_unhandled_error_in_a_screen_is_an_hxml_500(
+    user: AbstractUser,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An unhandled error in a screen is an hxml 500.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records emitted by this test.
+    """
+
+    def broken(*args: object, **kwargs: object) -> Never:
         raise RuntimeError("database on fire")
 
     monkeypatch.setattr(views, "dashboard_summary", broken)
@@ -558,8 +755,17 @@ def test_an_unhandled_error_in_a_screen_is_an_hxml_500(user, monkeypatch, caplog
     assert [record.exc_info[0] for record in logged] == [RuntimeError]
 
 
-def test_the_hxml_500_speaks_the_language_the_request_asked_for(user, monkeypatch):
-    def broken(*args, **kwargs):
+def test_the_hxml_500_speaks_the_language_the_request_asked_for(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hxml 500 speaks the language the request asked for.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+    """
+
+    def broken(*args: object, **kwargs: object) -> Never:
         raise RuntimeError("database on fire")
 
     monkeypatch.setattr(views, "dashboard_summary", broken)
@@ -576,9 +782,16 @@ def test_the_hxml_500_speaks_the_language_the_request_asked_for(user, monkeypatc
 
 
 def test_an_unhandled_error_in_a_fragment_endpoint_keeps_its_fragment_shape(
-    user, monkeypatch
-):
-    def broken(**kwargs):
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unhandled error in a fragment endpoint keeps its fragment shape.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+    """
+
+    def broken(**kwargs: object) -> Never:
         raise RuntimeError("database on fire")
 
     monkeypatch.setattr(views, "set_preference", broken)
@@ -591,7 +804,8 @@ def test_an_unhandled_error_in_a_fragment_endpoint_keeps_its_fragment_shape(
     assert_bare_fragment(response, "unhandled error, fragment endpoint")
 
 
-def test_the_server_error_page_outside_the_hyperview_api_is_djangos_own():
+def test_the_server_error_page_outside_the_hyperview_api_is_djangos_own() -> None:
+    """The server error page outside the hyperview api is djangos own."""
     request = RequestFactory().get("/admin/")
 
     response = views.server_error(request)
@@ -602,10 +816,19 @@ def test_the_server_error_page_outside_the_hyperview_api_is_djangos_own():
 
 
 @pytest.mark.parametrize("broken", ["construct", "render"])
-def test_a_failing_hxml_error_falls_back_to_djangos_page(monkeypatch, broken):
+def test_a_failing_hxml_error_falls_back_to_djangos_page(
+    monkeypatch: pytest.MonkeyPatch, broken: str
+) -> None:
+    """A failing hxml error falls back to djangos page.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        broken: Which part of the error screen is broken.
+    """
+
     # The handler runs when something is already wrong, so it must never be the thing
     # that turns a 404 or a 500 into an unhandled exception.
-    def boom(*args, **kwargs):
+    def boom(*args: object, **kwargs: object) -> Never:
         raise RuntimeError("the error screen is broken too")
 
     if broken == "construct":
@@ -632,11 +855,25 @@ def test_a_failing_hxml_error_falls_back_to_djangos_page(monkeypatch, broken):
     ("handler", "status"), [("not_found", 404), ("server_error", 500)]
 )
 def test_a_failing_hxml_error_says_so_in_the_log(
-    monkeypatch, caplog, broken, handler, status
-):
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    broken: str,
+    handler: str,
+    status: int,
+) -> None:
+    """A failing hxml error says so in the log.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records emitted by this test.
+        broken: Which part of the error screen is broken.
+        handler: Name of the error handler under test.
+        status: HTTP status the handler answers with.
+    """
+
     # Falling back is right; doing it in silence is not. A broken error template would
     # otherwise show up only as HTML where the client expects HXML.
-    def boom(*args, **kwargs):
+    def boom(*args: object, **kwargs: object) -> Never:
         raise RuntimeError("the error screen is broken too")
 
     if broken == "construct":
@@ -661,8 +898,20 @@ def test_a_failing_hxml_error_says_so_in_the_log(
     assert str(status) in record.getMessage()
 
 
-def test_an_hxml_error_that_works_leaves_no_warning(user, monkeypatch, caplog):
-    def broken(*args, **kwargs):
+def test_an_hxml_error_that_works_leaves_no_warning(
+    user: AbstractUser,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An hxml error that works leaves no warning.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records emitted by this test.
+    """
+
+    def broken(*args: object, **kwargs: object) -> Never:
         raise RuntimeError("database on fire")
 
     monkeypatch.setattr(views, "dashboard_summary", broken)
@@ -676,12 +925,22 @@ def test_an_hxml_error_that_works_leaves_no_warning(user, monkeypatch, caplog):
 
 
 def test_both_failures_are_logged_when_the_error_screen_breaks_on_a_real_500(
-    user, monkeypatch, caplog
-):
-    def broken(*args, **kwargs):
+    user: AbstractUser,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Both failures are logged when the error screen breaks on a real 500.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records emitted by this test.
+    """
+
+    def broken(*args: object, **kwargs: object) -> Never:
         raise RuntimeError("database on fire")
 
-    def boom(*args, **kwargs):
+    def boom(*args: object, **kwargs: object) -> Never:
         raise RuntimeError("the error screen is broken too")
 
     monkeypatch.setattr(views, "dashboard_summary", broken)

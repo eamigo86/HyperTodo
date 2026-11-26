@@ -6,8 +6,15 @@ from pathlib import Path
 SOURCE_ROOT = Path(__file__).parents[1]
 
 
-def backtick_docstrings(root):
-    """List path:line:name for every docstring under root that holds a backtick."""
+def backtick_docstrings(root: Path) -> list[str]:
+    """List path:line:name for every docstring under root that holds a backtick.
+
+    Args:
+        root: Folder scanned for Python files.
+
+    Returns:
+        One path:line:name entry per docstring with a backtick.
+    """
     offenders = []
     for path in sorted(root.rglob("*.py")):
         if any(part in {".venv", "__pycache__"} for part in path.parts):
@@ -28,13 +35,20 @@ def backtick_docstrings(root):
     return offenders
 
 
-def test_no_python_docstring_contains_backticks():
+def test_no_python_docstring_contains_backticks() -> None:
     """Keep every Python docstring free of backtick markup."""
     offenders = backtick_docstrings(SOURCE_ROOT)
     assert not offenders, "docstrings containing backticks: " + ", ".join(offenders)
 
 
-def test_a_module_docstring_with_backticks_is_reported_not_a_crash(tmp_path):
+def test_a_module_docstring_with_backticks_is_reported_not_a_crash(
+    tmp_path: Path,
+) -> None:
+    """A module docstring with backticks is reported not a crash.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+    """
     # A module has no lineno: reading it raised AttributeError, so the one place a
     # backtick is most likely to hide ended the run with a traceback instead of a name.
     (tmp_path / "module.py").write_text('# Header.\n\n"""Mentions `code`."""\n')

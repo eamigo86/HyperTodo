@@ -7,6 +7,8 @@ import pytest
 from dj_hyperview import validate_hyperview_schema
 from dj_hyperview.contrib.database.models import HyperviewTemplate
 from dj_hyperview.contrib.database.services import publish_template
+from django.contrib.auth.models import AbstractUser
+from django.test import Client
 
 from tests.test_session_contract import _confirm, _headers
 from todo.models import Profile
@@ -15,7 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 REFERENCE = Path(__file__).parent / "fixtures/about_before_balanced_wrapper.xml"
 
 
-def test_about_shares_one_content_partial_between_balanced_branches():
+def test_about_shares_one_content_partial_between_balanced_branches() -> None:
+    """About shares one content partial between balanced branches."""
     source = (ROOT / "hyperview/screens/about.xml").read_text()
     include = '{% include "partials/about_content.xml" %}'
     assert source.count(include) == 2
@@ -26,7 +29,15 @@ def test_about_shares_one_content_partial_between_balanced_branches():
     assert "realtime_enabled" not in partial
 
 
-def xml_semantics(content):
+def xml_semantics(content: bytes) -> bytes:
+    """Validate rendered XML and strip whitespace-only text from it.
+
+    Args:
+        content: Rendered XML document.
+
+    Returns:
+        Serialized XML in which only meaningful text remains.
+    """
     validate_hyperview_schema(content.decode())
     root = ET.fromstring(content)
     for node in root.iter():
@@ -42,8 +53,17 @@ def xml_semantics(content):
 @pytest.mark.parametrize("language", ["en", "es"])
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_about_balanced_source_keeps_preexisting_rendered_semantics(
-    client, user, contract, language, theme
-):
+    client: Client, user: AbstractUser, contract: str, language: str, theme: str
+) -> None:
+    """About balanced source keeps preexisting rendered semantics.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        contract: Hyperview contract the screen renders for.
+        language: Language code the screen renders in.
+        theme: Theme the stored profile prefers.
+    """
     Profile.objects.create(user=user, language=language, theme=theme)
     client.force_login(user)
     headers = {"X-App-Version": "1.2.0"}

@@ -13,15 +13,21 @@ import re
 import struct
 import zlib
 from base64 import b64encode
+from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
+from typing import Never
+from xml.etree.ElementTree import Element
 
 import pytest
 from django.conf import settings
+from django.contrib.auth.models import AbstractUser
 from django.core.files.storage import FileSystemStorage
+from django.http import HttpResponse
 from django.test import Client
 from django.urls import reverse
 from PIL import Image, ImageOps
+from pytest_django.fixtures import DjangoCaptureOnCommitCallbacks
 
 from tests.test_forms_ui import (
     NS,
@@ -46,7 +52,8 @@ from todo.services import store_avatar
 pytestmark = pytest.mark.django_db
 
 
-def test_media_is_configured_for_user_uploads():
+def test_media_is_configured_for_user_uploads() -> None:
+    """Media is configured for user uploads."""
     # MEDIA_URL without a leading slash is a relative url: <image source> resolves
     # it against the SCREEN url, so /hv/settings/ would ask for
     # /hv/media/avatars/... and 404. Django normalises it the way it already does
@@ -55,7 +62,14 @@ def test_media_is_configured_for_user_uploads():
     assert Path(settings.MEDIA_ROOT).is_absolute()
 
 
-def test_every_test_writes_uploads_outside_the_repository(tmp_path_factory):
+def test_every_test_writes_uploads_outside_the_repository(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Every test writes uploads outside the repository.
+
+    Args:
+        tmp_path_factory: Factory for the temporary directories of the test session.
+    """
     # The isolation fixture is itself under test. test_fragment_contract.py fires a
     # real POST at every scanned href, so the avatar endpoint is exercised from a
     # second module the moment it appears in a template; without a suite-wide
@@ -66,8 +80,22 @@ def test_every_test_writes_uploads_outside_the_repository(tmp_path_factory):
     )
 
 
-def jpeg(size=(64, 64), colour=(255, 255, 255), *, exif=None):
-    """Encode one JPEG, optionally carrying an EXIF block."""
+def jpeg(
+    size: tuple[int, int] = (64, 64),
+    colour: tuple[int, ...] = (255, 255, 255),
+    *,
+    exif: Callable[[Image.Image], Image.Exif] | None = None,
+) -> bytes:
+    """Encode one JPEG, optionally carrying an EXIF block.
+
+    Args:
+        size: Width and height in pixels.
+        colour: Background colour as RGB.
+        exif: Builds the EXIF block from the image, or None for no EXIF.
+
+    Returns:
+        The encoded JPEG.
+    """
     image = Image.new("RGB", size, colour)
     image.paste(Image.new("RGB", (16, 16), (255, 0, 0)), (0, 0))
     buffer = BytesIO()
@@ -75,8 +103,15 @@ def jpeg(size=(64, 64), colour=(255, 255, 255), *, exif=None):
     return buffer.getvalue()
 
 
-def phone_exif(image):
-    """Build the EXIF a phone camera writes: orientation, make, and GPS."""
+def phone_exif(image: Image.Image) -> Image.Exif:
+    """Build the EXIF a phone camera writes: orientation, make, and GPS.
+
+    Args:
+        image: Image the EXIF block is built for.
+
+    Returns:
+        The EXIF block of a phone photo.
+    """
     exif = image.getexif()
     exif[274] = 6  # Orientation: rotate 90 degrees clockwise to display.
     exif[271] = "ACME Phone"
@@ -86,21 +121,31 @@ def phone_exif(image):
     return exif
 
 
-def png(size=(64, 64), colour=(255, 0, 0, 0)):
-    """Encode one PNG, transparent by default."""
+def png(
+    size: tuple[int, int] = (64, 64), colour: tuple[int, ...] = (255, 0, 0, 0)
+) -> bytes:
+    """Encode one PNG, transparent by default.
+
+    Args:
+        size: Width and height in pixels.
+        colour: Fill colour as RGBA.
+
+    Returns:
+        The encoded PNG.
+    """
     buffer = BytesIO()
     Image.new("RGBA", size, colour).save(buffer, "PNG")
     return buffer.getvalue()
 
 
-def _with_declared_size(raw, width, height):
+def _with_declared_size(raw: bytes, width: int, height: int) -> bytes:
     """Rewrite a PNG's IHDR so it CLAIMS a size it never has to allocate."""
     header = struct.pack(">II", width, height) + raw[24:29]
     crc = zlib.crc32(b"IHDR" + header)
     return raw[:16] + header + struct.pack(">I", crc) + raw[33:]
 
 
-def _chunks(raw):
+def _chunks(raw: bytes) -> list[tuple[bytes, bytes]]:
     """Split a PNG into its (type, data) chunks."""
     position, found = 8, []
     while position < len(raw):
@@ -111,7 +156,7 @@ def _chunks(raw):
     return found
 
 
-def _png_of(chunks):
+def _png_of(chunks: list[tuple[bytes, bytes]]) -> bytes:
     """Join (type, data) chunks into a PNG, every chunk carrying a valid CRC."""
     return b"\x89PNG\r\n\x1a\n" + b"".join(
         struct.pack(">I", len(data))
@@ -122,13 +167,16 @@ def _png_of(chunks):
     )
 
 
-def broken_chunk_png():
+def broken_chunk_png() -> bytes:
     """Build a PNG whose pixels are cut short and followed by a header with no type.
 
     Image.open reads up to the first IDAT only, so it accepts this file. The decoder
     then goes for the missing pixels and Pillow raises SyntaxError ("broken PNG file
     (chunk ...)"), which is not an OSError. Seeded noise, so the bytes are the same
     on every run and the IDAT is too large to hold the whole image in its first half.
+
+    Returns:
+        The bytes of the damaged PNG.
     """
     noise = Image.frombytes("RGB", (64, 64), random.Random(0).randbytes(64 * 64 * 3))
     buffer = BytesIO()
@@ -142,11 +190,14 @@ def broken_chunk_png():
     return _png_of(chunks)
 
 
-def truncated_apng():
+def truncated_apng() -> bytes:
     """Build an animated PNG whose frame-control chunks are cut short.
 
     Pillow raises ValueError ("APNG contains truncated fcTL chunk") from Image.open
     itself, and ValueError is not an OSError either.
+
+    Returns:
+        The bytes of the damaged animated PNG.
     """
     colours = ((255, 0, 0, 255), (0, 0, 255, 255))
     frames = [Image.new("RGBA", (16, 16), colour) for colour in colours]
@@ -160,7 +211,7 @@ def truncated_apng():
     )
 
 
-def late_chunk_png(mode, kind, data):
+def late_chunk_png(mode: str, kind: bytes, data: bytes) -> bytes:
     """Build a PNG whose pixels decode and whose chunk after them is cut short.
 
     Image.open reads up to the first IDAT, so it accepts this file and so does the
@@ -168,6 +219,14 @@ def late_chunk_png(mode, kind, data):
     the end of load(), and Pillow unpacks it without checking its length: a short
     gAMA, cHRM or tRNS raises struct.error and an empty iCCP raises IndexError.
     Neither is an OSError, a ValueError or a SyntaxError.
+
+    Args:
+        mode: Pillow image mode of the picture.
+        kind: Four-byte type of the chunk to cut short.
+        data: Payload of that chunk.
+
+    Returns:
+        The bytes of the damaged PNG.
     """
     buffer = BytesIO()
     Image.new(mode, (16, 16)).save(buffer, "PNG")
@@ -179,12 +238,18 @@ def late_chunk_png(mode, kind, data):
     return _png_of(chunks)
 
 
-def exif_block(entries):
+def exif_block(entries: list[tuple[int, int, int, bytes]]) -> bytes:
     """Hand-build a little-endian EXIF block from (tag, type, count, payload) rows.
 
     Pillow types a tag it writes from its own table, so a MISTYPED tag, which is what
     a hostile or merely sloppy camera produces, can only be made by hand. Payloads of
     up to four bytes sit inline; longer ones follow the table.
+
+    Args:
+        entries: Rows of tag, EXIF type, count and payload.
+
+    Returns:
+        The EXIF block, ready to hand to Pillow.
     """
     header = b"II*\x00" + struct.pack("<I", 8)
     data_start = 8 + 2 + 12 * len(entries) + 4
@@ -209,42 +274,71 @@ def exif_block(entries):
 ORIENTATION_6 = (0x0112, 3, 1, struct.pack("<H", 6))
 
 
-def mistyped_exif_jpeg(entry):
+def mistyped_exif_jpeg(entry: tuple[int, int, int, bytes]) -> bytes:
     """Build a JPEG that asks to be rotated and carries one mistyped EXIF tag.
 
     The Orientation tag is what sends exif_transpose down the path that re-serialises
     the whole EXIF block, and that rewrite is where the mistyped tag blows up.
+
+    Args:
+        entry: Row of tag, EXIF type, count and payload for the mistyped tag.
+
+    Returns:
+        The encoded JPEG.
     """
     return jpeg(exif=lambda _image: exif_block([ORIENTATION_6, entry]))
 
 
-def submit(raw):
-    """Run raw image bytes through the form the way the client posts them."""
+def submit(raw: bytes) -> AvatarForm:
+    """Run raw image bytes through the form the way the client posts them.
+
+    Args:
+        raw: Raw image bytes.
+
+    Returns:
+        The avatar form bound to the bytes, not yet validated.
+    """
     return AvatarForm({"avatar_data": b64encode(raw).decode()})
 
 
-def rejection(raw):
-    """Return the single error the form raised for these bytes."""
+def rejection(raw: bytes) -> str:
+    """Return the single error the form raised for these bytes.
+
+    Args:
+        raw: Raw image bytes the form must refuse.
+
+    Returns:
+        The first error message of the avatar field.
+    """
     form = submit(raw)
     assert not form.is_valid()
     return form.errors["avatar_data"][0]
 
 
-def normalised(raw):
-    """Return the stored image the form produced for these bytes."""
+def normalised(raw: bytes) -> bytes:
+    """Return the stored image the form produced for these bytes.
+
+    Args:
+        raw: Raw image bytes the form must accept.
+
+    Returns:
+        The normalised image bytes.
+    """
     form = submit(raw)
     assert form.is_valid(), form.errors
     return form.cleaned_data["avatar_data"]
 
 
-def test_a_photo_is_re_encoded_to_one_fixed_square_jpeg():
+def test_a_photo_is_re_encoded_to_one_fixed_square_jpeg() -> None:
+    """A photo is re encoded to one fixed square jpeg."""
     stored = normalised(jpeg((300, 200)))
 
     image = Image.open(BytesIO(stored))
     assert (image.format, image.mode, image.size) == ("JPEG", "RGB", (256, 256))
 
 
-def test_a_phone_photos_exif_never_reaches_storage():
+def test_a_phone_photos_exif_never_reaches_storage() -> None:
+    """A phone photos exif never reaches storage."""
     # Not decoration: a camera roll photo carries GPS coordinates, the camera make
     # and the capture time, and the avatar url is public. exif_transpose clears the
     # Orientation tag ONLY -- measured on Pillow 12.3.0, GPSInfo and Make survive it
@@ -261,7 +355,8 @@ def test_a_phone_photos_exif_never_reaches_storage():
     assert not dict(Image.open(BytesIO(stored)).getexif())
 
 
-def test_a_photo_is_rotated_the_way_the_camera_meant_it_to_be_seen():
+def test_a_photo_is_rotated_the_way_the_camera_meant_it_to_be_seen() -> None:
+    """A photo is rotated the way the camera meant it to be seen."""
     # Orientation 6 means "rotate 90 clockwise to display", so the red block in the
     # source's top-left belongs in the stored image's top-RIGHT. Without
     # exif_transpose it stays top-left and every iPhone portrait lands sideways.
@@ -272,7 +367,8 @@ def test_a_photo_is_rotated_the_way_the_camera_meant_it_to_be_seen():
     assert min(stored.getpixel((6, 6))) > 200
 
 
-def test_transparency_is_flattened_onto_white_and_not_onto_black():
+def test_transparency_is_flattened_onto_white_and_not_onto_black() -> None:
+    """Transparency is flattened onto white and not onto black."""
     # convert("RGB") composites alpha onto BLACK, so a transparent PNG would land as
     # a black square inside a white disc. The fresh canvas is the fix.
     stored = Image.open(BytesIO(normalised(png())))
@@ -280,22 +376,26 @@ def test_transparency_is_flattened_onto_white_and_not_onto_black():
     assert min(stored.getpixel((128, 128))) > 200
 
 
-def test_a_renamed_shell_script_is_not_an_image():
+def test_a_renamed_shell_script_is_not_an_image() -> None:
+    """A renamed shell script is not an image."""
     assert rejection(b"#!/bin/sh\necho pwned\n") == NOT_AN_IMAGE
 
 
-def test_a_renamed_mach_o_executable_is_not_an_image():
+def test_a_renamed_mach_o_executable_is_not_an_image() -> None:
+    """A renamed mach o executable is not an image."""
     assert rejection(b"\xcf\xfa\xed\xfe" + b"\x00" * 512) == NOT_AN_IMAGE
 
 
-def test_a_payload_that_is_not_base64_at_all_is_not_an_image():
+def test_a_payload_that_is_not_base64_at_all_is_not_an_image() -> None:
+    """A payload that is not base64 at all is not an image."""
     form = AvatarForm({"avatar_data": "not base64 at all!!"})
 
     assert not form.is_valid()
     assert form.errors["avatar_data"] == [NOT_AN_IMAGE]
 
 
-def test_a_payload_over_the_byte_ceiling_is_refused_before_it_is_decoded():
+def test_a_payload_over_the_byte_ceiling_is_refused_before_it_is_decoded() -> None:
+    """A payload over the byte ceiling is refused before it is decoded."""
     error = rejection(os.urandom(700_000))
 
     assert error == TOO_LARGE
@@ -304,7 +404,8 @@ def test_a_payload_over_the_byte_ceiling_is_refused_before_it_is_decoded():
     assert error != NOT_AN_IMAGE
 
 
-def test_a_pixel_bomb_is_refused_even_though_its_file_is_small():
+def test_a_pixel_bomb_is_refused_even_though_its_file_is_small() -> None:
+    """A pixel bomb is refused even though its file is small."""
     # Pillow's own MAX_IMAGE_PIXELS only WARNS between 1x and 2x the limit
     # (Image._decompression_bomb_check), so 25 megapixels sails past it and
     # allocates ~100MB on decode. A flat PNG compresses to a few KB, which is what
@@ -315,7 +416,8 @@ def test_a_pixel_bomb_is_refused_even_though_its_file_is_small():
     assert rejection(bomb) == TOO_LARGE
 
 
-def test_a_pixel_bomb_over_pillows_own_ceiling_is_refused_and_does_not_crash():
+def test_a_pixel_bomb_over_pillows_own_ceiling_is_refused_and_does_not_crash() -> None:
+    """A pixel bomb over pillows own ceiling is refused and does not crash."""
     # Above 2x Image.MAX_IMAGE_PIXELS, Pillow stops warning and RAISES
     # DecompressionBombError from Image.open itself -- before the MAX_SOURCE_PIXELS
     # guard below it ever runs. That error subclasses Exception, NOT OSError, so
@@ -330,7 +432,8 @@ def test_a_pixel_bomb_over_pillows_own_ceiling_is_refused_and_does_not_crash():
     assert rejection(bomb) == TOO_LARGE
 
 
-def test_an_image_over_the_pixel_cap_is_refused_before_it_is_decoded():
+def test_an_image_over_the_pixel_cap_is_refused_before_it_is_decoded() -> None:
+    """An image over the pixel cap is refused before it is decoded."""
     # An edge cap alone let 4096x4096 through: 56KB on the wire, yet about 200MB of
     # resident memory once decoded and converted to RGBA. Memory follows the area, so
     # the area is what is capped. The header is rewritten rather than rendered, which
@@ -340,7 +443,8 @@ def test_an_image_over_the_pixel_cap_is_refused_before_it_is_decoded():
     assert rejection(_with_declared_size(png((1, 1)), 4096, 4096)) == TOO_LARGE
 
 
-def test_the_pixel_cap_is_inclusive():
+def test_the_pixel_cap_is_inclusive() -> None:
+    """The pixel cap is inclusive."""
     side = int(MAX_SOURCE_PIXELS**0.5)
     assert side * side == MAX_SOURCE_PIXELS
     at_the_cap = png((side, side), (0, 0, 0, 255))
@@ -350,14 +454,21 @@ def test_the_pixel_cap_is_inclusive():
     assert rejection(_with_declared_size(png((1, 1)), side + 1, side)) == TOO_LARGE
 
 
-def test_a_large_jpeg_is_decoded_at_a_reduced_size(monkeypatch):
+def test_a_large_jpeg_is_decoded_at_a_reduced_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A large jpeg is decoded at a reduced size.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     # The JPEG decoder can scale by 1/2, 1/4 or 1/8 while it decodes (Image.draft), so
     # a big photo never has to exist at full size. What the normaliser is handed is
     # the evidence that the decoder was asked: a 2048px source reaches it at 256px.
     handed = []
     original = forms._normalised_avatar
 
-    def spy(source):
+    def spy(source: Image.Image) -> bytes:
         handed.append(source.size)
         return original(source)
 
@@ -375,7 +486,14 @@ CORRUPT_PNGS = pytest.mark.parametrize(
 
 
 @CORRUPT_PNGS
-def test_a_corrupt_png_is_not_an_image_and_does_not_crash(make):
+def test_a_corrupt_png_is_not_an_image_and_does_not_crash(
+    make: Callable[[], bytes],
+) -> None:
+    """A corrupt png is not an image and does not crash.
+
+    Args:
+        make: Builds the damaged file the test submits.
+    """
     # Pillow reports a damaged PNG as SyntaxError or ValueError, and neither is an
     # OSError, so the form's `except OSError` let both escape is_valid(). The first
     # assertion pins that the fixture still fails the way this test claims it does.
@@ -418,7 +536,15 @@ DECODE_FAILURES = pytest.mark.parametrize(
 
 
 @DECODE_FAILURES
-def test_a_file_that_breaks_pillow_in_any_other_way_is_not_an_image(make, raised):
+def test_a_file_that_breaks_pillow_in_any_other_way_is_not_an_image(
+    make: Callable[[], bytes], raised: type[BaseException]
+) -> None:
+    """A file that breaks pillow in any other way is not an image.
+
+    Args:
+        make: Builds the damaged file the test submits.
+        raised: Exception class Pillow raises for that file.
+    """
     # The form cannot enumerate Pillow's failure modes: its plugins unpack untrusted
     # bytes without length or type checks, so each of these used to escape
     # form.is_valid() and answer a 500 the client cannot parse. Anything the decode or
@@ -431,10 +557,19 @@ def test_a_file_that_breaks_pillow_in_any_other_way_is_not_an_image(make, raised
 
 
 @pytest.mark.parametrize("failure", [MemoryError, RecursionError])
-def test_running_out_of_memory_or_stack_is_not_called_a_bad_image(monkeypatch, failure):
+def test_running_out_of_memory_or_stack_is_not_called_a_bad_image(
+    monkeypatch: pytest.MonkeyPatch, failure: type[BaseException]
+) -> None:
+    """Running out of memory or stack is not called a bad image.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        failure: Exception class the patched code raises.
+    """
+
     # These say something about the server and not about the file, and the catch-all
     # used to turn them into "That file is not an image." with nothing in the log.
-    def exhausted(source):
+    def exhausted(source: Image.Image) -> Never:
         raise failure
 
     monkeypatch.setattr(forms, "_normalised_avatar", exhausted)
@@ -443,19 +578,37 @@ def test_running_out_of_memory_or_stack_is_not_called_a_bad_image(monkeypatch, f
         submit(jpeg()).is_valid()
 
 
-def truncated_jpeg():
-    """Cut a JPEG in half: the header opens, and the decoder runs out of data."""
+def truncated_jpeg() -> bytes:
+    """Cut a JPEG in half: the header opens, and the decoder runs out of data.
+
+    Returns:
+        The first half of the JPEG.
+    """
     raw = jpeg((256, 256))
     return raw[: len(raw) // 2]
 
 
-def logged_by_the_form(caplog):
-    """Return what the avatar form logged, whatever the level."""
+def logged_by_the_form(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    """Return what the avatar form logged, whatever the level.
+
+    Args:
+        caplog: Captures the log records of the avatar form.
+
+    Returns:
+        The records of the form's logger.
+    """
     return [r for r in caplog.records if r.name == "todo.forms"]
 
 
-def raised_inside_pillow(failure):
-    """Return a stand-in for a Pillow function that raises failure from its module."""
+def raised_inside_pillow(failure: type[BaseException]) -> Callable[..., object]:
+    """Return a stand-in for a Pillow function that raises failure from its module.
+
+    Args:
+        failure: Exception class the stand-in raises.
+
+    Returns:
+        Function that raises the failure and reports a Pillow module as its home.
+    """
     namespace = {"__name__": "PIL.ImageFile", "failure": failure}
     exec("def decode(*args, **kwargs):\n    raise failure", namespace)
     return namespace["decode"]
@@ -463,8 +616,17 @@ def raised_inside_pillow(failure):
 
 @DECODE_FAILURES
 def test_a_file_that_breaks_pillow_is_refused_and_only_traced_at_debug(
-    make, raised, caplog
-):
+    make: Callable[[], bytes],
+    raised: type[BaseException],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A file that breaks pillow is refused and only traced at debug.
+
+    Args:
+        make: Builds the damaged file the test submits.
+        raised: Exception class Pillow raises for that file.
+        caplog: Captures the log records emitted by this test.
+    """
     raw = make()
 
     with caplog.at_level(logging.DEBUG, logger="todo.forms"):
@@ -500,7 +662,15 @@ def test_a_file_that_breaks_pillow_is_refused_and_only_traced_at_debug(
         "truncated-apng",
     ],
 )
-def test_an_ordinary_bad_upload_is_refused_without_a_warning(make, caplog):
+def test_an_ordinary_bad_upload_is_refused_without_a_warning(
+    make: Callable[[], bytes], caplog: pytest.LogCaptureFixture
+) -> None:
+    """An ordinary bad upload is refused without a warning.
+
+    Args:
+        make: Builds the damaged file the test submits.
+        caplog: Captures the log records emitted by this test.
+    """
     # The commonest bad upload is not a crafted one: a document, a renamed file, a
     # photo cut short by a bad connection. Pillow refuses each by name, and a WARNING
     # with a traceback for every one of them floods the log.
@@ -510,7 +680,7 @@ def test_an_ordinary_bad_upload_is_refused_without_a_warning(make, caplog):
     assert logged_by_the_form(caplog) == []
 
 
-def _dotted_name(failure):
+def _dotted_name(failure: type[BaseException]) -> str:
     return f"{failure.__module__}.{failure.__name__}"
 
 
@@ -532,8 +702,17 @@ PILLOW_FAILURES = [
 
 @pytest.mark.parametrize("failure", PILLOW_FAILURES, ids=_dotted_name)
 def test_whatever_pillow_itself_raises_on_a_bad_file_is_not_a_warning(
-    monkeypatch, caplog, failure
-):
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    failure: type[BaseException],
+) -> None:
+    """Whatever pillow itself raises on a bad file is not a warning.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records emitted by this test.
+        failure: Exception class the patched code raises.
+    """
     monkeypatch.setattr(forms, "_normalised_avatar", raised_inside_pillow(failure))
 
     with caplog.at_level(logging.WARNING, logger="todo.forms"):
@@ -544,12 +723,22 @@ def test_whatever_pillow_itself_raises_on_a_bad_file_is_not_a_warning(
 
 @pytest.mark.parametrize("failure", PILLOW_FAILURES, ids=_dotted_name)
 def test_the_same_failure_raised_by_our_own_code_is_a_warning(
-    monkeypatch, caplog, failure
-):
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    failure: type[BaseException],
+) -> None:
+    """The same failure raised by our own code is a warning.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records emitted by this test.
+        failure: Exception class the patched code raises.
+    """
+
     # AttributeError, TypeError and IndexError are what a bug in the re-encode raises
     # too, and the person would only ever see "not an image". The warning is how the
     # bug is noticed, so it cannot depend on the type alone.
-    def broken(source):
+    def broken(source: Image.Image) -> Never:
         raise failure("the re-encode has a bug")
 
     monkeypatch.setattr(forms, "_normalised_avatar", broken)
@@ -563,7 +752,14 @@ def test_the_same_failure_raised_by_our_own_code_is_a_warning(
     assert "the re-encode has a bug" in logging.Formatter().format(record)
 
 
-def test_a_refusal_the_form_chose_itself_is_not_logged_as_a_failure(caplog):
+def test_a_refusal_the_form_chose_itself_is_not_logged_as_a_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A refusal the form chose itself is not logged as a failure.
+
+    Args:
+        caplog: Captures the log records emitted by this test.
+    """
     bmp = BytesIO()
     Image.new("RGB", (8, 8)).save(bmp, "BMP")
 
@@ -574,7 +770,8 @@ def test_a_refusal_the_form_chose_itself_is_not_logged_as_a_failure(caplog):
     assert [r for r in caplog.records if r.name == "todo.forms"] == []
 
 
-def test_an_exotic_decoder_is_never_reached():
+def test_an_exotic_decoder_is_never_reached() -> None:
+    """An exotic decoder is never reached."""
     # The client only ever posts JPEG. Everything else in Pillow's 43-format OPEN
     # registry is attack surface this app has no use for.
     buffer = BytesIO()
@@ -588,20 +785,36 @@ def test_an_exotic_decoder_is_never_reached():
 CURRENT_CLIENT = {"x-app-version": "1.2.0"}
 
 
-def signed_in(user, **headers):
-    """Return a CSRF-enforcing client already holding a session for one user."""
+def signed_in(user: AbstractUser, **headers: str) -> Client:
+    """Return a CSRF-enforcing client already holding a session for one user.
+
+    Args:
+        user: User the client is signed in as.
+        **headers: Headers the client sends with every request.
+
+    Returns:
+        Client that enforces CSRF checks and holds a session for the user.
+    """
     client = Client(enforce_csrf_checks=True, headers=headers)
     client.force_login(user)
     return client
 
 
-def post_avatar(client, raw, *, token):
+def post_avatar(client: Client, raw: bytes, *, token: str) -> HttpResponse:
     """Save the settings form carrying one picked photo.
 
     /hv/avatar/ is gone: the photo is a FIELD of settings-form now, and the Save
     button is the only thing that commits it. These storage properties are
     unchanged by that move, so they are asserted through the endpoint that
     actually writes today rather than deleted with the one that used to.
+
+    Args:
+        client: Client that posts the form.
+        raw: Raw bytes of the photo.
+        token: CSRF token that goes with the form.
+
+    Returns:
+        The response to the settings POST.
     """
     return client.post(
         reverse("todo:settings"),
@@ -615,18 +828,36 @@ def post_avatar(client, raw, *, token):
     )
 
 
-def csrf_token(client):
-    """Read a usable CSRF value out of the settings screen."""
+def csrf_token(client: Client) -> str:
+    """Read a usable CSRF value out of the settings screen.
+
+    Args:
+        client: Client that opens the settings screen.
+
+    Returns:
+        CSRF token for the client's session.
+    """
     return token_from(client.get(reverse("todo:settings")))
 
 
-def stored_files():
-    """List every file currently under MEDIA_ROOT."""
+def stored_files() -> list[Path]:
+    """List every file currently under MEDIA_ROOT.
+
+    Returns:
+        Sorted paths of the stored files.
+    """
     root = Path(settings.MEDIA_ROOT)
     return sorted(path for path in root.rglob("*") if path.is_file())
 
 
-def test_a_posted_photo_is_stored_and_answered_with_a_bare_fragment(user):
+def test_a_posted_photo_is_stored_and_answered_with_a_bare_fragment(
+    user: AbstractUser,
+) -> None:
+    """A posted photo is stored and answered with a bare fragment.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = signed_in(user, **CURRENT_CLIENT)
 
     response = post_avatar(client, jpeg(), token=csrf_token(client))
@@ -641,7 +872,14 @@ def test_a_posted_photo_is_stored_and_answered_with_a_bare_fragment(user):
     assert len(stored_files()) == 1
 
 
-def test_the_stored_name_is_unguessable_so_the_url_needs_no_authentication(user):
+def test_the_stored_name_is_unguessable_so_the_url_needs_no_authentication(
+    user: AbstractUser,
+) -> None:
+    """The stored name is unguessable so the url needs no authentication.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = signed_in(user, **CURRENT_CLIENT)
     post_avatar(client, jpeg(), token=csrf_token(client))
 
@@ -657,8 +895,16 @@ def test_the_stored_name_is_unguessable_so_the_url_needs_no_authentication(user)
 
 
 def test_replacing_a_photo_deletes_the_one_it_replaced(
-    user, django_capture_on_commit_callbacks
-):
+    user: AbstractUser,
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    """Replacing a photo deletes the one it replaced.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        django_capture_on_commit_callbacks: Captures and runs the on_commit callbacks of
+        this test.
+    """
     client = signed_in(user, **CURRENT_CLIENT)
     token = csrf_token(client)
     post_avatar(client, jpeg(colour=(10, 10, 10)), token=token)
@@ -680,8 +926,17 @@ def test_replacing_a_photo_deletes_the_one_it_replaced(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_failed_cleanup_of_the_replaced_photo_never_costs_the_new_one(
-    user, monkeypatch, caplog
-):
+    user: AbstractUser,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failed cleanup of the replaced photo never costs the new one.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records emitted by this test.
+    """
     # on_commit callbacks run inside atomic().__exit__, which is INSIDE the view's
     # try block. A failure deleting the OLD file therefore used to land in the
     # compensation branch, which deleted the NEW file although the database already
@@ -693,7 +948,7 @@ def test_a_failed_cleanup_of_the_replaced_photo_never_costs_the_new_one(
     old = user.profile.avatar.name
     delete = FileSystemStorage.delete
 
-    def flaky_delete(storage, name):
+    def flaky_delete(storage: FileSystemStorage, name: str) -> None:
         if name == old:
             raise OSError("storage unavailable")
         return delete(storage, name)
@@ -711,12 +966,19 @@ def test_a_failed_cleanup_of_the_replaced_photo_never_costs_the_new_one(
     assert "storage unavailable" in caplog.text
 
 
-def test_a_failed_profile_save_removes_the_file_written_before_it(user, monkeypatch):
-    """Compensate when FileField storage succeeds but the model save fails."""
+def test_a_failed_profile_save_removes_the_file_written_before_it(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Compensate when FileField storage succeeds but the model save fails.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+    """
     profile = Profile.objects.create(user=user)
     original_save = Profile.save
 
-    def fail_with_avatar(instance, *args, **kwargs):
+    def fail_with_avatar(instance: Profile, *args: object, **kwargs: object) -> None:
         if instance.pk == profile.pk and instance.avatar:
             raise RuntimeError("forced profile save failure")
         return original_save(instance, *args, **kwargs)
@@ -731,14 +993,21 @@ def test_a_failed_profile_save_removes_the_file_written_before_it(user, monkeypa
     assert stored_files() == []
 
 
-def test_a_failed_settings_transaction_removes_the_new_avatar(user, monkeypatch):
-    """Keep external storage consistent when the surrounding transaction rolls back."""
+def test_a_failed_settings_transaction_removes_the_new_avatar(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep external storage consistent when the surrounding transaction rolls back.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the code under test for this test.
+    """
     from todo import services
 
     Profile.objects.create(user=user)
     original_revoke = services.revoke_biometric_token
 
-    def fail_after_avatar(*, user):
+    def fail_after_avatar(*, user: AbstractUser) -> Never:
         original_revoke(user=user)
         raise RuntimeError("forced transaction failure")
 
@@ -758,7 +1027,15 @@ def test_a_failed_settings_transaction_removes_the_new_avatar(user, monkeypatch)
     assert stored_files() == []
 
 
-def test_one_account_cannot_touch_another_accounts_photo(user, other_user):
+def test_one_account_cannot_touch_another_accounts_photo(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """One account cannot touch another accounts photo.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     owner = signed_in(user, **CURRENT_CLIENT)
     post_avatar(owner, jpeg(), token=csrf_token(owner))
     user.refresh_from_db()
@@ -772,7 +1049,12 @@ def test_one_account_cannot_touch_another_accounts_photo(user, other_user):
     assert len(stored_files()) == 2
 
 
-def test_a_refused_photo_answers_422_and_writes_nothing(user):
+def test_a_refused_photo_answers_422_and_writes_nothing(user: AbstractUser) -> None:
+    """A refused photo answers 422 and writes nothing.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = signed_in(user, **CURRENT_CLIENT)
 
     response = post_avatar(client, b"#!/bin/sh\n", token=csrf_token(client))
@@ -786,7 +1068,15 @@ def test_a_refused_photo_answers_422_and_writes_nothing(user):
 
 
 @CORRUPT_PNGS
-def test_a_corrupt_png_answers_422_with_the_field_error_and_not_a_500(user, make):
+def test_a_corrupt_png_answers_422_with_the_field_error_and_not_a_500(
+    user: AbstractUser, make: Callable[[], bytes]
+) -> None:
+    """A corrupt png answers 422 with the field error and not a 500.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        make: Builds the damaged file the test submits.
+    """
     # A 500 is a text/html page, which the Hyperview client cannot parse at all, so
     # the person saw nothing instead of "That file is not an image.".
     client = signed_in(user, **CURRENT_CLIENT)
@@ -803,8 +1093,15 @@ def test_a_corrupt_png_answers_422_with_the_field_error_and_not_a_500(user, make
 
 @DECODE_FAILURES
 def test_a_file_that_breaks_pillow_answers_422_with_the_field_error_and_not_a_500(
-    user, make, raised
-):
+    user: AbstractUser, make: Callable[[], bytes], raised: type[BaseException]
+) -> None:
+    """A file that breaks pillow answers 422 with the field error and not a 500.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        make: Builds the damaged file the test submits.
+        raised: Exception class Pillow raises for that file.
+    """
     client = signed_in(user, **CURRENT_CLIENT)
 
     response = post_avatar(client, make(), token=csrf_token(client))
@@ -817,7 +1114,10 @@ def test_a_file_that_breaks_pillow_answers_422_with_the_field_error_and_not_a_50
     assert stored_files() == []
 
 
-def test_an_expired_session_gets_a_fragment_and_not_the_session_expired_screen():
+def test_an_expired_session_gets_a_fragment_and_not_the_session_expired_screen() -> (
+    None
+):
+    """An expired session gets a fragment and not the session expired screen."""
     # The Save POST is a `replace`, which reaches the client through loadElement
     # and raises XMLRestrictedElementFound on <screen>. A 401 owes the same shape.
     response = Client().post(reverse("todo:settings"), {"avatar_data": "x"})
@@ -826,7 +1126,14 @@ def test_an_expired_session_gets_a_fragment_and_not_the_session_expired_screen()
     assert b"<screen" not in response.content
 
 
-def test_a_method_the_save_endpoint_does_not_serve_is_refused_by_name(user):
+def test_a_method_the_save_endpoint_does_not_serve_is_refused_by_name(
+    user: AbstractUser,
+) -> None:
+    """A method the save endpoint does not serve is refused by name.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Was a GET against /hv/avatar/, which only ever answered POST. The Save
     # endpoint legitimately answers both, so the same property is asserted with a
     # verb it still refuses.
@@ -839,7 +1146,14 @@ def test_a_method_the_save_endpoint_does_not_serve_is_refused_by_name(user):
     assert response.headers["Allow"] == "GET, POST"
 
 
-def test_the_pick_button_is_hidden_from_clients_that_would_do_nothing_with_it(user):
+def test_the_pick_button_is_hidden_from_clients_that_would_do_nothing_with_it(
+    user: AbstractUser,
+) -> None:
+    """The pick button is hidden from clients that would do nothing with it.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # `pick-avatar` is a CUSTOM action. Hyperview silently ignores an action no
     # registered behavior claims, so a 1.1.0 binary would render a "Change photo"
     # row that does absolutely nothing when tapped.
@@ -851,7 +1165,14 @@ def test_the_pick_button_is_hidden_from_clients_that_would_do_nothing_with_it(us
     assert old.headers["Vary"].lower().count("x-app-version") == 1
 
 
-def test_a_client_that_announces_nothing_is_treated_as_too_old(user):
+def test_a_client_that_announces_nothing_is_treated_as_too_old(
+    user: AbstractUser,
+) -> None:
+    """A client that announces nothing is treated as too old.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     body = signed_in(user).get(reverse("todo:settings")).content.decode()
 
     assert 'action="pick-avatar"' not in body
@@ -860,15 +1181,29 @@ def test_a_client_that_announces_nothing_is_treated_as_too_old(user):
 # --- one Save, one commit -----------------------------------------------------
 
 
-def save_settings(client, *, token, **fields):
-    """POST the whole settings form the way the Save button serialises it."""
+def save_settings(client: Client, *, token: str, **fields: object) -> HttpResponse:
+    """POST the whole settings form the way the Save button serialises it.
+
+    Args:
+        client: Client that posts the form.
+        token: CSRF token that goes with the form.
+        **fields: Form fields that override the empty defaults.
+
+    Returns:
+        The response to the settings POST.
+    """
     payload = {"first_name": "", "last_name": "", "email": "", **fields}
     return client.post(
         reverse("todo:settings"), {**payload, "csrfmiddlewaretoken": token}
     )
 
 
-def test_one_save_commits_the_name_and_the_photo_together(user):
+def test_one_save_commits_the_name_and_the_photo_together(user: AbstractUser) -> None:
+    """One save commits the name and the photo together.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = signed_in(user, **CURRENT_CLIENT)
 
     response = save_settings(
@@ -887,8 +1222,14 @@ def test_one_save_commits_the_name_and_the_photo_together(user):
 
 
 def test_an_invalid_email_writes_nothing_and_hands_back_every_pending_edit(
-    user, other_user
-):
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """An invalid email writes nothing and hands back every pending edit.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     # The whole point of the fold. Four independent writers meant a user could get
     # the photo stored and the email refused in one tap, with nothing on screen
     # saying which half had happened. One transaction, one 422, everything the
@@ -928,7 +1269,14 @@ def test_an_invalid_email_writes_nothing_and_hands_back_every_pending_edit(
     assert root.find(".//hv:view[@id='avatar-current']", NS).attrib["hide"] == "true"
 
 
-def test_a_refused_photo_is_dropped_rather_than_re_armed_and_says_why(user):
+def test_a_refused_photo_is_dropped_rather_than_re_armed_and_says_why(
+    user: AbstractUser,
+) -> None:
+    """A refused photo is dropped rather than re armed and says why.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Re-arming a payload that JUST failed is not preserving work, it is queueing
     # the same refusal behind the next tap. The typed name still survives.
     client = signed_in(user, **CURRENT_CLIENT)
@@ -958,7 +1306,14 @@ def test_a_refused_photo_is_dropped_rather_than_re_armed_and_says_why(user):
     ).text == NOT_AN_IMAGE
 
 
-def test_a_save_with_no_photo_at_all_is_not_read_as_a_refused_one(user):
+def test_a_save_with_no_photo_at_all_is_not_read_as_a_refused_one(
+    user: AbstractUser,
+) -> None:
+    """A save with no photo at all is not read as a refused one.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # An empty avatar_data is what EVERY Save posts when the user did not pick:
     # the hidden field is always in the DOM, so it always serialises. Binding the
     # AvatarForm to it would answer 422 "not an image" on every plain profile save.
@@ -976,7 +1331,7 @@ def test_a_save_with_no_photo_at_all_is_not_read_as_a_refused_one(user):
 # --- separate defect: a version-gated body owes Vary on the version header -----
 
 
-def _version_gated_views():
+def _version_gated_views() -> dict[str, ast.FunctionDef]:
     """Return every ROUTED view whose body depends on the announced client version.
 
     Derived from the module's own call graph rather than enumerated, so an
@@ -1013,7 +1368,7 @@ def _version_gated_views():
     return {name: functions[name] for name in reaching & routed}
 
 
-def test_every_version_dependent_response_declares_vary_on_the_version_header():
+def test_every_version_dependent_response_declares_vary_on_the_version_header() -> None:
     """The defect this fold removed, pinned so it cannot come back.
 
     /hv/avatar/ rendered a version-dependent body through _avatar_context and was
@@ -1045,8 +1400,15 @@ def test_every_version_dependent_response_declares_vary_on_the_version_header():
 AVATAR_HOSTS = ("todo:dashboard", "todo:menu", "todo:settings")
 
 
-def images(root):
-    """Return every <image> source in a rendered tree."""
+def images(root: Element) -> list[str]:
+    """Return every <image> source in a rendered tree.
+
+    Args:
+        root: Parsed Hyperview document or fragment.
+
+    Returns:
+        Source of each image, in document order.
+    """
     return [
         node.attrib.get("source", "")
         for node in root.iter("{https://hyperview.org/hyperview}image")
@@ -1054,7 +1416,15 @@ def images(root):
 
 
 @pytest.mark.parametrize("route", AVATAR_HOSTS)
-def test_a_photo_replaces_the_initials_on_every_screen_that_shows_a_disc(user, route):
+def test_a_photo_replaces_the_initials_on_every_screen_that_shows_a_disc(
+    user: AbstractUser, route: str
+) -> None:
+    """A photo replaces the initials on every screen that shows a disc.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        route: Route name of a screen that shows the avatar.
+    """
     client = signed_in(user, **CURRENT_CLIENT)
     store_avatar(user=user, data=jpeg())
 
@@ -1065,7 +1435,15 @@ def test_a_photo_replaces_the_initials_on_every_screen_that_shows_a_disc(user, r
 
 
 @pytest.mark.parametrize("route", AVATAR_HOSTS)
-def test_an_avatar_url_is_relative_so_it_inherits_the_screens_own_scheme(user, route):
+def test_an_avatar_url_is_relative_so_it_inherits_the_screens_own_scheme(
+    user: AbstractUser, route: str
+) -> None:
+    """An avatar url is relative so it inherits the screens own scheme.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        route: Route name of a screen that shows the avatar.
+    """
     # The single most valuable assertion here, because the failure only reproduces
     # in production. hv-image/index.tsx:17-20 resolves `source` against the SCREEN
     # url, so a relative path inherits scheme and host for free. An absolute url
@@ -1083,7 +1461,15 @@ def test_an_avatar_url_is_relative_so_it_inherits_the_screens_own_scheme(user, r
 
 
 @pytest.mark.parametrize("route", AVATAR_HOSTS)
-def test_an_account_with_no_photo_asks_for_no_image_at_all(user, route):
+def test_an_account_with_no_photo_asks_for_no_image_at_all(
+    user: AbstractUser, route: str
+) -> None:
+    """An account with no photo asks for no image at all.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        route: Route name of a screen that shows the avatar.
+    """
     client = signed_in(user, **CURRENT_CLIENT)
 
     root = assert_hxml(client.get(reverse(route)))
@@ -1092,14 +1478,26 @@ def test_an_account_with_no_photo_asks_for_no_image_at_all(user, route):
     assert root.findall(".//*[@style='avatar-initials']") or route != "todo:settings"
 
 
-def hero_photo(root):
-    """Return the dashboard hero disc as it renders for an account WITH a photo."""
+def hero_photo(root: Element) -> Element:
+    """Return the dashboard hero disc as it renders for an account WITH a photo.
+
+    Args:
+        root: Parsed Hyperview document or fragment.
+
+    Returns:
+        The image element of the hero disc.
+    """
     node = root.find(".//hv:view[@id='dashboard-hero']//hv:image", NS)
     assert node is not None, "the hero draws no photo"
     return node
 
 
-def test_a_photo_disc_is_still_the_door_to_the_side_menu(user):
+def test_a_photo_disc_is_still_the_door_to_the_side_menu(user: AbstractUser) -> None:
+    """A photo disc is still the door to the side menu.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # test_settings.py pins this triad on the initials branch only, so every gate
     # there stays green if the <image> loses its href, action or target -- and the
     # dashboard has no other way into the menu, for exactly the users who uploaded.
@@ -1113,7 +1511,12 @@ def test_a_photo_disc_is_still_the_door_to_the_side_menu(user):
     assert disc.attrib["target"] == "side-menu-host"
 
 
-def test_a_photo_disc_still_dims_under_the_finger(user):
+def test_a_photo_disc_still_dims_under_the_finger(user: AbstractUser) -> None:
+    """A photo disc still dims under the finger.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # createStyleProp substitutes the opacity-0.7 fallback only when the element's
     # style ids contribute NO pressed rule at all (services/index.ts:33-41), and
     # hero-avatar declares one. That rule is a backgroundColor, which an opaque
@@ -1141,7 +1544,14 @@ def test_a_photo_disc_still_dims_under_the_finger(user):
     )
 
 
-def test_the_avatar_panel_only_uses_styles_its_only_host_screen_declares(user):
+def test_the_avatar_panel_only_uses_styles_its_only_host_screen_declares(
+    user: AbstractUser,
+) -> None:
+    """The avatar panel only uses styles its only host screen declares.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Rule 2 of this codebase: `replace` does NOT rebuild stylesheets, so a fragment
     # may only name style ids the screen hosting it already declares. This panel has
     # exactly one host, and the 422 branch carries an extra element the 200 branch
@@ -1159,7 +1569,15 @@ def test_the_avatar_panel_only_uses_styles_its_only_host_screen_declares(user):
 
 
 @pytest.mark.parametrize("stored_theme", [Profile.Theme.LIGHT, Profile.Theme.DARK])
-def test_the_initials_stay_readable_on_the_disc_in_both_palettes(user, stored_theme):
+def test_the_initials_stay_readable_on_the_disc_in_both_palettes(
+    user: AbstractUser, stored_theme: str
+) -> None:
+    """The initials stay readable on the disc in both palettes.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        stored_theme: Theme stored in the profile.
+    """
     Profile.objects.update_or_create(user=user, defaults={"theme": stored_theme})
     root = assert_hxml(signed_in(user).get(reverse("todo:settings")))
 
@@ -1172,27 +1590,42 @@ def test_the_initials_stay_readable_on_the_disc_in_both_palettes(user, stored_th
 # --- the photo row, gated and ungated -----------------------------------------
 
 
-def panel(user, **headers):
-    """Return the avatar panel as it renders on its only host screen."""
+def panel(user: AbstractUser, **headers: str) -> tuple[Element, Element]:
+    """Return the avatar panel as it renders on its only host screen.
+
+    Args:
+        user: User whose settings screen is requested.
+        **headers: Headers the client sends.
+
+    Returns:
+        The whole screen and the avatar panel inside it.
+    """
     root = assert_hxml(signed_in(user, **headers).get(reverse("todo:settings")))
     node = root.find(".//hv:view[@id='avatar-panel']", NS)
     assert node is not None
     return root, node
 
 
-def avatar_row(node):
-    """Return the one row that holds the disc and the control beside it."""
+def avatar_row(node: Element) -> Element:
+    """Return the one row that holds the disc and the control beside it.
+
+    Args:
+        node: Avatar panel that holds the row.
+
+    Returns:
+        The row element.
+    """
     row = node.find(".//hv:view[@style='avatar-row']", NS)
     assert row is not None, "the panel is not a row"
     return row
 
 
-def _parents(root):
+def _parents(root: Element) -> dict[Element, Element]:
     """Return a child -> parent map, which ElementTree does not keep."""
     return {child: parent for parent in root.iter() for child in parent}
 
 
-def _closest_form(root, node):
+def _closest_form(root: Element, node: Element | None) -> Element | None:
     """Return the <form> ancestor whose data a control inside it would post."""
     parents = _parents(root)
     while node is not None:
@@ -1202,7 +1635,12 @@ def _closest_form(root, node):
     return None
 
 
-def test_the_photo_row_defers_to_the_save_button(user):
+def test_the_photo_row_defers_to_the_save_button(user: AbstractUser) -> None:
+    """The photo row defers to the save button.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The fold. The photo used to have its own <form>, its own endpoint and its
     # own 422, which is four independent writers on one screen: a user who picked
     # a photo, mistyped the email and tapped Save got the photo committed and the
@@ -1250,7 +1688,14 @@ def test_the_photo_row_defers_to_the_save_button(user):
     assert "event-name" not in behavior.attrib
 
 
-def test_the_photo_row_says_when_the_photo_is_actually_saved(user):
+def test_the_photo_row_says_when_the_photo_is_actually_saved(
+    user: AbstractUser,
+) -> None:
+    """The photo row says when the photo is actually saved.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Picking and walking away loses the pick, and nothing can warn at the moment
     # of loss: Hyperview has no unsaved-changes hook and a `navigate` cannot be
     # cancelled from HXML. An always-visible server-rendered caption is the only
@@ -1262,7 +1707,12 @@ def test_the_photo_row_says_when_the_photo_is_actually_saved(user):
     assert "Your photo is saved when you tap Save settings." in captions
 
 
-def test_the_photo_row_puts_a_real_button_beside_the_disc(user):
+def test_the_photo_row_puts_a_real_button_beside_the_disc(user: AbstractUser) -> None:
+    """The photo row puts a real button beside the disc.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # F: reuse the ONE compact secondary shape this app already declares, the
     # categories Edit/Delete box, rather than a full-width primary. The disc and
     # the control share a row, so the eye finds a control-shaped object in the
@@ -1308,7 +1758,15 @@ def test_the_photo_row_puts_a_real_button_beside_the_disc(user):
 
 
 @pytest.mark.parametrize("headers", [{"x-app-version": "1.1.0"}, {}])
-def test_a_gated_client_gets_the_same_row_with_an_inert_box_and_a_reason(user, headers):
+def test_a_gated_client_gets_the_same_row_with_an_inert_box_and_a_reason(
+    user: AbstractUser, headers: dict[str, str]
+) -> None:
+    """A gated client gets the same row with an inert box and a reason.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        headers: Headers announcing the client version.
+    """
     # E: the gate was right and the MESSAGE was wrong. A 13px caption at the end of
     # the third card down, identical to the biometric caption two cards below, is
     # why "there is no button" was a literally accurate reading of the screen. Now
@@ -1342,7 +1800,14 @@ def test_a_gated_client_gets_the_same_row_with_an_inert_box_and_a_reason(user, h
     assert "id" not in initials.attrib
 
 
-def test_an_uploadable_client_leaves_the_initials_announcing_only_the_initials(user):
+def test_an_uploadable_client_leaves_the_initials_announcing_only_the_initials(
+    user: AbstractUser,
+) -> None:
+    """An uploadable client leaves the initials announcing only the initials.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     _, node = panel(user, **CURRENT_CLIENT)
 
     initials = node.find(".//hv:text[@style='avatar-initials']", NS)
@@ -1350,7 +1815,9 @@ def test_an_uploadable_client_leaves_the_initials_announcing_only_the_initials(u
     assert "accessibilityLabel" not in initials.attrib
 
 
-def test_storing_a_photo_leaves_the_writers_own_instance_holding_the_new_row(user):
+def test_storing_a_photo_leaves_the_writers_own_instance_holding_the_new_row(
+    user: AbstractUser,
+) -> None:
     """Rule 13, asserted where it now lives.
 
     Django caches the reverse one-to-one on whichever instance walked it, and
@@ -1364,6 +1831,9 @@ def test_storing_a_photo_leaves_the_writers_own_instance_holding_the_new_row(use
     a fresh request. So the defect has no rendered surface on this path any more,
     and the guard moves down to the service that owns the property rather than
     disappearing with the markup that used to expose it.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
     """
     # Walk it first, exactly as the theme context processor does on every render.
     Profile.objects.create(user=user)

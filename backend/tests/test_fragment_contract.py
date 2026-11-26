@@ -26,6 +26,8 @@ from xml.etree import ElementTree
 
 import pytest
 from django.conf import settings
+from django.contrib.auth.models import AbstractUser
+from django.http import HttpResponse
 from django.test import Client
 from django.urls import resolve, reverse
 from PIL import Image
@@ -141,8 +143,13 @@ def _concrete(href: str, ids: dict[str, str]) -> str:
     return "".join(parts)
 
 
-def assert_bare_fragment(response, label):
-    """Assert a response survives loadElement (parser.ts:300-366)."""
+def assert_bare_fragment(response: HttpResponse, label: str) -> None:
+    """Assert a response survives loadElement (parser.ts:300-366).
+
+    Args:
+        response: Response checked against the client's parser.
+        label: Label that names the request in failure messages.
+    """
     assert response.__class__.__name__ == "HyperviewFragmentTemplateResponse"
     assert response.headers["Content-Type"].startswith(
         "application/vnd.hyperview_fragment+xml"
@@ -157,8 +164,13 @@ def assert_bare_fragment(response, label):
     )
 
 
-def assert_document(response, label):
-    """Assert a response survives loadDocument (parser.ts:242)."""
+def assert_document(response: HttpResponse, label: str) -> None:
+    """Assert a response survives loadDocument (parser.ts:242).
+
+    Args:
+        response: Response checked against the client's parser.
+        label: Label that names the request in failure messages.
+    """
     assert response.__class__.__name__ == "HyperviewTemplateResponse"
     assert response.headers["Content-Type"].startswith("application/vnd.hyperview+xml")
     root = ElementTree.fromstring(response.content)
@@ -172,14 +184,21 @@ def assert_document(response, label):
 
 
 @pytest.fixture
-def fixtures(user):
-    """Create one task and one category and return their ids."""
+def fixtures(user: AbstractUser) -> dict[str, str]:
+    """Create one task and one category and return their ids.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+
+    Returns:
+        Primary keys of the task and the category, as strings keyed by kind.
+    """
     category = Category.objects.create(user=user, name="Home", color="blue")
     task = Task.objects.create(user=user, title="Water the plants", category=category)
     return {"task": str(task.pk), "category": str(category.pk)}
 
 
-def _requests(shape, ids):
+def _requests(shape: str, ids: dict[str, str]) -> list[tuple[str, str, str]]:
     """Return (label, verb, url) for every scanned href with the given shape."""
     wanted = UPDATE_ACTIONS if shape == "fragment" else DOCUMENT_ACTIONS
     seen = {}
@@ -196,7 +215,7 @@ def _requests(shape, ids):
     return sorted((label, verb, url) for (url, verb), label in seen.items())
 
 
-def _append_urls(ids):
+def _append_urls(ids: dict[str, str]) -> list[str]:
     """Return every href a template loads with action="append"."""
     return sorted(
         {
@@ -232,7 +251,7 @@ FRAGMENT_POST_BODIES = {
 }
 
 
-def _fragment_body(url, ids, *, token):
+def _fragment_body(url: str, ids: dict[str, str], *, token: str) -> dict[str, str]:
     """Return the POST payload declared for one scanned fragment href."""
     key = url.split("?")[0]
     for name, value in ids.items():
@@ -248,7 +267,7 @@ def _fragment_body(url, ids, *, token):
     }
 
 
-def _restore(user, ids):
+def _restore(user: AbstractUser, ids: dict[str, str]) -> None:
     """Recreate the fixture records the delete endpoints remove mid-scan."""
     category, _ = Category.objects.get_or_create(
         pk=ids["category"], defaults={"user": user, "name": "Home", "color": "mint"}
@@ -259,7 +278,14 @@ def _restore(user, ids):
     )
 
 
-def test_every_template_href_declares_a_shape_the_scan_can_resolve(fixtures):
+def test_every_template_href_declares_a_shape_the_scan_can_resolve(
+    fixtures: dict[str, str],
+) -> None:
+    """Every template href declares a shape the scan can resolve.
+
+    Args:
+        fixtures: Primary keys of the task and the category created for the scan.
+    """
     scanned = _scan_hrefs()
     assert scanned, "the href scan found nothing, so it is broken"
 
@@ -282,7 +308,8 @@ def test_every_template_href_declares_a_shape_the_scan_can_resolve(fixtures):
             _concrete(href, fixtures)
 
 
-def test_no_template_decides_its_action_at_render_time():
+def test_no_template_decides_its_action_at_render_time() -> None:
+    """No template decides its action at render time."""
     # The scan reads the action attribute literally. A templated action would make
     # every classification above a guess.
     for path in sorted(TEMPLATE_ROOT.rglob("*.xml")):
@@ -293,7 +320,8 @@ def test_no_template_decides_its_action_at_render_time():
             )
 
 
-def test_the_root_navigator_is_never_requested_by_a_template_at_all():
+def test_the_root_navigator_is_never_requested_by_a_template_at_all() -> None:
+    """The root navigator is never requested by a template at all."""
     # Was: "never with a FRAGMENT action", because /hv/ serves <doc><navigator> and
     # loadElement rejects both tags. That was too weak. /hv/ is equally wrong with a
     # DOCUMENT action, because the only route that may hold a navigator document is
@@ -318,7 +346,14 @@ def test_the_root_navigator_is_never_requested_by_a_template_at_all():
     )
 
 
-def test_fragment_endpoints_stay_bare_without_a_session(fixtures):
+def test_fragment_endpoints_stay_bare_without_a_session(
+    fixtures: dict[str, str],
+) -> None:
+    """Fragment endpoints stay bare without a session.
+
+    Args:
+        fixtures: Primary keys of the task and the category created for the scan.
+    """
     # /hv/login/ and /hv/biometric/login/ are public, so the status varies; the
     # shape must not. Private endpoints' 401 is pinned in tests/test_hxml_views.py.
     client = Client()
@@ -326,7 +361,15 @@ def test_fragment_endpoints_stay_bare_without_a_session(fixtures):
         assert_bare_fragment(getattr(client, verb)(url), f"anonymous {label}")
 
 
-def test_fragment_endpoints_stay_bare_on_a_csrf_failure(user, fixtures):
+def test_fragment_endpoints_stay_bare_on_a_csrf_failure(
+    user: AbstractUser, fixtures: dict[str, str]
+) -> None:
+    """Fragment endpoints stay bare on a csrf failure.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        fixtures: Primary keys of the task and the category created for the scan.
+    """
     client = Client(enforce_csrf_checks=True)
     client.force_login(user)
     for label, verb, url in _requests("fragment", fixtures):
@@ -337,7 +380,15 @@ def test_fragment_endpoints_stay_bare_on_a_csrf_failure(user, fixtures):
         assert_bare_fragment(response, f"csrf-rejected {label}")
 
 
-def test_fragment_endpoints_stay_bare_on_the_wrong_method(user, fixtures):
+def test_fragment_endpoints_stay_bare_on_the_wrong_method(
+    user: AbstractUser, fixtures: dict[str, str]
+) -> None:
+    """Fragment endpoints stay bare on the wrong method.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        fixtures: Primary keys of the task and the category created for the scan.
+    """
     client = Client()
     client.force_login(user)
     for label, verb, url in _requests("fragment", fixtures):
@@ -348,7 +399,15 @@ def test_fragment_endpoints_stay_bare_on_the_wrong_method(user, fixtures):
         assert_bare_fragment(response, f"405 {label}")
 
 
-def test_fragment_endpoints_stay_bare_for_records_deleted_elsewhere(user, fixtures):
+def test_fragment_endpoints_stay_bare_for_records_deleted_elsewhere(
+    user: AbstractUser, fixtures: dict[str, str]
+) -> None:
+    """Fragment endpoints stay bare for records deleted elsewhere.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        fixtures: Primary keys of the task and the category created for the scan.
+    """
     client = Client()
     client.force_login(user)
     missing = {"task": str(uuid4()), "category": str(uuid4())}
@@ -374,7 +433,15 @@ INVALID_FRAGMENT_URLS = [
 
 
 @pytest.mark.parametrize("url", INVALID_FRAGMENT_URLS)
-def test_fragment_endpoints_stay_bare_for_invalid_parameters(user, url):
+def test_fragment_endpoints_stay_bare_for_invalid_parameters(
+    user: AbstractUser, url: str
+) -> None:
+    """Fragment endpoints stay bare for invalid parameters.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        url: Fragment URL requested with invalid parameters.
+    """
     client = Client()
     client.force_login(user)
 
@@ -384,7 +451,15 @@ def test_fragment_endpoints_stay_bare_for_invalid_parameters(user, url):
     assert_bare_fragment(response, f"400 GET {url}")
 
 
-def test_fragment_endpoints_stay_bare_for_a_signed_in_user(user, fixtures):
+def test_fragment_endpoints_stay_bare_for_a_signed_in_user(
+    user: AbstractUser, fixtures: dict[str, str]
+) -> None:
+    """Fragment endpoints stay bare for a signed in user.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        fixtures: Primary keys of the task and the category created for the scan.
+    """
     # The mirror of test_document_endpoints_stay_documents. Without it every fragment
     # axis in this file exercises a FAILURE branch, so a new endpoint whose happy path
     # returns a <doc> ships green and only blows up on the device.
@@ -405,7 +480,15 @@ def test_fragment_endpoints_stay_bare_for_a_signed_in_user(user, fixtures):
         assert_bare_fragment(response, f"signed-in {label}")
 
 
-def test_error_fragments_for_append_targets_are_list_items(user, fixtures):
+def test_error_fragments_for_append_targets_are_list_items(
+    user: AbstractUser, fixtures: dict[str, str]
+) -> None:
+    """Error fragments for append targets are list items.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        fixtures: Primary keys of the task and the category created for the scan.
+    """
     # Every append target here is a <list>, and hv-list feeds its FlatList only the
     # `<item>` children it owns (elements/hv-list/index.tsx:184-189, 251). A <view>
     # appended into a list never enters `data`, never mounts, and so never fires the
@@ -426,7 +509,14 @@ def test_error_fragments_for_append_targets_are_list_items(user, fixtures):
         assert root.attrib.get("key"), "hv-list keyExtractor reads the key attribute"
 
 
-def test_the_error_fragment_carries_its_message_and_a_recovery_reload(user):
+def test_the_error_fragment_carries_its_message_and_a_recovery_reload(
+    user: AbstractUser,
+) -> None:
+    """The error fragment carries its message and a recovery reload.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The fragment's entire user-facing payload is these two behaviors; the shape
     # guards above would happily pass an empty <item>.
     client = Client()
@@ -448,7 +538,14 @@ def test_the_error_fragment_carries_its_message_and_a_recovery_reload(user):
     assert snackbar.attrib["once"] == "true"
 
 
-def test_the_error_screen_explains_the_failure_and_offers_a_way_home(user):
+def test_the_error_screen_explains_the_failure_and_offers_a_way_home(
+    user: AbstractUser,
+) -> None:
+    """The error screen explains the failure and offers a way home.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The way out reloads a SCREEN url, not /hv/: this document already occupies a
     # route, and reloading the root navigator into it nests a stack inside that route
     # instead of replacing it. Which screen is home depends on the session, so the
@@ -466,7 +563,14 @@ def test_the_error_screen_explains_the_failure_and_offers_a_way_home(user):
     assert home.attrib["href"] == "/hv/dashboard/"
 
 
-def test_login_without_credentials_answers_with_the_login_panel_fragment(user):
+def test_login_without_credentials_answers_with_the_login_panel_fragment(
+    user: AbstractUser,
+) -> None:
+    """Login without credentials answers with the login panel fragment.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
 
     response = client.post(reverse("todo:login"), {})
@@ -477,7 +581,14 @@ def test_login_without_credentials_answers_with_the_login_panel_fragment(user):
     assert root.attrib["id"] == "login-panel"
 
 
-def test_login_with_a_missing_password_answers_with_the_login_panel_fragment(user):
+def test_login_with_a_missing_password_answers_with_the_login_panel_fragment(
+    user: AbstractUser,
+) -> None:
+    """Login with a missing password answers with the login panel fragment.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
 
     response = client.post(reverse("todo:login"), {"username": "ada"})
@@ -486,7 +597,15 @@ def test_login_with_a_missing_password_answers_with_the_login_panel_fragment(use
     assert_bare_fragment(response, "POST /hv/login/ with no password")
 
 
-def test_document_endpoints_stay_documents(user, fixtures):
+def test_document_endpoints_stay_documents(
+    user: AbstractUser, fixtures: dict[str, str]
+) -> None:
+    """Document endpoints stay documents.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        fixtures: Primary keys of the task and the category created for the scan.
+    """
     anonymous = Client()
     signed_in = Client()
     signed_in.force_login(user)
@@ -496,7 +615,14 @@ def test_document_endpoints_stay_documents(user, fixtures):
             assert_document(response, f"{who} {label}")
 
 
-def test_document_endpoints_stay_documents_for_invalid_parameters(user):
+def test_document_endpoints_stay_documents_for_invalid_parameters(
+    user: AbstractUser,
+) -> None:
+    """Document endpoints stay documents for invalid parameters.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -505,7 +631,12 @@ def test_document_endpoints_stay_documents_for_invalid_parameters(user):
     )
 
 
-def test_the_error_fragment_carries_no_style_ids(user):
+def test_the_error_fragment_carries_no_style_ids(user: AbstractUser) -> None:
+    """The error fragment carries no style ids.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Landmine: `replace` does not rebuild stylesheets, so a fragment injected into
     # an arbitrary screen may only use style ids that screen already declares. This
     # one lands anywhere, so it must reference no style at all.
@@ -520,13 +651,18 @@ def test_the_error_fragment_carries_no_style_ids(user):
     )
 
 
-def test_the_login_panel_reports_what_was_actually_wrong(user):
+def test_the_login_panel_reports_what_was_actually_wrong(user: AbstractUser) -> None:
+    """The login panel reports what was actually wrong.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
 
     empty = client.post(reverse("todo:login"), {})
     wrong = client.post(reverse("todo:login"), {"username": "ada", "password": "nope"})
 
-    def error_text(response):
+    def error_text(response: HttpResponse) -> str | None:
         root = ElementTree.fromstring(response.content)
         return root.find(".//hv:view[@style='error-card']/hv:text", NS).text
 
@@ -534,7 +670,14 @@ def test_the_login_panel_reports_what_was_actually_wrong(user):
     assert error_text(wrong) == "The username or password is incorrect."
 
 
-def test_csrf_failure_stays_a_document_when_the_client_sends_no_accept_header(user):
+def test_csrf_failure_stays_a_document_when_the_client_sends_no_accept_header(
+    user: AbstractUser,
+) -> None:
+    """Csrf failure stays a document when the client sends no accept header.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Pins the safe default: everything that does not announce itself as a fragment
     # load keeps the document it used to get, so the existing suite cannot drift.
     response = Client(enforce_csrf_checks=True).post(
@@ -551,7 +694,14 @@ def test_csrf_failure_stays_a_document_when_the_client_sends_no_accept_header(us
     assert home is not None and home.attrib["href"] == "/hv/login/"
 
 
-def test_csrf_failure_is_a_bare_fragment_for_a_fragment_load(user):
+def test_csrf_failure_is_a_bare_fragment_for_a_fragment_load(
+    user: AbstractUser,
+) -> None:
+    """Csrf failure is a bare fragment for a fragment load.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     response = Client(enforce_csrf_checks=True).post(
         reverse("todo:login"),
         {"username": "ada", "password": "correct-horse"},
@@ -562,7 +712,8 @@ def test_csrf_failure_is_a_bare_fragment_for_a_fragment_load(user):
     assert_bare_fragment(response, "csrf failure on a fragment load")
 
 
-def test_csrf_failure_outside_the_hyperview_routes_is_djangos_own_html_page():
+def test_csrf_failure_outside_the_hyperview_routes_is_djangos_own_html_page() -> None:
+    """Csrf failure outside the hyperview routes is djangos own html page."""
     # CSRF_FAILURE_VIEW is project-wide, so it also answers the Django admin, whose
     # forms are submitted by a browser. An expired admin form used to get a 403 typed
     # application/vnd.hyperview+xml: an XML document where a person expected a page.
@@ -576,7 +727,8 @@ def test_csrf_failure_outside_the_hyperview_routes_is_djangos_own_html_page():
     assert b"hyperview.org" not in response.content
 
 
-def test_the_hyperview_path_prefix_is_where_the_urlconf_mounts_the_api():
+def test_the_hyperview_path_prefix_is_where_the_urlconf_mounts_the_api() -> None:
+    """The hyperview path prefix is where the urlconf mounts the api."""
     # csrf_failure asks "is this a Hyperview route?" with a literal that repeats the
     # include() in config/urls.py. Remount the API and the check would quietly hand
     # every Hyperview CSRF failure the HTML page the client cannot parse; this is
@@ -594,7 +746,7 @@ def test_the_hyperview_path_prefix_is_where_the_urlconf_mounts_the_api():
 STACK_GROWING_ACTIONS = frozenset({"navigate", "push"})
 
 
-def _transition_behaviors():
+def _transition_behaviors() -> list[tuple[str, dict[str, str]]]:
     """Return (template name, attributes) for every behavior in a *_transition.xml."""
     found = []
     for path in sorted(TEMPLATE_ROOT.rglob("*_transition.xml")):
@@ -607,7 +759,8 @@ def _transition_behaviors():
     return found
 
 
-def test_no_transition_fragment_leaves_its_emptied_host_screen_in_the_stack():
+def test_no_transition_fragment_leaves_its_emptied_host_screen_in_the_stack() -> None:
+    """No transition fragment leaves its emptied host screen in the stack."""
     behaviors = _transition_behaviors()
     assert behaviors, "the transition scan found nothing, so this guard is dead"
 
@@ -625,7 +778,8 @@ def test_no_transition_fragment_leaves_its_emptied_host_screen_in_the_stack():
     )
 
 
-def test_no_transition_fragment_delays_its_own_dismissal():
+def test_no_transition_fragment_delays_its_own_dismissal() -> None:
+    """No transition fragment delays its own dismissal."""
     # navigator.ts:187-193 wraps sendRequest in setTimeout, and the panel this
     # fragment replaced is already gone when the timer starts. Every millisecond of
     # `delay` is a millisecond the user spends staring at an emptied screen before
@@ -647,7 +801,8 @@ def test_no_transition_fragment_delays_its_own_dismissal():
     )
 
 
-def test_the_form_transitions_dismiss_with_exactly_one_back():
+def test_the_form_transitions_dismiss_with_exactly_one_back() -> None:
+    """The form transitions dismiss with exactly one back."""
     # `close` needs a route NAMED modal and is otherwise a silent no-op
     # (buildCloseRequest, services/navigator/helpers.ts:301-345 + navigator.ts:89-95),
     # so it can never pair with the `navigate` the guard below requires. `back` pops
@@ -702,7 +857,7 @@ REQUIRED_EVENT_LISTENERS = {
 }
 
 
-def _event_names(attribute_name, trigger_or_action):
+def _event_names(attribute_name: str, trigger_or_action: str) -> dict[str, set[str]]:
     """Return {template name: {event-name}} for one behavior kind."""
     found = {}
     for path in sorted(TEMPLATE_ROOT.rglob("*.xml")):
@@ -715,7 +870,8 @@ def _event_names(attribute_name, trigger_or_action):
     return found
 
 
-def test_every_screen_refreshes_the_data_another_screen_can_invalidate():
+def test_every_screen_refreshes_the_data_another_screen_can_invalidate() -> None:
+    """Every screen refreshes the data another screen can invalidate."""
     listeners = _event_names("trigger", "on-event")
     missing = {
         name: sorted(required - listeners.get(name, set()))
@@ -728,7 +884,7 @@ def test_every_screen_refreshes_the_data_another_screen_can_invalidate():
     )
 
 
-def _reload_events(name):
+def _reload_events(name: str) -> set[str]:
     """Return every event name one template answers with a whole-document reload."""
     return {
         attributes["event-name"]
@@ -740,7 +896,8 @@ def _reload_events(name):
     }
 
 
-def test_a_panel_never_dispatches_an_event_that_reloads_its_own_host_screen():
+def test_a_panel_never_dispatches_an_event_that_reloads_its_own_host_screen() -> None:
+    """A panel never dispatches an event that reloads its own host screen."""
     # `reload` refetches the screen url and swaps the WHOLE document
     # (hyperview.tsx:219-220), and Events.dispatch is a global emit that reaches the
     # dispatching screen too (hyperview.tsx:291-299). So a fragment that is already
@@ -760,7 +917,8 @@ def test_a_panel_never_dispatches_an_event_that_reloads_its_own_host_screen():
         )
 
 
-def test_no_transition_asks_one_screen_to_reload_twice():
+def test_no_transition_asks_one_screen_to_reload_twice() -> None:
+    """No transition asks one screen to reload twice."""
     # Events.dispatch is a global emit that reaches the DISPATCHING screen too
     # (hyperview.tsx:291-299), so a fragment whose event some screen reloads on has
     # already repainted its own host. An href-less `reload` beside it resolves to
@@ -794,7 +952,8 @@ def test_no_transition_asks_one_screen_to_reload_twice():
     )
 
 
-def test_no_event_is_dispatched_into_the_void():
+def test_no_event_is_dispatched_into_the_void() -> None:
+    """No event is dispatched into the void."""
     # The mirror: an event nobody is declared to want is dead markup, and the guard
     # above would never notice because it only reads the table.
     dispatched = {
@@ -816,7 +975,7 @@ def test_no_event_is_dispatched_into_the_void():
 # only stack reset the server can ask for. Its cost is that StackRouter returns null
 # for a name it does not know (:225-227) with no warning and no visual feedback, so a
 # fragment href that drifts from what todo/views.py emits is a silently dead control.
-def _hrefs_in(relative_path):
+def _hrefs_in(relative_path: str) -> dict[str, str | None]:
     """Return {href: action} for one template."""
     found = {}
     for raw in ELEMENT.findall((TEMPLATE_ROOT / relative_path).read_text()):
@@ -827,7 +986,8 @@ def _hrefs_in(relative_path):
     return found
 
 
-def test_the_home_control_returns_to_the_root_route_instead_of_pushing_a_copy():
+def test_the_home_control_returns_to_the_root_route_instead_of_pushing_a_copy() -> None:
+    """The home control returns to the root route instead of pushing a copy."""
     # `href="/hv/dashboard/"` collapses to the dynamic route name `card`, which never
     # matches the DECLARED root route, so the first Home tap pushes a second dashboard
     # and Back from Home shows Home again. Measured against the real StackRouter in
@@ -842,7 +1002,12 @@ def test_the_home_control_returns_to_the_root_route_instead_of_pushing_a_copy():
         )
 
 
-def test_every_side_menu_link_also_closes_the_menu(user):
+def test_every_side_menu_link_also_closes_the_menu(user: AbstractUser) -> None:
+    """Every side menu link also closes the menu.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The side menu is a full-bleed overlay hosted by dashboard.xml alone, and NOTHING
     # in the client dismisses it on navigation: AnimatedSideMenu only closes on its own
     # x or scrim. Home is the obvious case (StackRouter NAVIGATE to the focused route
@@ -873,7 +1038,14 @@ def test_every_side_menu_link_also_closes_the_menu(user):
         assert close.attrib["href"] == "/hv/menu/close/"
 
 
-def test_every_fragment_href_names_a_route_the_server_actually_emits(user):
+def test_every_fragment_href_names_a_route_the_server_actually_emits(
+    user: AbstractUser,
+) -> None:
+    """Every fragment href names a route the server actually emits.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The literal in the template is coupled to todo/views.py. Ask the server for the
     # ids it can emit rather than restating them here, so the two cannot drift.
     anonymous = Client()
@@ -906,7 +1078,8 @@ def test_every_fragment_href_names_a_route_the_server_actually_emits(user):
 FORM_HREF = re.compile(r"^/hv/(tasks|categories)/(new/|\{\}/edit/)")
 
 
-def test_every_task_and_category_form_opens_as_a_card():
+def test_every_task_and_category_form_opens_as_a_card() -> None:
+    """Every task and category form opens as a card."""
     offenders = sorted(
         {
             f"{attribute}={href!r} action={action}"
@@ -935,8 +1108,15 @@ LIST_BOUNDARY = re.compile(r"</list\b|<list\b[^>]*>|<behavior\b[^>]*>", re.S)
 COMMENT = re.compile(r"<!--.*?-->", re.S)
 
 
-def parked_on_a_list(markup):
-    """Return every on-event behavior nested inside a <list> in one template."""
+def parked_on_a_list(markup: str) -> list[str]:
+    """Return every on-event behavior nested inside a <list> in one template.
+
+    Args:
+        markup: Source of one template.
+
+    Returns:
+        Each on-event behavior tag found inside a list.
+    """
     offenders, depth = [], 0
     for match in LIST_BOUNDARY.finditer(COMMENT.sub("", markup)):
         raw = match.group()
@@ -949,7 +1129,8 @@ def parked_on_a_list(markup):
     return offenders
 
 
-def test_no_on_event_listener_is_parked_on_a_list_where_it_cannot_fire():
+def test_no_on_event_listener_is_parked_on_a_list_where_it_cannot_fire() -> None:
+    """No on event listener is parked on a list where it cannot fire."""
     offenders = [
         f"{path.name}: {raw}"
         for path in sorted(TEMPLATE_ROOT.rglob("*.xml"))
@@ -961,7 +1142,8 @@ def test_no_on_event_listener_is_parked_on_a_list_where_it_cannot_fire():
     )
 
 
-def test_the_list_guard_counts_a_self_closing_list_as_balanced():
+def test_the_list_guard_counts_a_self_closing_list_as_balanced() -> None:
+    """The list guard counts a self closing list as balanced."""
     # No template ships an empty <list/> today, so the guard is green by luck rather
     # than by arithmetic: the first one added would make it blame innocent markup.
     listener = '<behavior trigger="on-event" action="reload" />'
@@ -1003,7 +1185,7 @@ def _registered_local_names() -> set[str]:
     return names | _composed_gate_names(app, surface, gate)
 
 
-def _composed_gate_names(app, surface, gate):
+def _composed_gate_names(app: str, surface: str, gate: str) -> set[str]:
     """Follow the explicit App surface composition, not mere catalog existence.
 
     This source inventory complements the mobile App/real-SDK runtime tests;
@@ -1037,7 +1219,14 @@ def _composed_gate_names(app, surface, gate):
 
 
 @pytest.mark.parametrize("broken", ("surface", "composition", "root", "registration"))
-def test_custom_element_inventory_rejects_missing_composition_wiring(broken):
+def test_custom_element_inventory_rejects_missing_composition_wiring(
+    broken: str,
+) -> None:
+    """Custom element inventory rejects missing composition wiring.
+
+    Args:
+        broken: Which part of the App composition source is removed.
+    """
     app = (MOBILE_ROOT / "App.tsx").read_text()
     surface = (MOBILE_ROOT / "src/realtime/app-session.tsx").read_text()
     gate = (MOBILE_ROOT / "src/realtime/gate.tsx").read_text()
@@ -1054,7 +1243,8 @@ def test_custom_element_inventory_rejects_missing_composition_wiring(broken):
         _composed_gate_names(app, surface, gate)
 
 
-def test_no_template_ships_a_custom_element_the_client_cannot_render():
+def test_no_template_ships_a_custom_element_the_client_cannot_render() -> None:
+    """No template ships a custom element the client cannot render."""
     used = {
         match.group(1)
         for path in sorted(TEMPLATE_ROOT.rglob("*.xml"))
@@ -1069,7 +1259,15 @@ def test_no_template_ships_a_custom_element_the_client_cannot_render():
     )
 
 
-def test_no_style_id_is_also_an_element_id_anywhere_in_the_app(user, fixtures):
+def test_no_style_id_is_also_an_element_id_anywhere_in_the_app(
+    user: AbstractUser, fixtures: dict[str, str]
+) -> None:
+    """No style id is also an element id anywhere in the app.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        fixtures: Primary keys of the task and the category created for the scan.
+    """
     # The rule: a <style id> may never equal an element id, anywhere in the app.
     # Why: Hyperview resolves `target`, `show-during-load` and every other id
     # reference with Dom.getElementById (hyperview.tsx:413), which is xmldom's

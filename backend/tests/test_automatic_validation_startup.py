@@ -17,7 +17,15 @@ from todo.apps import TodoConfig
 
 
 @pytest.mark.parametrize("contract", (None, "optional-xsd-v1", True))
-def test_ready_rejects_missing_or_incompatible_contract(monkeypatch, contract):
+def test_ready_rejects_missing_or_incompatible_contract(
+    monkeypatch: pytest.MonkeyPatch, contract: object
+) -> None:
+    """Ready rejects missing or incompatible contract.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        contract: Value of the validation contract marker, or None to remove it.
+    """
     if contract is None:
         monkeypatch.delattr(
             dj_hyperview, "HYPERVIEW_VALIDATION_CONTRACT", raising=False
@@ -31,7 +39,14 @@ def test_ready_rejects_missing_or_incompatible_contract(monkeypatch, contract):
         app.ready()
 
 
-def test_ready_accepts_contract_without_database_or_cache_work(monkeypatch):
+def test_ready_accepts_contract_without_database_or_cache_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ready accepts contract without database or cache work.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     monkeypatch.setattr(
         dj_hyperview, "HYPERVIEW_VALIDATION_CONTRACT", "automatic-xsd-v1", raising=False
     )
@@ -50,7 +65,14 @@ def test_ready_accepts_contract_without_database_or_cache_work(monkeypatch):
 
 
 @pytest.mark.parametrize("contract", (None, "automatic-xsd-v1"))
-def test_django_setup_checks_contract_without_system_check_command(contract):
+def test_django_setup_checks_contract_without_system_check_command(
+    contract: object,
+) -> None:
+    """Django setup checks contract without system check command.
+
+    Args:
+        contract: Value of the validation contract marker, or None to remove it.
+    """
     code = """
 import sys
 import dj_hyperview

@@ -19,19 +19,32 @@ import json
 import os
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import AbstractUser
+    from django.test import Client
 
 TRIALS = 30
 
 
-def race(*calls):
-    """Run each call in its own thread, released together, and return the results."""
+def race(*calls: Callable[[], object]) -> list[object]:
+    """Run each call in its own thread, released together, and return the results.
+
+    Args:
+        *calls: Callables to run concurrently, one per thread.
+
+    Returns:
+        One entry per call: its result, or a raised-exception marker.
+    """
     from django.db import connections
 
     barrier = threading.Barrier(len(calls))
     results = [None] * len(calls)
 
-    def run(index, call):
+    def run(index: int, call: Callable[[], object]) -> None:
         try:
             barrier.wait(timeout=30)
             results[index] = call()
@@ -51,8 +64,15 @@ def race(*calls):
     return results
 
 
-def signed_in(user):
-    """Return a client for one user that reports a 500 instead of raising it."""
+def signed_in(user: AbstractUser) -> Client:
+    """Return a client for one user that reports a 500 instead of raising it.
+
+    Args:
+        user: User the client is signed in as.
+
+    Returns:
+        Client signed in as the user, which returns a 500 instead of raising it.
+    """
     from django.test import Client
 
     client = Client(raise_request_exception=False)
@@ -60,13 +80,30 @@ def signed_in(user):
     return client
 
 
-def post(client, path, **fields):
-    """Return a call that POSTs the fields and answers the status code."""
+def post(client: Client, path: str, **fields: str) -> Callable[[], int]:
+    """Return a call that POSTs the fields and answers the status code.
+
+    Args:
+        client: Client that sends the POST.
+        path: URL path to post to.
+        **fields: Form fields to post.
+
+    Returns:
+        Callable that posts the fields and returns the status code.
+    """
     return lambda: client.post(path, fields).status_code
 
 
-def duplicate_category(users, trial):
-    """Two devices create the same category at once."""
+def duplicate_category(users: dict[str, AbstractUser], trial: int) -> list[object]:
+    """Two devices create the same category at once.
+
+    Args:
+        users: Saved users by username.
+        trial: Index of the current trial.
+
+    Returns:
+        Status code of each racing request.
+    """
     first, second = (signed_in(users["ada"]) for _ in range(2))
     fields = {"name": f"Work {trial}", "color": "mint"}
     return race(
@@ -75,8 +112,16 @@ def duplicate_category(users, trial):
     )
 
 
-def colliding_renames(users, trial):
-    """Two devices rename different categories to the same name at once."""
+def colliding_renames(users: dict[str, AbstractUser], trial: int) -> list[object]:
+    """Two devices rename different categories to the same name at once.
+
+    Args:
+        users: Saved users by username.
+        trial: Index of the current trial.
+
+    Returns:
+        Status code of each racing request.
+    """
     from todo.models import Category
 
     one = Category.objects.create(user=users["ada"], name=f"One {trial}", color="mint")
@@ -89,8 +134,18 @@ def colliding_renames(users, trial):
     )
 
 
-def task_against_category_delete(users, trial):
-    """A task is created in a category while another device deletes the category."""
+def task_against_category_delete(
+    users: dict[str, AbstractUser], trial: int
+) -> list[object]:
+    """A task is created in a category while another device deletes the category.
+
+    Args:
+        users: Saved users by username.
+        trial: Index of the current trial.
+
+    Returns:
+        Status code of each racing request.
+    """
     from todo.models import Category
 
     category = Category.objects.create(
@@ -103,8 +158,16 @@ def task_against_category_delete(users, trial):
     )
 
 
-def two_users_create_tasks(users, trial):
-    """Two accounts create tasks at the same moment."""
+def two_users_create_tasks(users: dict[str, AbstractUser], trial: int) -> list[object]:
+    """Two accounts create tasks at the same moment.
+
+    Args:
+        users: Saved users by username.
+        trial: Index of the current trial.
+
+    Returns:
+        Status code of each racing request.
+    """
     return race(
         post(signed_in(users["ada"]), "/hv/tasks/new/", title=f"Ada {trial}"),
         post(signed_in(users["grace"]), "/hv/tasks/new/", title=f"Grace {trial}"),
@@ -119,7 +182,7 @@ SCENARIOS = (
 )
 
 
-def main():
+def main() -> None:
     """Migrate the scratch database, run every scenario and print the statuses."""
     import django
     from django.conf import settings

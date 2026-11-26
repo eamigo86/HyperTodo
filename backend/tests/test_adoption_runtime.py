@@ -3,12 +3,15 @@
 import asyncio
 import importlib
 import tomllib
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
 from asgiref.sync import async_to_sync
 from django.conf import settings as django_settings
-from django.test import override_settings
+from django.contrib.auth.models import AbstractUser
+from django.core.handlers.wsgi import WSGIRequest
+from django.test import Client, override_settings
 
 from tests.test_realtime_stream import RESYNC, Broker, Subscription
 from tests.test_realtime_stream import authenticated as authenticated
@@ -16,7 +19,8 @@ from tests.test_realtime_stream import authenticated as authenticated
 BACKEND = Path(__file__).resolve().parents[1]
 
 
-def test_release_declares_required_extras_and_asgi_server():
+def test_release_declares_required_extras_and_asgi_server() -> None:
+    """Release declares required extras and asgi server."""
     dependencies = tomllib.loads((BACKEND / "pyproject.toml").read_text())["project"][
         "dependencies"
     ]
@@ -24,18 +28,37 @@ def test_release_declares_required_extras_and_asgi_server():
     assert any(value.split("=")[0].split(">")[0] == "uvicorn" for value in dependencies)
 
 
-def test_installed_release_supports_both_invalidation_wire_versions():
+def test_installed_release_supports_both_invalidation_wire_versions() -> None:
+    """Installed release supports both invalidation wire versions."""
     import dj_hyperview.realtime as realtime
 
     assert realtime.INVALIDATION_VERSIONS == (1, 2)
 
 
-async def asgi_get(application, path, *, headers=None, disconnect_on_body=False):
+async def asgi_get(
+    application: Callable[..., Awaitable[object]],
+    path: str,
+    *,
+    headers: list[tuple[bytes, bytes]] | None = None,
+    disconnect_on_body: bool = False,
+) -> list[dict[str, object]]:
+    """Request one path from an ASGI application and collect what it sends.
+
+    Args:
+        application: ASGI application under test.
+        path: Request path.
+        headers: Raw request headers; a testserver host header when omitted.
+        disconnect_on_body: Whether the client disconnects once the response body has
+        been sent.
+
+    Returns:
+        Every message the application sent, in order.
+    """
     queue = asyncio.Queue()
     queue.put_nowait({"type": "http.request", "body": b"", "more_body": False})
     sent = []
 
-    async def send(message):
+    async def send(message: dict[str, object]) -> None:
         sent.append(message)
         if disconnect_on_body and message["type"] == "http.response.body":
             queue.put_nowait({"type": "http.disconnect"})
@@ -71,7 +94,13 @@ async def asgi_get(application, path, *, headers=None, disconnect_on_body=False)
         ("/static/dj_hyperview/admin/hxml_editor.js", b"Hyperview"),
     ],
 )
-def test_debug_asgi_serves_actual_admin_assets(path, content):
+def test_debug_asgi_serves_actual_admin_assets(path: str, content: bytes) -> None:
+    """Debug asgi serves actual admin assets.
+
+    Args:
+        path: Static file path requested from the application.
+        content: Bytes that must appear in the served file.
+    """
     module = importlib.import_module("config.asgi")
     try:
         with override_settings(DEBUG=True, STATIC_URL="/static/"):
@@ -83,7 +112,8 @@ def test_debug_asgi_serves_actual_admin_assets(path, content):
         importlib.reload(module)
 
 
-def test_production_asgi_does_not_serve_development_static():
+def test_production_asgi_does_not_serve_development_static() -> None:
+    """Production asgi does not serve development static."""
     module = importlib.import_module("config.asgi")
     try:
         with override_settings(DEBUG=False, STATIC_URL="/static/"):
@@ -97,7 +127,8 @@ def test_production_asgi_does_not_serve_development_static():
         importlib.reload(module)
 
 
-def test_development_commands_do_not_migrate_seed_or_weaken_go_guard():
+def test_development_commands_do_not_migrate_seed_or_weaken_go_guard() -> None:
+    """Development commands do not migrate seed or weaken go guard."""
     text = (BACKEND.parent / "Makefile").read_text()
     target = text.split("\nbackend-run-sse:", 1)[1].split("\n\n", 1)[0]
     assert "$(call run_backend," in target
@@ -115,8 +146,16 @@ def test_development_commands_do_not_migrate_seed_or_weaken_go_guard():
 
 @pytest.mark.django_db(transaction=True)
 def test_debug_static_wrapper_preserves_real_sse_auth_and_disconnect(
-    authenticated, monkeypatch
-):
+    authenticated: tuple[Client, AbstractUser, WSGIRequest, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Debug static wrapper preserves real sse auth and disconnect.
+
+    Args:
+        authenticated: Signed-in client, its user, a prepared request and the session
+        binding.
+        monkeypatch: Patches the code under test for this test.
+    """
     from todo import realtime_views
     from todo.realtime_stream import admissions
 
@@ -133,7 +172,7 @@ def test_debug_static_wrapper_preserves_real_sse_auth_and_disconnect(
         if key.lower().startswith("x-hypertodo") or key.lower() == "origin"
     )
 
-    async def run():
+    async def run() -> None:
         subscription = Subscription(RESYNC)
         monkeypatch.setattr(
             realtime_views, "_broker", lambda config: Broker(subscription)

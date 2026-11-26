@@ -5,8 +5,11 @@ from datetime import timedelta
 from xml.etree import ElementTree
 
 import pytest
+from django.contrib.admin.sites import AdminSite
+from django.contrib.auth.models import AbstractUser
 from django.core.cache import cache
 from django.db import IntegrityError
+from django.http import HttpResponse
 from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -25,7 +28,14 @@ pytestmark = pytest.mark.django_db
 NS = {"hv": "https://hyperview.org/hyperview"}
 
 
-def test_credential_is_one_per_user_and_never_exposes_the_raw_token(user):
+def test_credential_is_one_per_user_and_never_exposes_the_raw_token(
+    user: AbstractUser,
+) -> None:
+    """Credential is one per user and never exposes the raw token.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     raw = "not-a-real-token"
     credential = BiometricCredential.objects.create(
         user=user, token_hash=hashlib.sha256(raw.encode()).hexdigest()
@@ -39,7 +49,15 @@ def test_credential_is_one_per_user_and_never_exposes_the_raw_token(user):
         BiometricCredential.objects.create(user=user, token_hash="another-hash")
 
 
-def test_credential_hash_is_unique_across_users(user, other_user):
+def test_credential_hash_is_unique_across_users(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """Credential hash is unique across users.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     shared = hashlib.sha256(b"collision").hexdigest()
     BiometricCredential.objects.create(user=user, token_hash=shared)
 
@@ -47,21 +65,40 @@ def test_credential_hash_is_unique_across_users(user, other_user):
         BiometricCredential.objects.create(user=other_user, token_hash=shared)
 
 
-def test_credential_is_deleted_with_its_user(user):
+def test_credential_is_deleted_with_its_user(user: AbstractUser) -> None:
+    """Credential is deleted with its user.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     BiometricCredential.objects.create(user=user, token_hash="a" * 64)
     user.delete()
 
     assert BiometricCredential.objects.count() == 0
 
 
-def test_credential_starts_unused_and_records_a_creation_time(user):
+def test_credential_starts_unused_and_records_a_creation_time(
+    user: AbstractUser,
+) -> None:
+    """Credential starts unused and records a creation time.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     credential = BiometricCredential.objects.create(user=user, token_hash="b" * 64)
 
     assert credential.last_used_at is None
     assert timezone.now() - credential.created_at < timedelta(seconds=5)
 
 
-def test_issue_stores_only_the_hash_and_returns_high_entropy_material(user):
+def test_issue_stores_only_the_hash_and_returns_high_entropy_material(
+    user: AbstractUser,
+) -> None:
+    """Issue stores only the hash and returns high entropy material.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     credential = BiometricCredential.objects.get()
 
@@ -72,7 +109,14 @@ def test_issue_stores_only_the_hash_and_returns_high_entropy_material(user):
     assert BiometricCredential.objects.filter(token_hash=raw).exists() is False
 
 
-def test_issue_rotates_in_place_and_kills_the_previous_token(user):
+def test_issue_rotates_in_place_and_kills_the_previous_token(
+    user: AbstractUser,
+) -> None:
+    """Issue rotates in place and kills the previous token.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     first = issue_biometric_token(user=user)
     second = issue_biometric_token(user=user)
 
@@ -82,7 +126,15 @@ def test_issue_rotates_in_place_and_kills_the_previous_token(user):
     assert authenticate_biometric_token(raw_token=second) == user
 
 
-def test_authenticate_returns_only_the_issuing_user(user, other_user):
+def test_authenticate_returns_only_the_issuing_user(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """Authenticate returns only the issuing user.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     mine = issue_biometric_token(user=user)
     theirs = issue_biometric_token(user=other_user)
 
@@ -91,13 +143,26 @@ def test_authenticate_returns_only_the_issuing_user(user, other_user):
 
 
 @pytest.mark.parametrize("bad", ["", "   ", "garbage", "a" * 64])
-def test_authenticate_rejects_absent_and_wrong_tokens(user, bad):
+def test_authenticate_rejects_absent_and_wrong_tokens(
+    user: AbstractUser, bad: str
+) -> None:
+    """Authenticate rejects absent and wrong tokens.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        bad: Token the client presents, which must be refused.
+    """
     issue_biometric_token(user=user)
 
     assert authenticate_biometric_token(raw_token=bad) is None
 
 
-def test_authenticate_rejects_a_revoked_token(user):
+def test_authenticate_rejects_a_revoked_token(user: AbstractUser) -> None:
+    """Authenticate rejects a revoked token.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     revoke_biometric_token(user=user)
 
@@ -105,13 +170,23 @@ def test_authenticate_rejects_a_revoked_token(user):
     assert authenticate_biometric_token(raw_token=raw) is None
 
 
-def test_revoke_is_idempotent_when_no_credential_exists(user):
+def test_revoke_is_idempotent_when_no_credential_exists(user: AbstractUser) -> None:
+    """Revoke is idempotent when no credential exists.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     revoke_biometric_token(user=user)
 
     assert BiometricCredential.objects.count() == 0
 
 
-def test_authenticate_rejects_and_deletes_an_expired_token(user):
+def test_authenticate_rejects_and_deletes_an_expired_token(user: AbstractUser) -> None:
+    """Authenticate rejects and deletes an expired token.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     BiometricCredential.objects.update(
         created_at=timezone.now() - BIOMETRIC_TOKEN_TTL - timedelta(seconds=1)
@@ -121,7 +196,12 @@ def test_authenticate_rejects_and_deletes_an_expired_token(user):
     assert BiometricCredential.objects.count() == 0
 
 
-def test_rotation_keeps_the_original_issue_time(user):
+def test_rotation_keeps_the_original_issue_time(user: AbstractUser) -> None:
+    """Rotation keeps the original issue time.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     issue_biometric_token(user=user)
     issued_at = timezone.now() - BIOMETRIC_TOKEN_TTL + timedelta(hours=1)
     BiometricCredential.objects.update(created_at=issued_at)
@@ -134,7 +214,14 @@ def test_rotation_keeps_the_original_issue_time(user):
     assert authenticate_biometric_token(raw_token=rotated) == user
 
 
-def test_issue_can_restart_the_lifetime_which_rotation_keeps(user):
+def test_issue_can_restart_the_lifetime_which_rotation_keeps(
+    user: AbstractUser,
+) -> None:
+    """Issue can restart the lifetime which rotation keeps.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     issue_biometric_token(user=user)
     BiometricCredential.objects.update(
         created_at=timezone.now() - BIOMETRIC_TOKEN_TTL - timedelta(days=1)
@@ -150,7 +237,12 @@ def test_issue_can_restart_the_lifetime_which_rotation_keeps(user):
     assert authenticate_biometric_token(raw_token=renewed) == user
 
 
-def test_rotation_keeps_the_recorded_last_use(user):
+def test_rotation_keeps_the_recorded_last_use(user: AbstractUser) -> None:
+    """Rotation keeps the recorded last use.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     authenticate_biometric_token(raw_token=raw)
     used_at = BiometricCredential.objects.get().last_used_at
@@ -161,14 +253,26 @@ def test_rotation_keeps_the_recorded_last_use(user):
     assert BiometricCredential.objects.get().last_used_at == used_at
 
 
-def test_authenticate_stamps_last_used(user):
+def test_authenticate_stamps_last_used(user: AbstractUser) -> None:
+    """Authenticate stamps last used.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
 
     assert authenticate_biometric_token(raw_token=raw) == user
     assert BiometricCredential.objects.get().last_used_at is not None
 
 
-def test_changing_the_password_revokes_the_device_credential(user):
+def test_changing_the_password_revokes_the_device_credential(
+    user: AbstractUser,
+) -> None:
+    """Changing the password revokes the device credential.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Changing the password is the standard "I think I am compromised" response, and
     # Django's session auth hash already ends every live session. Without this the
     # phone in the thief's pocket keeps unlocking, and every unlock rotates the token.
@@ -181,8 +285,14 @@ def test_changing_the_password_revokes_the_device_credential(user):
 
 
 def test_the_unlock_endpoint_refuses_a_credential_issued_before_a_password_change(
-    client, user
-):
+    client: Client, user: AbstractUser
+) -> None:
+    """The unlock endpoint refuses a credential issued before a password change.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     user.set_password("a-brand-new-password")
     user.save(update_fields=("password",))
@@ -193,7 +303,12 @@ def test_the_unlock_endpoint_refuses_a_credential_issued_before_a_password_chang
     assert "_auth_user_id" not in client.session
 
 
-def test_a_deactivated_account_loses_its_device_credential(user):
+def test_a_deactivated_account_loses_its_device_credential(user: AbstractUser) -> None:
+    """A deactivated account loses its device credential.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # login() skips the is_active check ModelBackend.authenticate() would have made,
     # so without this an admin who switches an account off still lets the enrolled
     # phone in (the next request then answers 401) and the credential lives on.
@@ -206,8 +321,14 @@ def test_a_deactivated_account_loses_its_device_credential(user):
 
 
 def test_the_unlock_endpoint_refuses_a_deactivated_account_and_wipes_the_device(
-    client, user
-):
+    client: Client, user: AbstractUser
+) -> None:
+    """The unlock endpoint refuses a deactivated account and wipes the device.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     user.is_active = False
     user.save(update_fields=("is_active",))
@@ -222,14 +343,28 @@ def test_the_unlock_endpoint_refuses_a_deactivated_account_and_wipes_the_device(
     assert not BiometricCredential.objects.exists()
 
 
-def test_an_untouched_password_leaves_the_credential_working(user):
+def test_an_untouched_password_leaves_the_credential_working(
+    user: AbstractUser,
+) -> None:
+    """An untouched password leaves the credential working.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     user.save()
 
     assert authenticate_biometric_token(raw_token=raw) == user
 
 
-def test_an_operator_can_revoke_an_enrolment_without_the_enrolled_phone(admin_site):
+def test_an_operator_can_revoke_an_enrolment_without_the_enrolled_phone(
+    admin_site: AdminSite,
+) -> None:
+    """An operator can revoke an enrolment without the enrolled phone.
+
+    Args:
+        admin_site: Django's default admin site.
+    """
     # /hv/biometric/forget/ and a password sign-in with the switch off both require
     # the enrolled device, which is exactly what a stolen-phone report no longer has.
     model_admin = admin_site._registry[BiometricCredential]
@@ -239,7 +374,7 @@ def test_an_operator_can_revoke_an_enrolment_without_the_enrolled_phone(admin_si
     assert "user" in model_admin.list_display
 
 
-def _throttle(token):
+def _throttle(token: str) -> None:
     """Fill the attempt bucket for one presented token.
 
     Built through the view's own key helper so the tests never pin its format.
@@ -250,7 +385,7 @@ def _throttle(token):
     cache.set(biometric_attempt_key(request), BIOMETRIC_ATTEMPT_LIMIT, timeout=300)
 
 
-def _panel_root(response, *, status):
+def _panel_root(response: HttpResponse, *, status: int) -> ElementTree.Element:
     assert response.status_code == status
     root = ElementTree.fromstring(response.content)
     assert root.tag == f"{{{NS['hv']}}}view"
@@ -258,7 +393,7 @@ def _panel_root(response, *, status):
     return root
 
 
-def _csrf_post(client, url, data):
+def _csrf_post(client: Client, url: str, data: dict[str, str]) -> HttpResponse:
     login_page = client.get(reverse("todo:login"))
     root = ElementTree.fromstring(login_page.content)
     token = root.find(
@@ -268,7 +403,15 @@ def _csrf_post(client, url, data):
     return client.post(url, {**data, "csrfmiddlewaretoken": token})
 
 
-def test_biometric_login_creates_a_session_and_rotates_the_token(client, user):
+def test_biometric_login_creates_a_session_and_rotates_the_token(
+    client: Client, user: AbstractUser
+) -> None:
+    """Biometric login creates a session and rotates the token.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
 
     response = client.post(reverse("todo:biometric-login"), {"biometric_token": raw})
@@ -288,7 +431,15 @@ def test_biometric_login_creates_a_session_and_rotates_the_token(client, user):
     assert authenticate_biometric_token(raw_token=rotated) == user
 
 
-def test_biometric_login_rejects_a_token_belonging_to_nobody(client, user):
+def test_biometric_login_rejects_a_token_belonging_to_nobody(
+    client: Client, user: AbstractUser
+) -> None:
+    """Biometric login rejects a token belonging to nobody.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     issue_biometric_token(user=user)
 
     response = client.post(
@@ -303,7 +454,15 @@ def test_biometric_login_rejects_a_token_belonging_to_nobody(client, user):
     assert reset.attrib["token"] == ""
 
 
-def test_biometric_login_rejects_a_revoked_token(client, user):
+def test_biometric_login_rejects_a_revoked_token(
+    client: Client, user: AbstractUser
+) -> None:
+    """Biometric login rejects a revoked token.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     revoke_biometric_token(user=user)
 
@@ -313,7 +472,15 @@ def test_biometric_login_rejects_a_revoked_token(client, user):
     assert "_auth_user_id" not in client.session
 
 
-def test_biometric_login_rejects_an_absent_token(client, user):
+def test_biometric_login_rejects_an_absent_token(
+    client: Client, user: AbstractUser
+) -> None:
+    """Biometric login rejects an absent token.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     issue_biometric_token(user=user)
 
     response = client.post(reverse("todo:biometric-login"), {})
@@ -322,7 +489,16 @@ def test_biometric_login_rejects_an_absent_token(client, user):
     assert "_auth_user_id" not in client.session
 
 
-def test_biometric_login_never_signs_in_the_wrong_user(client, user, other_user):
+def test_biometric_login_never_signs_in_the_wrong_user(
+    client: Client, user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """Biometric login never signs in the wrong user.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     issue_biometric_token(user=user)
     theirs = issue_biometric_token(user=other_user)
 
@@ -331,14 +507,24 @@ def test_biometric_login_never_signs_in_the_wrong_user(client, user, other_user)
     assert client.session["_auth_user_id"] == str(other_user.pk)
 
 
-def test_biometric_login_is_post_only(client):
+def test_biometric_login_is_post_only(client: Client) -> None:
+    """Biometric login is post only.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     response = client.get(reverse("todo:biometric-login"))
 
     assert response.status_code == 405
     assert response.headers["Allow"] == "POST"
 
 
-def test_biometric_login_is_csrf_protected(user):
+def test_biometric_login_is_csrf_protected(user: AbstractUser) -> None:
+    """Biometric login is csrf protected.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     client = Client(enforce_csrf_checks=True)
 
@@ -356,7 +542,15 @@ def test_biometric_login_is_csrf_protected(user):
     )
 
 
-def test_biometric_login_throttles_repeated_attempts(client, user):
+def test_biometric_login_throttles_repeated_attempts(
+    client: Client, user: AbstractUser
+) -> None:
+    """Biometric login throttles repeated attempts.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     for _ in range(BIOMETRIC_ATTEMPT_LIMIT):
         response = client.post(
             reverse("todo:biometric-login"), {"biometric_token": "wrong"}
@@ -368,14 +562,22 @@ def test_biometric_login_throttles_repeated_attempts(client, user):
     assert "_auth_user_id" not in client.session
 
 
-def _password_login(client, **extra):
+def _password_login(client: Client, **extra: str) -> HttpResponse:
     return client.post(
         reverse("todo:login"),
         {"username": "ada", "password": "correct-horse", **extra},
     )
 
 
-def test_password_login_issues_no_token_without_opt_in(client, user):
+def test_password_login_issues_no_token_without_opt_in(
+    client: Client, user: AbstractUser
+) -> None:
+    """Password login issues no token without opt in.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     response = _password_login(client)
     root = ElementTree.fromstring(response.content)
 
@@ -386,7 +588,15 @@ def test_password_login_issues_no_token_without_opt_in(client, user):
     assert store.attrib["token"] == ""
 
 
-def test_password_login_without_opt_in_revokes_a_previous_enrolment(client, user):
+def test_password_login_without_opt_in_revokes_a_previous_enrolment(
+    client: Client, user: AbstractUser
+) -> None:
+    """Password login without opt in revokes a previous enrolment.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     _password_login(client, enable_biometrics="on")
     assert BiometricCredential.objects.count() == 1
 
@@ -398,7 +608,16 @@ def test_password_login_without_opt_in_revokes_a_previous_enrolment(client, user
     assert store.attrib["token"] == ""
 
 
-def test_another_users_password_login_wipes_the_device_key(client, user, other_user):
+def test_another_users_password_login_wipes_the_device_key(
+    client: Client, user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """Another users password login wipes the device key.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     raw = issue_biometric_token(user=user)
 
     root = ElementTree.fromstring(_password_login(client, username="grace").content)
@@ -412,7 +631,16 @@ def test_another_users_password_login_wipes_the_device_key(client, user, other_u
     assert authenticate_biometric_token(raw_token=raw) == user
 
 
-def test_another_users_password_login_re_keys_the_device_slot(client, user, other_user):
+def test_another_users_password_login_re_keys_the_device_slot(
+    client: Client, user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """Another users password login re keys the device slot.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     # The switch now arrives pre-selected on an enrolled phone, so the interesting
     # case is opt-in ON: the one keychain slot is overwritten with grace's token,
     # which is what destroys ada's raw material.
@@ -434,7 +662,15 @@ def test_another_users_password_login_re_keys_the_device_slot(client, user, othe
     # with the password POST. More machinery, more attack surface, no real gain.
 
 
-def test_password_login_issues_a_token_when_the_user_opts_in(client, user):
+def test_password_login_issues_a_token_when_the_user_opts_in(
+    client: Client, user: AbstractUser
+) -> None:
+    """Password login issues a token when the user opts in.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     response = _password_login(client, enable_biometrics="on")
     root = ElementTree.fromstring(response.content)
 
@@ -448,8 +684,14 @@ def test_password_login_issues_a_token_when_the_user_opts_in(client, user):
 
 
 def test_opting_in_again_after_the_credential_expired_issues_a_usable_token(
-    client, user
-):
+    client: Client, user: AbstractUser
+) -> None:
+    """Opting in again after the credential expired issues a usable token.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     issue_biometric_token(user=user)
     BiometricCredential.objects.update(
         created_at=timezone.now() - BIOMETRIC_TOKEN_TTL - timedelta(days=5)
@@ -468,7 +710,15 @@ def test_opting_in_again_after_the_credential_expired_issues_a_usable_token(
     )
 
 
-def test_unlocking_by_biometrics_does_not_restart_the_lifetime(client, user):
+def test_unlocking_by_biometrics_does_not_restart_the_lifetime(
+    client: Client, user: AbstractUser
+) -> None:
+    """Unlocking by biometrics does not restart the lifetime.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     issued_at = timezone.now() - BIOMETRIC_TOKEN_TTL + timedelta(hours=1)
     BiometricCredential.objects.update(created_at=issued_at)
@@ -480,7 +730,15 @@ def test_unlocking_by_biometrics_does_not_restart_the_lifetime(client, user):
     assert BiometricCredential.objects.get().created_at == issued_at
 
 
-def test_password_login_never_stores_the_issued_token_in_the_database(client, user):
+def test_password_login_never_stores_the_issued_token_in_the_database(
+    client: Client, user: AbstractUser
+) -> None:
+    """Password login never stores the issued token in the database.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     response = _password_login(client, enable_biometrics="on")
     root = ElementTree.fromstring(response.content)
     store = root.find("./hv:behavior[@action='store-biometric-token']", NS)
@@ -490,7 +748,15 @@ def test_password_login_never_stores_the_issued_token_in_the_database(client, us
     assert not BiometricCredential.objects.filter(token_hash__contains=raw[:16])
 
 
-def test_failed_password_login_issues_nothing(client, user):
+def test_failed_password_login_issues_nothing(
+    client: Client, user: AbstractUser
+) -> None:
+    """Failed password login issues nothing.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     response = client.post(
         reverse("todo:login"),
         {"username": "ada", "password": "wrong", "enable_biometrics": "on"},
@@ -500,7 +766,15 @@ def test_failed_password_login_issues_nothing(client, user):
     assert BiometricCredential.objects.count() == 0
 
 
-def test_logout_keeps_the_enrolment_and_the_device_key(client, user):
+def test_logout_keeps_the_enrolment_and_the_device_key(
+    client: Client, user: AbstractUser
+) -> None:
+    """Logout keeps the enrolment and the device key.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # Signing out is a SESSION action, not a device action. Revoking here made the
     # credential exist only while the user was already signed in, i.e. exactly when
     # it is useless, and the login screen could never offer the unlock button.
@@ -515,14 +789,27 @@ def test_logout_keeps_the_enrolment_and_the_device_key(client, user):
     assert root.find("./hv:behavior[@action='reload']", NS) is not None
 
 
-def test_logout_without_a_session_leaves_the_device_alone(client):
+def test_logout_without_a_session_leaves_the_device_alone(client: Client) -> None:
+    """Logout without a session leaves the device alone.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     response = client.post(reverse("todo:logout"))
     root = ElementTree.fromstring(response.content)
 
     assert root.find("./hv:behavior[@action='store-biometric-token']", NS) is None
 
 
-def test_the_kept_token_still_unlocks_after_logout(client, user):
+def test_the_kept_token_still_unlocks_after_logout(
+    client: Client, user: AbstractUser
+) -> None:
+    """The kept token still unlocks after logout.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # The owner's exact report: enable biometrics, sign out, and the phone can no
     # longer unlock. What forces a password sign-in now is the TTL, the explicit
     # forget control, or an opt-in switch left off at a password login.
@@ -540,7 +827,16 @@ def test_the_kept_token_still_unlocks_after_logout(client, user):
     assert client.session["_auth_user_id"] == str(user.pk)
 
 
-def test_the_raw_token_is_never_written_to_the_logs(client, user, caplog):
+def test_the_raw_token_is_never_written_to_the_logs(
+    client: Client, user: AbstractUser, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The raw token is never written to the logs.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        caplog: Captures the log records emitted by this test.
+    """
     with caplog.at_level(0):
         response = _password_login(client, enable_biometrics="on")
     root = ElementTree.fromstring(response.content)
@@ -551,11 +847,16 @@ def test_the_raw_token_is_never_written_to_the_logs(client, user, caplog):
     assert str(BiometricCredential.objects.get()) == f"Biometric credential for {user}"
 
 
-def _login_screen(client):
+def _login_screen(client: Client) -> ElementTree.Element:
     return ElementTree.fromstring(client.get(reverse("todo:login")).content)
 
 
-def test_login_screen_ships_hidden_biometric_controls(client):
+def test_login_screen_ships_hidden_biometric_controls(client: Client) -> None:
+    """Login screen ships hidden biometric controls.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     root = _login_screen(client)
 
     probe = root.find(".//hv:view[@id='login-panel']/hv:behavior", NS)
@@ -574,7 +875,12 @@ def test_login_screen_ships_hidden_biometric_controls(client):
     assert field.attrib["value"] == ""
 
 
-def test_the_privacy_hint_follows_both_ways_to_sign_in(client):
+def test_the_privacy_hint_follows_both_ways_to_sign_in(client: Client) -> None:
+    """The privacy hint follows both ways to sign in.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     # The hint used to sit INSIDE login-form's card, wedged between the password
     # button and the biometric control, which read as a footnote on one method
     # rather than on signing in. It now closes the panel, after both forms.
@@ -595,7 +901,14 @@ def test_the_privacy_hint_follows_both_ways_to_sign_in(client):
     assert login_form.find(".//hv:text[@style='hint']", NS) is None
 
 
-def test_the_biometric_opt_in_switch_is_visible_in_its_off_state(client):
+def test_the_biometric_opt_in_switch_is_visible_in_its_off_state(
+    client: Client,
+) -> None:
+    """The biometric opt in switch is visible in its off state.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     # HvSwitch maps backgroundColor -> trackColor and color -> thumbColor
     # (hv-switch/index.tsx:57-95), so this style IS the control's whole appearance and
     # the WCAG user-agent-default exception no longer applies. A switch is a graphical
@@ -619,7 +932,12 @@ def test_the_biometric_opt_in_switch_is_visible_in_its_off_state(client):
         assert contrast_ratio(*pair) >= 3, f"{label}: {pair[0]} on {pair[1]}"
 
 
-def test_the_privacy_hint_is_readable_body_text(client):
+def test_the_privacy_hint_is_readable_body_text(client: Client) -> None:
+    """The privacy hint is readable body text.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     # 13px is not WCAG large text, so the hint owes 4.5:1 against the sheet it closes.
     # #6E738A was 4.41:1 - the same near-miss the settings version line carried.
     root = _login_screen(client)
@@ -632,12 +950,19 @@ def test_the_privacy_hint_is_readable_body_text(client):
     )
 
 
-def test_the_password_form_and_the_biometric_form_never_share_inputs(client):
+def test_the_password_form_and_the_biometric_form_never_share_inputs(
+    client: Client,
+) -> None:
+    """The password form and the biometric form never share inputs.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     root = _login_screen(client)
     login_form = root.find(".//hv:form[@id='login-form']", NS)
     biometric_form = root.find(".//hv:form[@id='biometric-form']", NS)
 
-    def names(form):
+    def names(form: ElementTree.Element) -> set[str]:
         return {node.attrib["name"] for node in form.iter() if "name" in node.attrib}
 
     assert names(login_form) == {
@@ -651,7 +976,12 @@ def test_the_password_form_and_the_biometric_form_never_share_inputs(client):
     assert login_form.find(".//hv:form", NS) is None
 
 
-def test_the_biometric_button_writes_then_posts(client):
+def test_the_biometric_button_writes_then_posts(client: Client) -> None:
+    """The biometric button writes then posts.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     root = _login_screen(client)
     button = root.find(".//hv:view[@id='biometric-signin']", NS)
     press, on_event = button.findall("./hv:behavior", NS)
@@ -669,7 +999,12 @@ def test_the_biometric_button_writes_then_posts(client):
     assert on_event.attrib["target"] == "login-panel"
 
 
-def test_the_icon_only_biometric_button_is_a_tappable_circle(client):
+def test_the_icon_only_biometric_button_is_a_tappable_circle(client: Client) -> None:
+    """The icon only biometric button is a tappable circle.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     # The button lost its text child, so nothing but the declared box keeps the
     # 44pt target: padding plus a 28pt glyph is not a contract. It is a fixed-size
     # circle now rather than a full-width slab, so it cannot be mistaken for a
@@ -693,7 +1028,12 @@ def test_the_icon_only_biometric_button_is_a_tappable_circle(client):
     assert style.find("./hv:modifier[@pressed='true']", NS) is not None
 
 
-def test_the_biometric_glyph_is_tinted_to_read_as_actionable(client):
+def test_the_biometric_glyph_is_tinted_to_read_as_actionable(client: Client) -> None:
+    """The biometric glyph is tinted to read as actionable.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     # Untinted, the glyph rendered in the PNG's baked dark navy directly under a
     # saturated blue button and read as disabled. tintColor recolours every
     # non-transparent pixel (react-native ImageProps.js:311) and is on hyperview's
@@ -716,7 +1056,14 @@ def test_the_biometric_glyph_is_tinted_to_read_as_actionable(client):
     assert contrast_ratio(button.attrib["borderColor"], "#F7F8FC") >= 3
 
 
-def test_the_biometric_glyph_clears_the_graphical_floor_in_both_press_states(client):
+def test_the_biometric_glyph_clears_the_graphical_floor_in_both_press_states(
+    client: Client,
+) -> None:
+    """The biometric glyph clears the graphical floor in both press states.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     # The resting pair passes on its own (3.34:1) but the pressed one used not to.
     # Two things stack there. The pressed fill lifts the background, and `pressed`
     # propagates into every descendant where a child with no pressed rule of its
@@ -752,8 +1099,14 @@ def test_the_biometric_glyph_clears_the_graphical_floor_in_both_press_states(cli
 
 
 def test_the_rejected_panel_wipes_the_device_but_still_offers_re_enrolment(
-    client, user
-):
+    client: Client, user: AbstractUser
+) -> None:
+    """The rejected panel wipes the device but still offers re enrolment.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     response = client.post(
         reverse("todo:biometric-login"), {"biometric_token": "wrong"}
     )
@@ -771,7 +1124,15 @@ def test_the_rejected_panel_wipes_the_device_but_still_offers_re_enrolment(
     assert root.find(".//hv:view[@id='biometric-error']", NS) is not None
 
 
-def test_the_throttled_panel_leaves_the_device_credential_alone(client, user):
+def test_the_throttled_panel_leaves_the_device_credential_alone(
+    client: Client, user: AbstractUser
+) -> None:
+    """The throttled panel leaves the device credential alone.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     _throttle("wrong")
 
     response = client.post(
@@ -786,7 +1147,15 @@ def test_the_throttled_panel_leaves_the_device_credential_alone(client, user):
     assert root.find(".//hv:view[@id='biometric-error']", NS) is not None
 
 
-def test_a_rejected_token_never_throttles_a_different_credential(client, user):
+def test_a_rejected_token_never_throttles_a_different_credential(
+    client: Client, user: AbstractUser
+) -> None:
+    """A rejected token never throttles a different credential.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # The bucket is per presented token. Keyed on REMOTE_ADDR alone, one client
     # burning ten garbage tokens locked out every user behind the same proxy or NAT
     # for five minutes, and any success cleared the counter for all of them.
@@ -806,8 +1175,14 @@ def test_a_rejected_token_never_throttles_a_different_credential(client, user):
     ]
 )
 def test_biometric_login_names_its_backend_so_extra_backends_cannot_break_it(
-    client, user
-):
+    client: Client, user: AbstractUser
+) -> None:
+    """Biometric login names its backend so extra backends cannot break it.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
 
     response = client.post(reverse("todo:biometric-login"), {"biometric_token": raw})
@@ -817,7 +1192,15 @@ def test_biometric_login_names_its_backend_so_extra_backends_cannot_break_it(
 
 
 @pytest.mark.parametrize("status", [401, 429])
-def test_reset_panels_are_bare_fragments_using_only_screen_styles(client, status):
+def test_reset_panels_are_bare_fragments_using_only_screen_styles(
+    client: Client, status: int
+) -> None:
+    """Reset panels are bare fragments using only screen styles.
+
+    Args:
+        client: Client that requests the screens under test.
+        status: HTTP status the login panel answers with.
+    """
     if status == 429:
         _throttle("wrong")
     screen = _login_screen(client)
@@ -844,13 +1227,21 @@ def test_reset_panels_are_bare_fragments_using_only_screen_styles(client, status
     assert used <= defined
 
 
-def _assert_bare(root):
+def _assert_bare(root: ElementTree.Element) -> None:
     assert root.tag == f"{{{NS['hv']}}}view"
     for forbidden in ("doc", "screen", "body", "styles"):
         assert root.find(f".//hv:{forbidden}", NS) is None
 
 
-def test_the_login_transition_is_bare_and_carries_the_token(client, user):
+def test_the_login_transition_is_bare_and_carries_the_token(
+    client: Client, user: AbstractUser
+) -> None:
+    """The login transition is bare and carries the token.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     root = ElementTree.fromstring(
         _password_login(client, enable_biometrics="on").content
     )
@@ -859,7 +1250,15 @@ def test_the_login_transition_is_bare_and_carries_the_token(client, user):
     assert root.find("./hv:behavior[@action='store-biometric-token']", NS) is not None
 
 
-def test_the_logout_transition_is_bare_and_touches_no_device_key(client, user):
+def test_the_logout_transition_is_bare_and_touches_no_device_key(
+    client: Client, user: AbstractUser
+) -> None:
+    """The logout transition is bare and touches no device key.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     _password_login(client, enable_biometrics="on")
 
     root = ElementTree.fromstring(client.post(reverse("todo:logout")).content)
@@ -868,7 +1267,7 @@ def test_the_logout_transition_is_bare_and_touches_no_device_key(client, user):
     assert root.find("./hv:behavior[@action='store-biometric-token']", NS) is None
 
 
-def _screen_styles(client, route):
+def _screen_styles(client: Client, route: str) -> set[str]:
     screen = ElementTree.fromstring(client.get(route).content)
     return {
         style.attrib["id"]
@@ -876,7 +1275,7 @@ def _screen_styles(client, route):
     }
 
 
-def _used_styles(root):
+def _used_styles(root: ElementTree.Element) -> set[str]:
     return {
         style_id
         for node in root.iter()
@@ -901,7 +1300,9 @@ def _used_styles(root):
 SWITCH_LABEL = "Unlock with biometrics on this phone"
 
 
-def _closest_form(root, node):
+def _closest_form(
+    root: ElementTree.Element, node: ElementTree.Element | None
+) -> ElementTree.Element | None:
     """Return the <form> ancestor whose data a control inside it would post."""
     parents = {child: parent for parent in root.iter() for child in parent}
     while node is not None:
@@ -911,17 +1312,25 @@ def _closest_form(root, node):
     return None
 
 
-def _settings_switch(root):
+def _settings_switch(root: ElementTree.Element) -> ElementTree.Element | None:
     return root.find(f".//hv:switch[@id='{SWITCH_LABEL}']", NS)
 
 
-def _save(client, **fields):
+def _save(client: Client, **fields: str) -> HttpResponse:
     """POST the whole settings form the way the Save button serialises it."""
     payload = {"first_name": "", "last_name": "", "email": "", **fields}
     return client.post(reverse("todo:settings"), payload)
 
 
-def test_the_biometric_switch_only_exists_when_a_credential_does(client, user):
+def test_the_biometric_switch_only_exists_when_a_credential_does(
+    client: Client, user: AbstractUser
+) -> None:
+    """The biometric switch only exists when a credential does.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # OFF-ONLY by ABSENCE, not by a disabled control. HvSwitch builds its props
     # from a fixed literal (hv-switch/index.tsx:53-76) and never calls createProps,
     # so `disabled` is unreachable from HXML: a "disabled" switch would still flip
@@ -958,8 +1367,14 @@ def test_the_biometric_switch_only_exists_when_a_credential_does(client, user):
 
 
 def test_saving_with_the_switch_off_revokes_the_credential_and_wipes_the_device(
-    client, user
-):
+    client: Client, user: AbstractUser
+) -> None:
+    """Saving with the switch off revokes the credential and wipes the device.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     client.force_login(user)
 
@@ -977,7 +1392,16 @@ def test_saving_with_the_switch_off_revokes_the_credential_and_wipes_the_device(
     assert user.first_name == "Ada"
 
 
-def test_a_422_hands_back_the_switch_position_the_user_posted(client, user, other_user):
+def test_a_422_hands_back_the_switch_position_the_user_posted(
+    client: Client, user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A 422 hands back the switch position the user posted.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     # Every OTHER pending edit survives a refused save -- the typed name, the email,
     # the base64 photo are all re-armed -- so a switch that repaints ON silently
     # reverts a revocation the user asked for. They fix the email, tap Save, and the
@@ -998,7 +1422,15 @@ def test_a_422_hands_back_the_switch_position_the_user_posted(client, user, othe
     assert _settings_switch(root).attrib["value"] == "off"
 
 
-def test_saving_with_the_switch_left_on_touches_nothing(client, user):
+def test_saving_with_the_switch_left_on_touches_nothing(
+    client: Client, user: AbstractUser
+) -> None:
+    """Saving with the switch left on touches nothing.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     client.force_login(user)
 
@@ -1009,8 +1441,14 @@ def test_saving_with_the_switch_left_on_touches_nothing(client, user):
 
 
 def test_a_body_that_never_carried_the_switch_is_not_read_as_turning_it_off(
-    client, user
-):
+    client: Client, user: AbstractUser
+) -> None:
+    """A body that never carried the switch is not read as turning it off.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # Absence is NOT the marker, and it cannot be: getNameValueFormInputValues
     # posts a named input's `value` attribute unconditionally (client
     # services/index.ts:292-300), so a <switch> that is on screen is ALWAYS in the
@@ -1026,7 +1464,14 @@ def test_a_body_that_never_carried_the_switch_is_not_read_as_turning_it_off(
     assert root.find("./hv:behavior[@action='store-biometric-token']", NS) is None
 
 
-def test_the_save_endpoint_is_csrf_protected_before_it_revokes_anything(user):
+def test_the_save_endpoint_is_csrf_protected_before_it_revokes_anything(
+    user: AbstractUser,
+) -> None:
+    """The save endpoint is csrf protected before it revokes anything.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     enforcing = Client(enforce_csrf_checks=True)
     enforcing.force_login(user)
     issue_biometric_token(user=user)
@@ -1037,7 +1482,15 @@ def test_the_save_endpoint_is_csrf_protected_before_it_revokes_anything(user):
     assert BiometricCredential.objects.count() == 1
 
 
-def test_saving_the_switch_off_twice_is_idempotent(client, user):
+def test_saving_the_switch_off_twice_is_idempotent(
+    client: Client, user: AbstractUser
+) -> None:
+    """Saving the switch off twice is idempotent.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # The first save has to actually DELETE a row, or the second one is not the
     # second pass over an already-empty table and this guard cannot fail.
     issue_biometric_token(user=user)
@@ -1061,8 +1514,17 @@ def test_saving_the_switch_off_twice_is_idempotent(client, user):
     ],
 )
 def test_the_menu_fragments_only_use_styles_their_host_screen_declares(
-    client, user, route_name, host, verb
-):
+    client: Client, user: AbstractUser, route_name: str, host: str, verb: str
+) -> None:
+    """The menu fragments only use styles their host screen declares.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        route_name: Route name of the menu fragment under test.
+        host: Route name of the screen that hosts the fragment.
+        verb: HTTP method used to request the fragment.
+    """
     client.force_login(user)
     issue_biometric_token(user=user)
     defined = _screen_styles(client, reverse(host))
@@ -1079,11 +1541,18 @@ def test_the_menu_fragments_only_use_styles_their_host_screen_declares(
 OPTIN_LABEL = "Unlock with biometrics next time"
 
 
-def _optin_switch(root):
+def _optin_switch(root: ElementTree.Element) -> ElementTree.Element | None:
     return root.find(f".//hv:switch[@id='{OPTIN_LABEL}']", NS)
 
 
-def test_the_optin_switch_carries_its_own_accessible_name_on_android(client):
+def test_the_optin_switch_carries_its_own_accessible_name_on_android(
+    client: Client,
+) -> None:
+    """The optin switch carries its own accessible name on android.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     # ANDROID ONLY, and the name says so. HvSwitch builds componentProps from
     # createTestProps alone (hv-switch/index.tsx:57) -- no createProps -- so an alt
     # or accessibilityLabel attribute is dropped and the id is the ONLY channel:
@@ -1101,7 +1570,15 @@ def test_the_optin_switch_carries_its_own_accessible_name_on_android(client):
     assert label is not None and label.text == switch.attrib["id"]
 
 
-def test_a_rejected_password_echoes_the_optin_switch_the_user_flipped(client, user):
+def test_a_rejected_password_echoes_the_optin_switch_the_user_flipped(
+    client: Client, user: AbstractUser
+) -> None:
+    """A rejected password echoes the optin switch the user flipped.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # Safe for exactly the reason the rejected-token panel already pre-selects it:
     # the person retrying the password is the person who just flipped this switch.
     # Dropping it back to "off" meant a user who mistyped a password signed in on
@@ -1117,7 +1594,15 @@ def test_a_rejected_password_echoes_the_optin_switch_the_user_flipped(client, us
     assert _optin_switch(root).attrib["value"] == "on"
 
 
-def test_a_rejected_password_leaves_the_optin_switch_off_when_it_was_off(client, user):
+def test_a_rejected_password_leaves_the_optin_switch_off_when_it_was_off(
+    client: Client, user: AbstractUser
+) -> None:
+    """A rejected password leaves the optin switch off when it was off.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     root = _panel_root(
         client.post(reverse("todo:login"), {"username": "ada", "password": "wrong"}),
         status=422,
@@ -1126,7 +1611,14 @@ def test_a_rejected_password_leaves_the_optin_switch_off_when_it_was_off(client,
     assert _optin_switch(root).attrib["value"] == "off"
 
 
-def test_the_optin_switch_is_off_by_default_and_the_probe_never_selects_it(client):
+def test_the_optin_switch_is_off_by_default_and_the_probe_never_selects_it(
+    client: Client,
+) -> None:
+    """The optin switch is off by default and the probe never selects it.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     # A stored key names a DEVICE, not a person. Pre-selecting the switch from it
     # enrolled whoever signed in next on a shared phone, without ever asking them.
     root = _login_screen(client)
@@ -1139,7 +1631,15 @@ def test_the_optin_switch_is_off_by_default_and_the_probe_never_selects_it(clien
     assert switch.attrib["value"] == "off"
 
 
-def test_the_rejected_panel_pre_selects_the_optin_switch(client, user):
+def test_the_rejected_panel_pre_selects_the_optin_switch(
+    client: Client, user: AbstractUser
+) -> None:
+    """The rejected panel pre selects the optin switch.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # This panel only exists in response to a presented token, so the user
     # demonstrably wanted biometrics. Leaving the switch off turned one rejected
     # token into a silent, permanent un-enrolment.
@@ -1150,7 +1650,15 @@ def test_the_rejected_panel_pre_selects_the_optin_switch(client, user):
     assert _optin_switch(_panel_root(response, status=401)).attrib["value"] == "on"
 
 
-def test_the_throttled_panel_leaves_the_optin_switch_off(client, user):
+def test_the_throttled_panel_leaves_the_optin_switch_off(
+    client: Client, user: AbstractUser
+) -> None:
+    """The throttled panel leaves the optin switch off.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     # A rate-limited request says nothing about whether the user wanted biometrics,
     # and nothing else pre-selects the switch, so enrolling stays an explicit act.
     _throttle("wrong")
@@ -1163,8 +1671,14 @@ def test_the_throttled_panel_leaves_the_optin_switch_off(client, user):
 
 
 def test_an_expired_credential_sends_the_user_to_a_pre_selected_reset_panel(
-    client, user
-):
+    client: Client, user: AbstractUser
+) -> None:
+    """An expired credential sends the user to a pre selected reset panel.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     raw = issue_biometric_token(user=user)
     BiometricCredential.objects.update(
         created_at=timezone.now() - BIOMETRIC_TOKEN_TTL - timedelta(seconds=1)
@@ -1180,7 +1694,12 @@ def test_an_expired_credential_sends_the_user_to_a_pre_selected_reset_panel(
     assert store.attrib["token"] == ""
 
 
-def test_the_optin_row_ships_a_single_line_of_copy(client):
+def test_the_optin_row_ships_a_single_line_of_copy(client: Client) -> None:
+    """The optin row ships a single line of copy.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     # The owner removed the enrolment warning deliberately. One line, and no room
     # for a future agent to quietly reinstate a second.
     row = _login_screen(client).find(".//hv:view[@id='biometric-optin']", NS)
@@ -1199,7 +1718,12 @@ def test_the_optin_row_ships_a_single_line_of_copy(client):
 # the two contrast tests above.
 
 
-def test_the_biometric_button_ships_both_icon_variants_hidden(client):
+def test_the_biometric_button_ships_both_icon_variants_hidden(client: Client) -> None:
+    """The biometric button ships both icon variants hidden.
+
+    Args:
+        client: Client that requests the screens under test.
+    """
     button = _login_screen(client).find(".//hv:view[@id='biometric-signin']", NS)
     icons = button.findall("./hv:image", NS)
 
