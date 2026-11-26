@@ -25,12 +25,23 @@ _mutation: ContextVar[str | None] = ContextVar("hypertodo_mutation", default=Non
 
 
 def supports_changes() -> bool:
-    """Return the public wire capability, not a guessed version promise."""
+    """Return the public wire capability, not a guessed version promise.
+
+    Returns:
+        True when the package supports invalidation version 2.
+    """
     return 2 in getattr(realtime_api, "INVALIDATION_VERSIONS", ())
 
 
 def negotiated(request: HttpRequest) -> bool:
-    """Recognize an exact feature request without granting any authority."""
+    """Recognize an exact feature request without granting any authority.
+
+    Args:
+        request: Incoming request whose feature header is checked.
+
+    Returns:
+        True when changes are supported and the header matches exactly.
+    """
     return supports_changes() and request.headers.get(FEATURE_HEADER) == FEATURE
 
 
@@ -68,7 +79,11 @@ def mutation_context(request: HttpRequest | None) -> Iterator[None]:
 
 
 def current_mutation() -> str | None:
-    """Return this operation's opaque token, never an owner or session ID."""
+    """Return this operation's opaque token, never an owner or session ID.
+
+    Returns:
+        The captured mutation token, or None outside a guarded mutation.
+    """
     return _mutation.get()
 
 

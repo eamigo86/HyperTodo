@@ -51,11 +51,26 @@ class PushTransport(Protocol):
     """Injectable delivery boundary for deterministic worker tests."""
 
     def send(self, token: str, data: dict) -> dict:
-        """Return an Expo ticket."""
+        """Return an Expo ticket.
+
+        Args:
+            token: Expo push token of the destination device.
+            data: Payload delivered to the application.
+
+        Returns:
+            The ticket describing the accepted message.
+        """
         ...
 
     def get_receipt(self, ticket_id: str) -> dict:
-        """Return a ticket receipt."""
+        """Return a ticket receipt.
+
+        Args:
+            ticket_id: Identifier of the ticket returned by send.
+
+        Returns:
+            The receipt recorded for that ticket.
+        """
         ...
 
 
@@ -93,7 +108,18 @@ class ExpoTransport:
         return result
 
     def send(self, token: str, data: dict) -> dict:
-        """Return the one-message Expo ticket, not a delivery assertion."""
+        """Return the one-message Expo ticket, not a delivery assertion.
+
+        Args:
+            token: Expo push token of the destination device.
+            data: Payload delivered to the application.
+
+        Returns:
+            The ticket Expo issued for the message.
+
+        Raises:
+            PermanentPushError: If the response carries no ticket.
+        """
         result = self._request(
             _SEND_URL,
             {
@@ -109,7 +135,17 @@ class ExpoTransport:
         return ticket
 
     def get_receipt(self, ticket_id: str) -> dict:
-        """Look up a ticket after the receipt delay."""
+        """Look up a ticket after the receipt delay.
+
+        Args:
+            ticket_id: Identifier of the ticket returned by send.
+
+        Returns:
+            The receipt Expo recorded for that ticket.
+
+        Raises:
+            RetryablePushError: If the response holds no receipt for the ticket yet.
+        """
         result = self._request(_RECEIPTS_URL, {"ids": [ticket_id]})
         data = result.get("data")
         if not isinstance(data, dict) or not isinstance(data.get(ticket_id), dict):
@@ -259,7 +295,18 @@ def _handle_result(row: PushDelivery, result: dict) -> None:
 
 
 def dispatch_due(*, transport: PushTransport | None = None, limit: int = 20) -> int:
-    """Claim and process at most limit due deliveries; never run in a signal."""
+    """Claim and process at most limit due deliveries; never run in a signal.
+
+    Args:
+        transport: Delivery boundary to use, or None for the Expo client.
+        limit: Maximum number of deliveries to claim in this call.
+
+    Returns:
+        The number of deliveries claimed, or zero when push is disabled.
+
+    Raises:
+        ValueError: If limit is outside 1 to 100.
+    """
     if not settings.PUSH_NOTIFICATIONS_ENABLED:
         return 0
     if not 1 <= limit <= 100:

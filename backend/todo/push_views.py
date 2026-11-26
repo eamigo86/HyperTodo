@@ -46,7 +46,14 @@ def _installation(value: object) -> UUID | None:
 
 
 def push_registrations(request: HttpRequest) -> HttpResponse:
-    """Bootstrap CSRF, register or revoke one session-owned installation."""
+    """Bootstrap CSRF, register or revoke one session-owned installation.
+
+    Args:
+        request: Incoming GET, POST or DELETE request.
+
+    Returns:
+        A JSON, error or method-not-allowed response for the request.
+    """
     if not getattr(request, "hv_realtime_v1", False):
         return _error("modern-contract-required", 404)
     if not request.user.is_authenticated:

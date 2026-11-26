@@ -136,6 +136,8 @@ class CategoryForm(XmlSafeFormMixin, forms.ModelForm):
     """Validate a category within one user's namespace."""
 
     class Meta:
+        """Bind the form to Category and its editable fields."""
+
         model = Category
         fields = ("name", "color")
 
@@ -172,6 +174,8 @@ class ProfileForm(XmlSafeFormMixin, forms.ModelForm):
     """Validate the account details the settings screen lets a user edit."""
 
     class Meta:
+        """Bind the form to the user model and its profile fields."""
+
         model = get_user_model()
         fields = ("first_name", "last_name", "email")
 
@@ -236,6 +240,8 @@ class TaskForm(XmlSafeFormMixin, forms.ModelForm):
     due_time_shown = forms.Field(required=False)
 
     class Meta:
+        """Bind the form to Task and its editable fields."""
+
         model = Task
         fields = ("title", "notes", "category")
 

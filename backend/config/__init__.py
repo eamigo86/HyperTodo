@@ -1,0 +1,1 @@
+"""HyperTodo Django project configuration."""

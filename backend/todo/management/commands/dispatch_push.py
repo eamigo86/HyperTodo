@@ -19,7 +19,11 @@ class Command(BaseCommand):
     help = "Preview due Task alerts, or explicitly send a bounded batch via Expo"
 
     def add_arguments(self, parser: ArgumentParser) -> None:
-        """Expose only bounded preview and explicit send modes."""
+        """Expose only bounded preview and explicit send modes.
+
+        Args:
+            parser: Argument parser that receives the command options.
+        """
         parser.add_argument(
             "--send", action="store_true", help="Enable outbound Expo HTTPS"
         )
@@ -35,7 +39,17 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: object, **options: Any) -> None:
-        """Preview rows or send bounded batches until stopped."""
+        """Preview rows or send bounded batches until stopped.
+
+        Args:
+            *args: Positional arguments, which the command does not use.
+            **options: Parsed command options such as limit, cycles, interval, send
+                and watch.
+
+        Raises:
+            CommandError: If limit, cycles or interval is outside its bound, or if
+                watch is requested without send, or cycles without watch.
+        """
         limit = options["limit"]
         cycles = options["cycles"]
         interval = options["interval"]

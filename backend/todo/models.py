@@ -36,6 +36,8 @@ class Category(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Configure the default ordering and constraints of categories."""
+
         ordering = ("name",)
         constraints = [
             models.UniqueConstraint(
@@ -78,6 +80,8 @@ class Task(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Configure the default ordering and indexes of tasks."""
+
         ordering = ("completed_at", "due_at", "-created_at")
         indexes = [
             models.Index(
@@ -96,7 +100,12 @@ class Task(models.Model):
         return self.title
 
     def save(self, *args: object, **kwargs: object) -> None:
-        """Keep post-save outbox inserts in the same transaction as the Task write."""
+        """Keep post-save outbox inserts in the same transaction as the Task write.
+
+        Args:
+            *args: Positional arguments passed through to the base save.
+            **kwargs: Keyword arguments passed through to the base save.
+        """
         using = (
             kwargs.get("using")
             or self._state.db
@@ -179,6 +188,8 @@ class PushDelivery(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        """Configure the indexes of push deliveries."""
+
         indexes = [
             models.Index(fields=("status", "next_attempt_at"), name="todo_push_due")
         ]

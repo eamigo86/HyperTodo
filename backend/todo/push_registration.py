@@ -49,8 +49,20 @@ def register_device(
 ) -> tuple[bool, UUID]:
     """Create or compare-and-swap one installation under the current cookie session.
 
+    Args:
+        request: Authenticated request that carries the current session.
+        installation_id: Identifier of the app installation being registered.
+        expo_token: Expo push token to store for that installation.
+        expected_version: Registration version the caller last saw, or None for a
+            first registration.
+
     Returns:
         A created flag and new opaque registration version.
+
+    Raises:
+        StaleSession: If the user or the session is no longer valid.
+        RegistrationConflict: If the version, owner or token does not match.
+        DeviceLimitReached: If the account already holds the maximum devices.
     """
     user_model = get_user_model()
     try:
@@ -114,7 +126,13 @@ def register_device(
 
 
 def revoke_device(request: HttpRequest, installation_id: UUID, version: UUID) -> None:
-    """Remove only the exact registration version for this cookie session."""
+    """Remove only the exact registration version for this cookie session.
+
+    Args:
+        request: Authenticated request that carries the current session.
+        installation_id: Identifier of the app installation to remove.
+        version: Registration version that must match the stored one.
+    """
     PushDevice.objects.filter(
         user=request.user,
         session_id=request.session.session_key,

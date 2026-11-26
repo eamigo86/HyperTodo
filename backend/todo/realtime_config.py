@@ -42,7 +42,15 @@ def get_realtime_config() -> RealtimeConfig | None:
 
 @register()
 def check_push_sessions(app_configs: object = None, **kwargs: object) -> list[Error]:
-    """Reject a push-enabled deployment that cannot revalidate session rows."""
+    """Reject a push-enabled deployment that cannot revalidate session rows.
+
+    Args:
+        app_configs: Application configurations selected for the check.
+        **kwargs: Extra keyword arguments supplied by the Django check framework.
+
+    Returns:
+        A list with one error when push needs database sessions, else empty.
+    """
     if (
         getattr(settings, "PUSH_NOTIFICATIONS_ENABLED", False)
         and settings.SESSION_ENGINE != "django.contrib.sessions.backends.db"

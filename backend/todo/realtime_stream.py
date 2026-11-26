@@ -44,7 +44,14 @@ class Broker(Protocol):
     """Minimal package broker surface used by this controller."""
 
     async def subscribe(self, topics: tuple[str, ...]) -> Subscription:
-        """Return only after every requested topic is acknowledged."""
+        """Return only after every requested topic is acknowledged.
+
+        Args:
+            topics: Topic names to subscribe to.
+
+        Returns:
+            The subscription that receives envelopes for those topics.
+        """
         ...
 
 
