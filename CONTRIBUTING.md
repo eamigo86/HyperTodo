@@ -32,20 +32,35 @@ Google convention, and ANN.
   docstring, and a parameter, `*args` or `**kwargs` missing from an `Args:` section.
   It also rejects an empty section (D414).
 - Ruff ignores D100, D104 and D106, so it never asks for a module or package
-  docstring, or for one on a nested class. Rule A requires the module docstrings, so
-  review checks them by hand. Ruff skips underscore names and does not read
+  docstring, or for one on a nested class. The docstring standards test below
+  requires the module docstrings. Ruff skips underscore names and does not read
   `__all__`.
 - Ruff rejects a function whose parameters or return are not annotated, public or
   private, and `Any` is rejected too except under `todo/management/`.
 - `backend/tests/test_docstring_contract.py` rejects a backtick in every docstring
   under `backend/`, tests and migrations included.
+- `backend/tests/test_docstring_standards.py` parses `config`, `manage.py` and
+  `todo` with the `ast` module, migrations excluded, and rejects:
+  - a missing module docstring, underscore and package init modules included, and a
+    missing docstring on a public name, an exported name or a public member;
+  - an `Args:` section that omits a parameter, `*args` or `**kwargs`, lists a name
+    that is not a parameter, or is absent where parameters exist; a class
+    documents its constructor arguments in the class or `__init__` docstring;
+  - a missing `Returns:` on a function whose annotation is not `None`, `NoReturn`
+    or `Never` (a property, a cached property and a generator are exempt), a
+    missing `Yields:` on a generator, and a missing or incomplete `Raises:` for an
+    exception the function raises by name and does not catch itself;
+  - a heading other than the exact Google spelling, and an empty section;
+  - an unannotated parameter or return on any function, nested ones included;
+  - a type written in `Args:` as `name (type):` or at the start of `Returns:` or
+    `Yields:`.
+
+  It reads source and never imports it. It skips overloads and property setters and
+  deleters, and it cannot follow a bare re-raise or a raise of a variable, so review
+  still reads those by hand.
 
 No tool checks these, so review checks them by hand:
 
-- `Yields:`, `Returns:` and `Raises:` completeness;
-- misspelled section headings;
-- types repeated inside a docstring;
-- module docstrings;
 - the quality of every description.
 
 Tests are exempt from rules A and B, as the Ruff configuration exempts them from the
