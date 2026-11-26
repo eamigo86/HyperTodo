@@ -1,7 +1,7 @@
 """HTTP contract tests for server-driven Hyperview screens."""
 
 import re
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -9,9 +9,11 @@ import pytest
 from dj_hyperview import HyperviewFragmentTemplateResponse, validate_hyperview_schema
 from dj_hyperview.exceptions import TemplateValidationError
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractUser
 from django.contrib.staticfiles import finders
+from django.http import HttpResponse
 from django.template.defaultfilters import date as date_filter
-from django.test import Client
+from django.test import Client, RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
@@ -31,8 +33,19 @@ NS = {
 }
 
 
-def assert_hxml(response, *, status=200, media_type=None):
-    """Assert a response is parseable UTF-8 Hyperview XML."""
+def assert_hxml(
+    response: HttpResponse, *, status: int = 200, media_type: str | None = None
+) -> ElementTree.Element:
+    """Assert a response is parseable UTF-8 Hyperview XML.
+
+    Args:
+        response: Response to check.
+        status: HTTP status the response must carry.
+        media_type: Hyperview media type expected, or None to derive it.
+
+    Returns:
+        The parsed document.
+    """
     assert response.status_code == status
     if media_type is None:
         media_type = (
@@ -44,24 +57,52 @@ def assert_hxml(response, *, status=200, media_type=None):
     return ElementTree.fromstring(response.content)
 
 
-def csrf_client():
-    """Create a client that enforces Django CSRF checks."""
+def csrf_client() -> Client:
+    """Create a client that enforces Django CSRF checks.
+
+    Returns:
+        Client that enforces CSRF checks.
+    """
     return Client(enforce_csrf_checks=True)
 
 
-def token_from(response):
-    """Extract the CSRF value embedded for Hyperview forms."""
+def token_from(response: HttpResponse) -> str:
+    """Extract the CSRF value embedded for Hyperview forms.
+
+    Args:
+        response: Response that embeds the token.
+
+    Returns:
+        The CSRF token found in the document.
+    """
     root = ElementTree.fromstring(response.content)
     field = root.find(".//hv:text-field[@name='csrfmiddlewaretoken']", NS)
     assert field is not None
     return field.attrib["value"]
 
 
-def assert_transition(response, transition_id, *, action, href=None, status=200):
+def assert_transition(
+    response: HttpResponse,
+    transition_id: str,
+    *,
+    action: str,
+    href: str | None = None,
+    status: int = 200,
+) -> ElementTree.Element:
     """Assert an HXML fragment contains the expected load transition.
 
     href=None means the action takes no href: close and back act on the stack,
     not on a url (services/navigator/navigator.ts:98-106).
+
+    Args:
+        response: Fragment response to check.
+        transition_id: Id the fragment root must carry.
+        action: Action the load behavior must run.
+        href: Href the behavior must carry, or None when it takes none.
+        status: HTTP status the response must carry.
+
+    Returns:
+        The parsed transition fragment.
     """
     root = assert_hxml(response, status=status)
     assert root.tag == f"{{{NS['hv']}}}view"
@@ -73,8 +114,15 @@ def assert_transition(response, transition_id, *, action, href=None, status=200)
     return root
 
 
-def announced_event(root):
-    """Return the event name a fragment dispatches on load, or None."""
+def announced_event(root: ElementTree.Element) -> str | None:
+    """Return the event name a fragment dispatches on load, or None.
+
+    Args:
+        root: Parsed fragment.
+
+    Returns:
+        The event name, or None when the fragment announces none.
+    """
     behavior = root.find("./hv:behavior[@action='dispatch-event']", NS)
     if behavior is None:
         return None
@@ -82,8 +130,16 @@ def announced_event(root):
     return behavior.attrib["event-name"]
 
 
-def assert_snackbar(root, message, *, tone="success"):
-    """Assert an HXML response publishes one global snackbar notice."""
+def assert_snackbar(
+    root: ElementTree.Element, message: str, *, tone: str = "success"
+) -> None:
+    """Assert an HXML response publishes one global snackbar notice.
+
+    Args:
+        root: Parsed response that must publish the notice.
+        message: Text the snackbar must show.
+        tone: Tone the snackbar must carry.
+    """
     behavior = root.find("./hv:behavior[@action='show-snackbar']", NS)
     assert behavior is not None
     assert behavior.attrib == {
@@ -95,7 +151,14 @@ def assert_snackbar(root, message, *, tone="success"):
     }
 
 
-def test_root_initializes_stack_navigator_for_guest_and_user(user):
+def test_root_initializes_stack_navigator_for_guest_and_user(
+    user: AbstractUser,
+) -> None:
+    """The root view initializes a stack navigator for a guest and for a signed-in user.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The id is the same in both sessions and only the href moves. `#root-route` in
     # bottom_navigation.xml and side_menu.xml dispatches CommonActions.navigate
     # against this literal name, and StackRouter returns null for a name that is not
@@ -103,7 +166,7 @@ def test_root_initializes_stack_navigator_for_guest_and_user(user):
     # A session-dependent id would make the Home tab silently dead after a sign-in.
     client = Client()
 
-    def route_of(response):
+    def route_of(response: HttpResponse) -> dict[str, str]:
         navigator = assert_hxml(response).find(
             ".//hv:navigator[@id='root-navigator']", NS
         )
@@ -125,8 +188,15 @@ def test_root_initializes_stack_navigator_for_guest_and_user(user):
 
 
 @pytest.mark.parametrize("route_name", ["tasks", "categories"])
-def test_mutable_hxml_lists_disable_the_native_http_cache(user, route_name):
-    """Require fresh mutable list data for navigation and fragment refreshes."""
+def test_mutable_hxml_lists_disable_the_native_http_cache(
+    user: AbstractUser, route_name: str
+) -> None:
+    """Require fresh mutable list data for navigation and fragment refreshes.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        route_name: Route name of the list screen under test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -140,7 +210,8 @@ def test_mutable_hxml_lists_disable_the_native_http_cache(user, route_name):
         assert {"private", "no-store"} <= directives
 
 
-def test_login_screen_uses_secure_credentials_and_fragment_submission():
+def test_login_screen_uses_secure_credentials_and_fragment_submission() -> None:
+    """The login screen uses secure credential fields and submits as a fragment."""
     response = Client().get(reverse("todo:login"))
     root = assert_hxml(response)
 
@@ -170,7 +241,8 @@ def test_login_screen_uses_secure_credentials_and_fragment_submission():
     assert hero_mark.text == "✓"
 
 
-def test_the_username_field_turns_keyboard_capitalisation_off():
+def test_the_username_field_turns_keyboard_capitalisation_off() -> None:
+    """The username field turns keyboard capitalisation off."""
     # React Native's TextInput capitalises the first letter by default and Hyperview
     # spreads the element's attributes onto it. Usernames are case-sensitive, so
     # "admin" and "demo" were typed as "Admin" and "Demo" and the first sign-in failed.
@@ -182,7 +254,14 @@ def test_the_username_field_turns_keyboard_capitalisation_off():
     assert username.attrib["autoCapitalize"] == "none"
 
 
-def test_a_refused_sign_in_keeps_the_username_keyboard_setting(user):
+def test_a_refused_sign_in_keeps_the_username_keyboard_setting(
+    user: AbstractUser,
+) -> None:
+    """A refused sign-in keeps the username keyboard setting.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The panel is replaced whole, so a field that lost the attribute would capitalise
     # again from the second attempt on.
     client = csrf_client()
@@ -200,13 +279,15 @@ def test_a_refused_sign_in_keeps_the_username_keyboard_setting(user):
     assert username.attrib["autoCapitalize"] == "none"
 
 
-def test_the_login_screen_with_the_keyboard_setting_still_validates():
+def test_the_login_screen_with_the_keyboard_setting_still_validates() -> None:
+    """The login screen with the keyboard setting still validates."""
     response = Client().get(reverse("todo:login"))
 
     validate_hyperview_schema(response.content.decode())
 
 
-def test_the_schema_takes_autocapitalize_on_a_text_field_and_not_autocorrect():
+def test_the_schema_takes_autocapitalize_on_a_text_field_and_not_autocorrect() -> None:
+    """The schema accepts autocapitalize on a text field but not autocorrect."""
     # Why the username field sets autoCapitalize and nothing else: autoCorrect is not
     # in the Hyperview schema, so adding it would refuse the whole screen.
     document = (
@@ -221,7 +302,12 @@ def test_the_schema_takes_autocapitalize_on_a_text_field_and_not_autocorrect():
             validate_hyperview_schema(document.format(attributes=attributes))
 
 
-def test_login_requires_csrf_and_returns_direct_hxml(user):
+def test_login_requires_csrf_and_returns_direct_hxml(user: AbstractUser) -> None:
+    """Login requires CSRF and returns direct HXML.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = csrf_client()
     response = client.get(reverse("todo:login"))
     token = token_from(response)
@@ -265,20 +351,33 @@ def test_login_requires_csrf_and_returns_direct_hxml(user):
     assert client.session["_auth_user_id"] == str(user.pk)
 
 
-def test_login_post_without_csrf_is_hxml_403(user):
+def test_login_post_without_csrf_is_hxml_403(user: AbstractUser) -> None:
+    """A login POST without CSRF gets a 403 HXML response.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     response = csrf_client().post(
         reverse("todo:login"), {"username": "ada", "password": "correct-horse"}
     )
     assert_hxml(response, status=403)
 
 
-def test_anonymous_private_route_returns_session_expired_hxml():
+def test_anonymous_private_route_returns_session_expired_hxml() -> None:
+    """An anonymous request to a private route gets session-expired HXML."""
     response = Client().get(reverse("todo:tasks"))
     root = assert_hxml(response, status=401)
     assert root.find(".//hv:screen[@id='session-expired-screen']", NS) is not None
 
 
-def test_task_form_has_back_action_visible_categories_and_native_time_picker(user):
+def test_task_form_has_back_action_visible_categories_and_native_time_picker(
+    user: AbstractUser,
+) -> None:
+    """The task form has a back action, visible categories and a native time picker.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
     Category.objects.create(user=user, name="Work", color=Category.Color.LAVENDER)
@@ -318,7 +417,12 @@ def test_task_form_has_back_action_visible_categories_and_native_time_picker(use
     assert labels == ["No category", "Work"]
 
 
-def test_navigation_buttons_use_symbol_only(user):
+def test_navigation_buttons_use_symbol_only(user: AbstractUser) -> None:
+    """Navigation buttons use symbols only.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -334,25 +438,47 @@ def test_navigation_buttons_use_symbol_only(user):
         assert label.text == "Back"
 
 
-def freeze_local(monkeypatch, *, hour=12):
+def freeze_local(monkeypatch: pytest.MonkeyPatch, *, hour: int = 12) -> datetime:
     """Freeze timezone.now at a local hour of the current day.
 
     Patching the shared django.utils.timezone.now freezes auto_now_add too.
+
+    Args:
+        monkeypatch: Patches timezone.now.
+        hour: Local hour at which time is frozen.
+
+    Returns:
+        The frozen local time.
     """
     now = timezone.localtime().replace(hour=hour, minute=0, second=0, microsecond=0)
     monkeypatch.setattr("django.utils.timezone.now", lambda: now)
     return now
 
 
-def dashboard_root(user):
-    """Render the dashboard screen for one user."""
+def dashboard_root(user: AbstractUser) -> ElementTree.Element:
+    """Render the dashboard screen for one user.
+
+    Args:
+        user: User who opens the dashboard.
+
+    Returns:
+        The parsed dashboard document.
+    """
     client = Client()
     client.force_login(user)
     return assert_hxml(client.get(reverse("todo:dashboard")))
 
 
-def text_of(root, node_id):
-    """Return the concatenated text of one identified node."""
+def text_of(root: ElementTree.Element, node_id: str) -> str:
+    """Return the concatenated text of one identified node.
+
+    Args:
+        root: Parsed document.
+        node_id: Id of the node to read.
+
+    Returns:
+        The text of the node and its descendants.
+    """
     node = root.find(f".//hv:*[@id='{node_id}']", NS)
     assert node is not None, node_id
     return "".join(node.itertext())
@@ -371,14 +497,30 @@ def text_of(root, node_id):
     ],
 )
 def test_dashboard_hero_greets_the_user_by_local_hour(
-    user, monkeypatch, hour, greeting
-):
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch, hour: int, greeting: str
+) -> None:
+    """Dashboard hero greets the user by local hour.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+        hour: Local hour at which the clock is frozen.
+        greeting: Greeting the hero must show.
+    """
     freeze_local(monkeypatch, hour=hour)
 
     assert greeting in text_of(dashboard_root(user), "dashboard-hero")
 
 
-def test_dashboard_hero_shows_initials_and_today_progress(user, monkeypatch):
+def test_dashboard_hero_shows_initials_and_today_progress(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dashboard hero shows initials and today progress.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     now = freeze_local(monkeypatch)
     user.first_name = "Ada"
     user.last_name = "Lovelace"
@@ -408,7 +550,15 @@ def test_dashboard_hero_shows_initials_and_today_progress(user, monkeypatch):
     assert root.find(".//hv:style[@id='hero-icon']", NS) is None
 
 
-def test_dashboard_hero_falls_back_to_username_initials(user, monkeypatch):
+def test_dashboard_hero_falls_back_to_username_initials(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dashboard hero falls back to username initials.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     freeze_local(monkeypatch)
 
     hero_text = text_of(dashboard_root(user), "dashboard-hero")
@@ -418,7 +568,15 @@ def test_dashboard_hero_falls_back_to_username_initials(user, monkeypatch):
     assert "0 of 0 done today" in hero_text
 
 
-def test_dashboard_hero_caption_dates_the_day_and_rates_momentum(user, monkeypatch):
+def test_dashboard_hero_caption_dates_the_day_and_rates_momentum(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dashboard hero caption dates the day and rates momentum.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     now = freeze_local(monkeypatch)
     today_label = date_filter(timezone.localdate(now), "l, M j")
 
@@ -431,7 +589,14 @@ def test_dashboard_hero_caption_dates_the_day_and_rates_momentum(user, monkeypat
     assert f"{today_label} · let's get moving" in behind_caption
 
 
-def test_dashboard_tiles_render_labels_and_filtered_destinations(user):
+def test_dashboard_tiles_render_labels_and_filtered_destinations(
+    user: AbstractUser,
+) -> None:
+    """Dashboard tiles render labels and filtered destinations.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
     root = assert_hxml(client.get(reverse("todo:dashboard")))
@@ -450,7 +615,15 @@ def test_dashboard_tiles_render_labels_and_filtered_destinations(user):
         assert label in "".join(tile.itertext())
 
 
-def test_dashboard_stat_cards_share_one_horizontal_row(user, monkeypatch):
+def test_dashboard_stat_cards_share_one_horizontal_row(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dashboard stat cards share one horizontal row.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     now = freeze_local(monkeypatch)
     Task.objects.create(user=user, title="Due today", due_at=now.replace(hour=23))
     Task.objects.create(user=user, title="Late", due_at=now - timedelta(days=1))
@@ -509,7 +682,15 @@ def test_dashboard_stat_cards_share_one_horizontal_row(user, monkeypatch):
     assert "4 total" in text_of(root, "dashboard-all")
 
 
-def test_dashboard_overdue_card_appears_only_when_work_is_late(user, monkeypatch):
+def test_dashboard_overdue_card_appears_only_when_work_is_late(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dashboard overdue card appears only when work is late.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     now = freeze_local(monkeypatch)
 
     quiet = dashboard_root(user)
@@ -528,8 +709,14 @@ def test_dashboard_overdue_card_appears_only_when_work_is_late(user, monkeypatch
 
 
 def test_dashboard_up_next_rows_open_edit_and_toggle_the_content_fragment(
-    user, monkeypatch
-):
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dashboard up-next rows open the edit form and toggle the content fragment.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     now = freeze_local(monkeypatch)
     work = Category.objects.create(
         user=user, name="Work", color=Category.Color.LAVENDER
@@ -575,7 +762,15 @@ def test_dashboard_up_next_rows_open_edit_and_toggle_the_content_fragment(
     assert form.find("./hv:text-field[@name='csrfmiddlewaretoken']", NS) is not None
 
 
-def test_dashboard_up_next_lists_only_open_work(user, monkeypatch):
+def test_dashboard_up_next_lists_only_open_work(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dashboard up-next list shows only open work.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     now = freeze_local(monkeypatch)
     empty = dashboard_root(user)
     done = Task.objects.create(
@@ -596,7 +791,15 @@ def test_dashboard_up_next_lists_only_open_work(user, monkeypatch):
     )
 
 
-def test_dashboard_week_card_scales_bars_and_marks_today(user, monkeypatch):
+def test_dashboard_week_card_scales_bars_and_marks_today(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dashboard week card scales bars and marks today.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     now = freeze_local(monkeypatch)
     for index in range(2):
         Task.objects.create(user=user, title=f"Today {index}", completed_at=now)
@@ -641,7 +844,15 @@ def test_dashboard_week_card_scales_bars_and_marks_today(user, monkeypatch):
     assert today_label.text == "MTWTFSS"[timezone.localdate(now).weekday()]
 
 
-def test_dashboard_category_chips_filter_the_task_list(user, monkeypatch):
+def test_dashboard_category_chips_filter_the_task_list(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dashboard category chips filter the task list.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     freeze_local(monkeypatch)
     work = Category.objects.create(
         user=user, name="Work", color=Category.Color.LAVENDER
@@ -677,7 +888,15 @@ def test_dashboard_category_chips_filter_the_task_list(user, monkeypatch):
     assert "lavender" in chips[1].attrib["style"]
 
 
-def test_dashboard_hides_the_category_strip_without_categories(user, monkeypatch):
+def test_dashboard_hides_the_category_strip_without_categories(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dashboard hides the category strip without categories.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     freeze_local(monkeypatch)
 
     root = dashboard_root(user)
@@ -685,7 +904,12 @@ def test_dashboard_hides_the_category_strip_without_categories(user, monkeypatch
     assert root.find(".//hv:view[@id='dashboard-categories']", NS) is None
 
 
-def test_bottom_navigation_sits_on_the_canvas_colour(user):
+def test_bottom_navigation_sits_on_the_canvas_colour(user: AbstractUser) -> None:
+    """Bottom navigation sits on the canvas colour.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -698,7 +922,15 @@ def test_bottom_navigation_sits_on_the_canvas_colour(user):
         assert style.attrib["borderTopColor"] == "#E9ECF5"
 
 
-def test_dashboard_delegates_task_creation_to_the_tab_bar(user, monkeypatch):
+def test_dashboard_delegates_task_creation_to_the_tab_bar(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dashboard delegates task creation to the tab bar.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     freeze_local(monkeypatch)
 
     root = dashboard_root(user)
@@ -708,7 +940,15 @@ def test_dashboard_delegates_task_creation_to_the_tab_bar(user, monkeypatch):
     assert root.find(".//hv:view[@id='nav-add-task']", NS) is not None
 
 
-def test_dashboard_hero_escapes_user_supplied_names(db, monkeypatch):
+def test_dashboard_hero_escapes_user_supplied_names(
+    db: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dashboard hero escapes user-supplied names.
+
+    Args:
+        db: Database access for this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     freeze_local(monkeypatch)
     hostile = get_user_model().objects.create_user(
         username='<ada> & "co"', password="correct-horse"
@@ -719,7 +959,15 @@ def test_dashboard_hero_escapes_user_supplied_names(db, monkeypatch):
     assert '<ada> & "co"' in hero
 
 
-def test_dashboard_stat_cards_report_a_quiet_day(user, monkeypatch):
+def test_dashboard_stat_cards_report_a_quiet_day(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dashboard stat cards report a quiet day.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     freeze_local(monkeypatch)
 
     root = dashboard_root(user)
@@ -733,7 +981,14 @@ def test_dashboard_stat_cards_report_a_quiet_day(user, monkeypatch):
     assert today_card.find("./hv:text[@style='stat-note stat-note-good']", NS) is None
 
 
-def test_secondary_screens_use_centered_blue_destination_headers(user):
+def test_secondary_screens_use_centered_blue_destination_headers(
+    user: AbstractUser,
+) -> None:
+    """Secondary screens use centered blue destination headers.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -777,7 +1032,15 @@ def test_secondary_screens_use_centered_blue_destination_headers(user):
         assert heading.text == title
 
 
-def test_task_screen_scrolls_and_makes_dashboard_filter_visible(user, monkeypatch):
+def test_task_screen_scrolls_and_makes_dashboard_filter_visible(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The task screen scrolls and makes the dashboard filter visible.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     now = freeze_local(monkeypatch)
     today_due = timezone.localtime(now).replace(
         hour=23, minute=59, second=59, microsecond=0
@@ -813,7 +1076,14 @@ def test_task_screen_scrolls_and_makes_dashboard_filter_visible(user, monkeypatc
         assert excluded.isdisjoint(visible_text)
 
 
-def test_category_form_has_back_navigation_and_selectable_color_options(user):
+def test_category_form_has_back_navigation_and_selectable_color_options(
+    user: AbstractUser,
+) -> None:
+    """Category form has back navigation and selectable color options.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
     root = assert_hxml(client.get(reverse("todo:category-new")))
@@ -846,7 +1116,15 @@ def test_category_form_has_back_navigation_and_selectable_color_options(user):
 # against the band AND the initials against the disc, at rest and pressed.
 
 
-def test_the_stat_icons_are_dark_enough_for_the_badge_they_sit_in(user, monkeypatch):
+def test_the_stat_icons_are_dark_enough_for_the_badge_they_sit_in(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stat icons are dark enough for the badge they sit in.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     # stat-icon sets no tintColor either, so the export colour is the render
     # colour. Both sides of this ratio come off the shipped artefacts: the glyph
     # from the file, the fill from the screen's own stylesheet.
@@ -877,7 +1155,15 @@ def test_the_stat_icons_are_dark_enough_for_the_badge_they_sit_in(user, monkeypa
 # _declares, which reads the tint the style declares instead of the file's pixels.
 
 
-def test_task_toggle_from_the_dashboard_returns_the_content_fragment(user, monkeypatch):
+def test_task_toggle_from_the_dashboard_returns_the_content_fragment(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Task toggle from the dashboard returns the content fragment.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     now = freeze_local(monkeypatch)
     task = Task.objects.create(user=user, title="Ship it", due_at=now.replace(hour=17))
     work = Category.objects.create(
@@ -925,7 +1211,14 @@ def test_task_toggle_from_the_dashboard_returns_the_content_fragment(user, monke
     assert used <= defined
 
 
-def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
+def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(
+    user: AbstractUser,
+) -> None:
+    """The task create, edit, toggle and delete flow uses HXML and CSRF.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = csrf_client()
     client.force_login(user)
     form_response = client.get(reverse("todo:task-new"))
@@ -999,7 +1292,12 @@ def test_task_create_edit_toggle_delete_flow_uses_hxml_and_csrf(user):
     assert not Task.objects.filter(pk=task.pk).exists()
 
 
-def test_invalid_task_form_returns_422_hxml(user):
+def test_invalid_task_form_returns_422_hxml(user: AbstractUser) -> None:
+    """An invalid task form returns 422 HXML.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = csrf_client()
     client.force_login(user)
     token = token_from(client.get(reverse("todo:task-new")))
@@ -1035,8 +1333,15 @@ def test_invalid_task_form_returns_422_hxml(user):
     assert_snackbar(root, "Please review the highlighted task details.", tone="error")
 
 
-def schedule_of(root):
-    """Return the (date, time) values a task form panel would post back."""
+def schedule_of(root: ElementTree.Element) -> tuple[str, str]:
+    """Return the (date, time) values a task form panel would post back.
+
+    Args:
+        root: Parsed task form panel.
+
+    Returns:
+        The due date and the due time values.
+    """
     due_date = root.find(".//hv:date-field[@name='due_date']", NS)
     due_time = root.find(".//hv:text-field[@name='due_time']", NS)
     assert due_date is not None and due_time is not None
@@ -1053,8 +1358,15 @@ def schedule_of(root):
     ids=["title-missing", "time-malformed", "time-without-date"],
 )
 def test_a_refused_task_form_keeps_the_schedule_that_was_posted(
-    user, posted, refused_field
-):
+    user: AbstractUser, posted: dict[str, str], refused_field: str
+) -> None:
+    """A refused task form keeps the schedule that was posted.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        posted: Form data the client posts.
+        refused_field: Field that the form must refuse.
+    """
     # A bound form's .value is the raw posted string, and the date and time filters
     # return "" for a string, so every refusal used to wipe the schedule the person
     # had just picked. The 422 panel owes the submitted draft back, as the realtime
@@ -1072,7 +1384,14 @@ def test_a_refused_task_form_keeps_the_schedule_that_was_posted(
     assert schedule_of(root) == (posted["due_date"], posted["due_time"])
 
 
-def test_a_refused_task_edit_shows_the_posted_schedule_and_not_the_stored_one(user):
+def test_a_refused_task_edit_shows_the_posted_schedule_and_not_the_stored_one(
+    user: AbstractUser,
+) -> None:
+    """A refused task edit shows the posted schedule and not the stored one.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = Task.objects.create(
         user=user,
         title="Stored",
@@ -1098,7 +1417,12 @@ def test_a_refused_task_edit_shows_the_posted_schedule_and_not_the_stored_one(us
     assert schedule_of(root) == ("2026-10-20", "")
 
 
-def test_the_task_edit_form_shows_the_stored_schedule(user):
+def test_the_task_edit_form_shows_the_stored_schedule(user: AbstractUser) -> None:
+    """The task edit form shows the stored schedule.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = Task.objects.create(
         user=user,
         title="Stored",
@@ -1112,14 +1436,27 @@ def test_the_task_edit_form_shows_the_stored_schedule(user):
     assert schedule_of(root) == ("2026-09-01", "08:15")
 
 
-def end_of_day(day):
-    """Return the last instant of a local calendar day, as the task form stores it."""
+def end_of_day(day: date) -> datetime:
+    """Return the last instant of a local calendar day, as the task form stores it.
+
+    Args:
+        day: Local calendar day.
+
+    Returns:
+        The aware datetime at the end of the day.
+    """
     return timezone.make_aware(datetime.combine(day, time.max))
 
 
 def test_a_date_only_task_is_due_today_and_not_overdue_until_the_day_ends(
-    user, monkeypatch
-):
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A date-only task is due today and not overdue until the day ends.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     # The form used to store such a deadline at 00:00, so by noon the task was both
     # "Today" and "Overdue" and the dashboard raised an alert for work that was
     # still on time.
@@ -1148,7 +1485,12 @@ def test_a_date_only_task_is_due_today_and_not_overdue_until_the_day_ends(
     assert "1" in text_of(root, "dashboard-today")
 
 
-def test_an_all_day_task_round_trips_through_the_edit_form(user):
+def test_an_all_day_task_round_trips_through_the_edit_form(user: AbstractUser) -> None:
+    """An all-day task round-trips through the edit form.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     due_at = end_of_day(timezone.localdate())
     task = Task.objects.create(
         user=user, title="Pay rent", due_at=due_at, due_all_day=True
@@ -1175,7 +1517,12 @@ def test_an_all_day_task_round_trips_through_the_edit_form(user):
     assert (task.title, task.due_at, task.due_all_day) == ("Pay the rent", due_at, True)
 
 
-def test_giving_an_all_day_task_a_time_makes_it_a_timed_one(user):
+def test_giving_an_all_day_task_a_time_makes_it_a_timed_one(user: AbstractUser) -> None:
+    """Giving an all-day task a time makes it a timed one.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = Task.objects.create(
         user=user,
         title="Pay rent",
@@ -1201,7 +1548,14 @@ def test_giving_an_all_day_task_a_time_makes_it_a_timed_one(user):
     assert timezone.localtime(task.due_at).time() == time(9, 30)
 
 
-def test_a_task_row_shows_the_time_only_when_the_deadline_has_one(user):
+def test_a_task_row_shows_the_time_only_when_the_deadline_has_one(
+    user: AbstractUser,
+) -> None:
+    """A task row shows the time only when the deadline has one.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     Task.objects.create(
         user=user,
         title="Call",
@@ -1223,7 +1577,15 @@ def test_a_task_row_shows_the_time_only_when_the_deadline_has_one(user):
     assert "Due Oct 21" in lines
 
 
-def test_a_dashboard_row_shows_no_time_for_an_all_day_task(user, monkeypatch):
+def test_a_dashboard_row_shows_no_time_for_an_all_day_task(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dashboard row shows no time for an all-day task.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches timezone.now to a fixed local hour.
+    """
     now = freeze_local(monkeypatch)
     work = Category.objects.create(
         user=user, name="Work", color=Category.Color.LAVENDER
@@ -1246,7 +1608,15 @@ def test_a_dashboard_row_shows_no_time_for_an_all_day_task(user, monkeypatch):
     assert "·" not in shown
 
 
-def test_category_crud_and_cross_user_resources_are_hidden(user, other_user):
+def test_category_crud_and_cross_user_resources_are_hidden(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """Category CRUD works and other users' resources stay hidden.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     client = csrf_client()
     client.force_login(user)
     token = token_from(client.get(reverse("todo:category-new")))
@@ -1299,7 +1669,15 @@ def test_category_crud_and_cross_user_resources_are_hidden(user, other_user):
     )
 
 
-def test_filters_reject_invalid_values_and_hide_foreign_categories(user, other_user):
+def test_filters_reject_invalid_values_and_hide_foreign_categories(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """Filters reject invalid values and hide foreign categories.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     client = Client()
     client.force_login(user)
     task_screen = assert_hxml(client.get(reverse("todo:tasks")))
@@ -1313,7 +1691,12 @@ def test_filters_reject_invalid_values_and_hide_foreign_categories(user, other_u
     assert_hxml(client.get(reverse("todo:tasks"), {"category": foreign.pk}), status=404)
 
 
-def test_primary_screens_share_server_driven_navigation(user):
+def test_primary_screens_share_server_driven_navigation(user: AbstractUser) -> None:
+    """Primary screens share server-driven navigation.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -1382,7 +1765,14 @@ def test_primary_screens_share_server_driven_navigation(user):
         assert "marginTop" not in add_style.attrib
 
 
-def test_side_menu_is_loaded_and_closed_through_hxml_requests(user):
+def test_side_menu_is_loaded_and_closed_through_hxml_requests(
+    user: AbstractUser,
+) -> None:
+    """The side menu is loaded and closed through HXML requests.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -1468,7 +1858,12 @@ def test_side_menu_is_loaded_and_closed_through_hxml_requests(user):
     assert len(closed) == 0
 
 
-def test_category_swipe_cards_use_fill_safe_name_ink(user):
+def test_category_swipe_cards_use_fill_safe_name_ink(user: AbstractUser) -> None:
+    """Category swipe cards use name ink that is safe on their fill.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     category = Category.objects.create(user=user, name="Pastel", color="mint")
     client = Client(headers={"x-app-version": "1.2.0"})
     client.force_login(user)
@@ -1485,7 +1880,14 @@ def test_category_swipe_cards_use_fill_safe_name_ink(user):
     assert style.attrib["color"] == "#161A35"
 
 
-def test_about_is_an_authenticated_document_linked_only_from_the_side_menu(user):
+def test_about_is_an_authenticated_document_linked_only_from_the_side_menu(
+    user: AbstractUser,
+) -> None:
+    """The About screen is an authenticated document linked only from the side menu.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     anonymous = Client().get(reverse("todo:about"))
     assert_hxml(anonymous, status=401)
 
@@ -1524,7 +1926,14 @@ def test_about_is_an_authenticated_document_linked_only_from_the_side_menu(user)
         assert page.find(".//hv:view[@href='/hv/about/']", NS) is None
 
 
-def test_task_cards_expose_swipe_actions_instead_of_tiny_links(user):
+def test_task_cards_expose_swipe_actions_instead_of_tiny_links(
+    user: AbstractUser,
+) -> None:
+    """Task cards expose swipe actions instead of tiny links.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = Task.objects.create(user=user, title="Swipe me")
     client = Client()
     client.force_login(user)
@@ -1555,7 +1964,12 @@ def test_task_cards_expose_swipe_actions_instead_of_tiny_links(user):
     )
 
 
-def test_task_list_supports_refresh_and_infinite_scroll(user):
+def test_task_list_supports_refresh_and_infinite_scroll(user: AbstractUser) -> None:
+    """Task list supports refresh and infinite scroll.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     for index in range(21):
         Task.objects.create(user=user, title=f"Task {index:02d}")
     client = Client()
@@ -1586,7 +2000,14 @@ def test_task_list_supports_refresh_and_infinite_scroll(user):
     assert refreshed.attrib["id"] == "task-list"
 
 
-def test_category_list_refreshes_after_mutation_and_paginates(user):
+def test_category_list_refreshes_after_mutation_and_paginates(
+    user: AbstractUser,
+) -> None:
+    """Category list refreshes after mutation and paginates.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     for index in range(21):
         Category.objects.create(
             user=user, name=f"Category {index:02d}", color=Category.Color.MINT
@@ -1623,7 +2044,12 @@ def test_category_list_refreshes_after_mutation_and_paginates(user):
     assert len(next_page.findall("./hv:item", NS)) == 1
 
 
-def test_list_pagination_rejects_invalid_page_and_fragment(user):
+def test_list_pagination_rejects_invalid_page_and_fragment(user: AbstractUser) -> None:
+    """List pagination rejects invalid page and fragment.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -1633,7 +2059,12 @@ def test_list_pagination_rejects_invalid_page_and_fragment(user):
         assert_hxml(client.get(route, {"fragment": "unknown"}), status=400)
 
 
-def test_logout_is_post_only_csrf_protected_and_direct_hxml(user):
+def test_logout_is_post_only_csrf_protected_and_direct_hxml(user: AbstractUser) -> None:
+    """Logout is POST-only, CSRF-protected and returns direct HXML.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = csrf_client()
     client.force_login(user)
     token = token_from(client.get(reverse("todo:menu")))
@@ -1645,7 +2076,14 @@ def test_logout_is_post_only_csrf_protected_and_direct_hxml(user):
     assert "_auth_user_id" not in client.session
 
 
-def test_private_document_routes_send_an_expired_session_to_the_sign_in_screen(user):
+def test_private_document_routes_send_an_expired_session_to_the_sign_in_screen(
+    user: AbstractUser,
+) -> None:
+    """Private document routes send an expired session to the sign-in screen.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # These are reached with reload/navigate/new/push, so the 401 goes through
     # loadDocument and may — must — be a whole screen.
     task = Task.objects.create(user=user, title="Private")
@@ -1670,8 +2108,13 @@ def test_private_document_routes_send_an_expired_session_to_the_sign_in_screen(u
 
 
 def test_private_fragment_routes_answer_an_expired_session_with_a_recoverable_fragment(
-    user,
-):
+    user: AbstractUser,
+) -> None:
+    """Private fragment routes answer an expired session with a recoverable fragment.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # These land inside a screen through loadElement, which rejects doc/screen/body,
     # so the 401 owes a bare fragment that can still get the user out of the hole.
     task = Task.objects.create(user=user, title="Private")
@@ -1696,7 +2139,12 @@ def test_private_fragment_routes_answer_an_expired_session_with_a_recoverable_fr
         )
 
 
-def test_endpoints_reject_unsupported_methods_as_hxml(user):
+def test_endpoints_reject_unsupported_methods_as_hxml(user: AbstractUser) -> None:
+    """Endpoints reject unsupported methods with HXML.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = Task.objects.create(user=user, title="Private")
     category = Category.objects.create(
         user=user, name="Private", color=Category.Color.PINK
@@ -1724,7 +2172,12 @@ def test_endpoints_reject_unsupported_methods_as_hxml(user):
         assert_hxml(getattr(client, method)(route), status=405)
 
 
-def test_task_and_category_get_screens_and_invalid_edits(user):
+def test_task_and_category_get_screens_and_invalid_edits(user: AbstractUser) -> None:
+    """Task and category GET screens render, and invalid edits are refused.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = Task.objects.create(user=user, title="Private")
     category = Category.objects.create(
         user=user, name="Private", color=Category.Color.PINK
@@ -1759,7 +2212,15 @@ def test_task_and_category_get_screens_and_invalid_edits(user):
     )
 
 
-def test_category_delete_succeeds_and_task_cross_user_is_hidden(user, other_user):
+def test_category_delete_succeeds_and_task_cross_user_is_hidden(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """Category deletion succeeds and another user's task stays hidden.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     task = Task.objects.create(user=user, title="Private")
     category = Category.objects.create(
         user=user, name="Private", color=Category.Color.PINK
@@ -1782,7 +2243,12 @@ def test_category_delete_succeeds_and_task_cross_user_is_hidden(user, other_user
     assert_hxml(client.get(reverse("todo:task-edit", args=(task.pk,))), status=404)
 
 
-def test_user_content_is_xml_escaped(user):
+def test_user_content_is_xml_escaped(user: AbstractUser) -> None:
+    """User content is XML-escaped.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     Task.objects.create(user=user, title='Use <xml> & "quotes"')
     client = Client()
     client.force_login(user)
@@ -1792,8 +2258,15 @@ def test_user_content_is_xml_escaped(user):
     assert 'Use <xml> & "quotes"' in titles
 
 
-def nav_behaviors(root):
-    """Return every navigation behavior a transition fragment will run."""
+def nav_behaviors(root: ElementTree.Element) -> list[ElementTree.Element]:
+    """Return every navigation behavior a transition fragment will run.
+
+    Args:
+        root: Parsed transition fragment.
+
+    Returns:
+        The navigation behavior elements, in document order.
+    """
     return [
         behavior
         for behavior in root.findall("./hv:behavior", NS)
@@ -1802,7 +2275,14 @@ def nav_behaviors(root):
     ]
 
 
-def test_a_successful_login_repoints_the_login_route_at_the_dashboard(user):
+def test_a_successful_login_repoints_the_login_route_at_the_dashboard(
+    user: AbstractUser,
+) -> None:
+    """A successful login repoints the login route at the dashboard.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The POST is a `replace target="login-panel"`, so its response empties the login
     # screen. Navigating away from that emptied screen left it alive underneath the
     # dashboard, and the iOS swipe-back gesture on a `card` route walked straight back
@@ -1832,7 +2312,14 @@ def test_a_successful_login_repoints_the_login_route_at_the_dashboard(user):
     assert routes[0].attrib["href"] == "/hv/dashboard/"
 
 
-def test_saving_a_task_pops_the_emptied_form_and_announces_the_change(user):
+def test_saving_a_task_pops_the_emptied_form_and_announces_the_change(
+    user: AbstractUser,
+) -> None:
+    """Saving a task pops the emptied form and announces the change.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = Task.objects.create(user=user, title="Water the plants")
     client = Client()
     client.force_login(user)
@@ -1851,7 +2338,14 @@ def test_saving_a_task_pops_the_emptied_form_and_announces_the_change(user):
     assert announce.attrib["trigger"] == "load"
 
 
-def test_the_screens_behind_a_task_form_refresh_when_it_announces_a_change(user):
+def test_the_screens_behind_a_task_form_refresh_when_it_announces_a_change(
+    user: AbstractUser,
+) -> None:
+    """The screens behind a task form refresh when it announces a change.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # `close` pops the form without touching the screen underneath, and HvDoc only
     # refetches when its url changes (hv-doc.tsx:178-194). Without these listeners the
     # user lands back on a list that still shows the old title.
@@ -1873,7 +2367,14 @@ def test_the_screens_behind_a_task_form_refresh_when_it_announces_a_change(user)
     assert hook.attrib["action"] == "reload"
 
 
-def test_a_swipe_toggle_refreshes_the_list_without_dropping_the_filter(user):
+def test_a_swipe_toggle_refreshes_the_list_without_dropping_the_filter(
+    user: AbstractUser,
+) -> None:
+    """A swipe toggle refreshes the list without dropping the filter.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The swipe row posts the toggle action as a `replace` of the row itself
     # (mobile/src/components/SwipeRow.tsx:116-126), so the response is the only
     # thing that can refresh anything. A `reload href="/hv/tasks/"` here re-requested
@@ -1898,7 +2399,14 @@ def test_a_swipe_toggle_refreshes_the_list_without_dropping_the_filter(user):
     assert "status=overdue" in listener.attrib["href"]
 
 
-def test_signing_in_or_out_makes_every_parked_screen_refetch(user):
+def test_signing_in_or_out_makes_every_parked_screen_refetch(
+    user: AbstractUser,
+) -> None:
+    """Signing in or out makes every parked screen refetch.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # `reload` dispatches nothing to the navigator (hyperview.tsx:70-133): it swaps
     # the CURRENT route's document and nothing else. Reached from session_expired
     # inside a pushed route, the previous session's screens stay mounted below with
@@ -1939,7 +2447,13 @@ def test_signing_in_or_out_makes_every_parked_screen_refetch(user):
     ("email", "expected"),
     [("ada@example.com", "ada@example.com"), ("", "@menu-user")],
 )
-def test_the_side_menu_identity_line_always_renders(email, expected):
+def test_the_side_menu_identity_line_always_renders(email: str, expected: str) -> None:
+    """The side menu identity line always renders.
+
+    Args:
+        email: E-mail address stored on the account.
+        expected: Theme the response must name.
+    """
     # The line has to be unconditional or the header changes height between two
     # accounts. `@username` is the fallback rather than a bare username, which would
     # visually duplicate the name line whenever get_full_name is empty; it carries
@@ -1970,7 +2484,14 @@ def test_the_side_menu_identity_line_always_renders(email, expected):
 # _state.
 
 
-def test_the_side_menu_header_ink_clears_the_fill_it_is_drawn_on(user):
+def test_the_side_menu_header_ink_clears_the_fill_it_is_drawn_on(
+    user: AbstractUser,
+) -> None:
+    """The side menu header ink clears the fill it is drawn on.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # This used to assert a hardcoded "#FFFFFF" against the header fill and never
     # looked at side-menu-name, side-menu-email or side-menu-initials at all, so
     # every colour it claimed to protect could be changed with the suite green.
@@ -1980,7 +2501,7 @@ def test_the_side_menu_header_ink_clears_the_fill_it_is_drawn_on(user):
     client.force_login(user)
     screen = assert_hxml(client.get(reverse("todo:dashboard")))
 
-    def declared(style_id, attribute):
+    def declared(style_id: str, attribute: str) -> str:
         node = screen.find(f".//hv:styles/hv:style[@id='{style_id}']", NS)
         assert node is not None, f"missing style {style_id}"
         return node.attrib[attribute]
@@ -1996,7 +2517,12 @@ def test_the_side_menu_header_ink_clears_the_fill_it_is_drawn_on(user):
         assert contrast_ratio(ink, fill) >= 4.5, f"{ink_id}: {ink} on {fill}"
 
 
-def test_every_side_menu_row_announces_itself_as_a_control(user):
+def test_every_side_menu_row_announces_itself_as_a_control(user: AbstractUser) -> None:
+    """Every side menu row announces itself as a control.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # A <view> cannot carry a server-set role: HvView builds its props from an
     # allowlist and never copies element attributes, and HyperRef's TouchableOpacity
     # is accessible={false}, so the inner <text> is the node a screen reader lands
@@ -2040,8 +2566,15 @@ def test_every_side_menu_row_announces_itself_as_a_control(user):
     ],
 )
 def test_the_swipe_action_capability_is_gated_on_the_announced_client_version(
-    rf, announced, supported
-):
+    rf: RequestFactory, announced: str | None, supported: bool
+) -> None:
+    """The swipe-action capability is gated on the announced client version.
+
+    Args:
+        rf: Factory that builds the request.
+        announced: Client version announced by the request, or None for none.
+        supported: Whether the swipe actions are available at that version.
+    """
     # A backend deploy reaches EVERY installed binary at once -- there is no release
     # ordering that protects a user who never updates, and dj-hyperview can publish
     # templates straight from the database (tests/test_template_sources.py:31-36).
@@ -2057,7 +2590,8 @@ def test_the_swipe_action_capability_is_gated_on_the_announced_client_version(
     assert _supports_swipe_actions(rf.get("/hv/tasks/", **headers)) is supported
 
 
-def test_the_shipped_client_version_can_actually_open_the_capability_gate():
+def test_the_shipped_client_version_can_actually_open_the_capability_gate() -> None:
+    """The shipped client version can actually open the capability gate."""
     # The gate is only as good as the version bump. Leave app.config.ts behind and
     # _supports_swipe_actions answers False for every real client forever, so a
     # successful deploy changes nothing at all -- the silent no-op the version
@@ -2075,8 +2609,14 @@ def test_the_shipped_client_version_can_actually_open_the_capability_gate():
 
 @pytest.mark.parametrize("completed", [False, True])
 def test_a_task_row_declares_the_same_actions_the_component_used_to_hardcode(
-    user, completed
-):
+    user: AbstractUser, completed: bool
+) -> None:
+    """A task row declares the same actions the component used to hardcode.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        completed: Whether the task is completed.
+    """
     # The Complete/Reopen split moves to the server, which already knows
     # task.is_completed, so the client loses both ternaries. The `completed`
     # attribute stays for the pre-1.1.0 shape asserted below; 1.1.0 and later never
@@ -2116,7 +2656,14 @@ def test_a_task_row_declares_the_same_actions_the_component_used_to_hardcode(
     assert row.find("./hv:view[@style='task']", NS) is not None
 
 
-def test_a_task_row_carries_both_action_shapes_whatever_version_arrives(user):
+def test_a_task_row_carries_both_action_shapes_whatever_version_arrives(
+    user: AbstractUser,
+) -> None:
+    """A task row carries both action shapes whatever version arrives.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The row used to change shape on X-App-Version, and the unknown bucket served
     # the pre-1.1.0 attributes. A 1.1.0 binary behind a proxy that strips the header
     # therefore got a row it cannot drive: SwipeRow reads app:swipe-action CHILDREN
@@ -2161,8 +2708,16 @@ def test_a_task_row_carries_both_action_shapes_whatever_version_arrives(user):
     ],
 )
 def test_bodies_that_move_with_the_client_version_declare_it_in_vary(
-    client, user, route, varies
-):
+    client: Client, user: AbstractUser, route: str, varies: bool
+) -> None:
+    """Bodies that move with the client version declare it in vary.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        route: Route name of the screen requested.
+        varies: Whether the response must name the client version in Vary.
+    """
     client.force_login(user)
 
     response = client.get(reverse(route), headers={"x-app-version": "1.1.0"})
@@ -2181,8 +2736,16 @@ def test_bodies_that_move_with_the_client_version_declare_it_in_vary(
     ("fixture", "expected"), [("light_user", "light"), ("dark_user", "dark")]
 )
 def test_every_response_names_the_palette_it_was_painted_with(
-    client, request, fixture, expected
-):
+    client: Client, request: pytest.FixtureRequest, fixture: str, expected: str
+) -> None:
+    """Every response names the palette it was painted with.
+
+    Args:
+        client: Client that requests the screens under test.
+        request: Pytest request that exposes the current fixture parameter.
+        fixture: Name of the fixture that provides the signed-in user.
+        expected: Theme the response must name.
+    """
     client.force_login(request.getfixturevalue(fixture))
 
     response = client.get(reverse("todo:dashboard"))
@@ -2202,8 +2765,14 @@ def test_every_response_names_the_palette_it_was_painted_with(
     ],
 )
 def test_the_signed_out_screens_answer_from_the_cookie_like_their_bodies_do(
-    cookie, expected
-):
+    cookie: str, expected: str
+) -> None:
+    """The signed-out screens answer from the cookie, like their bodies do.
+
+    Args:
+        cookie: Theme cookie value the client sends.
+        expected: Theme the response must name.
+    """
     client = Client()
     if cookie:
         client.cookies[THEME_COOKIE] = cookie
@@ -2214,8 +2783,14 @@ def test_the_signed_out_screens_answer_from_the_cookie_like_their_bodies_do(
 
 
 def test_the_header_can_never_disagree_with_the_stylesheet_it_shipped_with(
-    client, dark_user
-):
+    client: Client, dark_user: AbstractUser
+) -> None:
+    """The header can never disagree with the stylesheet it shipped with.
+
+    Args:
+        client: Client that requests the screens under test.
+        dark_user: User whose stored theme is dark.
+    """
     # Django renders a TemplateResponse inside BaseHandler._get_response, i.e.
     # before the response unwinds back through the middleware chain. Asserting the
     # header against the body PINS that ordering instead of assuming it: a header

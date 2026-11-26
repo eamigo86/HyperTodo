@@ -6,6 +6,7 @@ recipes decide the environment and arguments each tool receives.
 
 import os
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -38,15 +39,22 @@ IPCONFIG = """case "$*" in
 esac"""
 
 
-def _stub(directory, name, body):
+def _stub(directory: Path, name: str, body: str) -> None:
     path = directory / name
     path.write_text(f"#!/bin/bash\n{body}\n")
     path.chmod(0o755)
 
 
 @pytest.fixture
-def make(tmp_path):
-    """Return a runner for make with fake tools first on PATH."""
+def make(tmp_path: Path) -> Callable[..., subprocess.CompletedProcess[str]]:
+    """Return a runner for make with fake tools first on PATH.
+
+    Args:
+        tmp_path: Temporary directory for the stand-in tools and the nvm directory.
+
+    Returns:
+        Runner that executes make and returns the finished process.
+    """
     bin_dir, pinned_dir, nvm_dir = (tmp_path / n for n in ("bin", "pinned", "nvm"))
     for directory in (bin_dir, pinned_dir, nvm_dir):
         directory.mkdir()
@@ -67,7 +75,9 @@ def make(tmp_path):
     _stub(bin_dir, "route", "echo '  interface: en7'")
     _stub(bin_dir, "ipconfig", IPCONFIG)
 
-    def run(*targets, nvm_status=0, **env):
+    def run(
+        *targets: str, nvm_status: int = 0, **env: str
+    ) -> subprocess.CompletedProcess[str]:
         # Like nvm, put the pinned Node first on PATH; a missing version returns 3.
         use = (
             f'PATH="{pinned_dir}:$PATH"' if nvm_status == 0 else f"return {nvm_status}"
@@ -107,8 +117,21 @@ def make(tmp_path):
 )
 @pytest.mark.parametrize("port", [None, "8001"])
 def test_development_targets_opt_into_the_local_api(
-    make, target, api_url, command, port
-):
+    make: Callable[..., subprocess.CompletedProcess[str]],
+    target: str,
+    api_url: str,
+    command: str,
+    port: str | None,
+) -> None:
+    """Development targets opt into the local API.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+        target: Make target the test runs.
+        api_url: API URL the target must export.
+        command: Mobile command the target must start.
+        port: Port given to the recipe, or None for the default.
+    """
     # app.config.ts refuses cleartext (and an unset URL) without this opt-in, so a
     # fresh clone without a private mobile/.env has to get both from the Makefile.
     result = make(target, LAN_IP=LAN_IP, **({"PORT": port} if port else {}))
@@ -121,7 +144,14 @@ def test_development_targets_opt_into_the_local_api(
     ]
 
 
-def test_explicit_mobile_api_url_overrides_default_port(make):
+def test_explicit_mobile_api_url_overrides_default_port(
+    make: Callable[..., subprocess.CompletedProcess[str]],
+) -> None:
+    """An explicit mobile API URL overrides the default port.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+    """
     custom = "https://staging.example.test/hv/"
     result = make("mobile-start", PORT="8001", EXPO_PUBLIC_API_URL=custom)
 
@@ -141,8 +171,26 @@ def test_explicit_mobile_api_url_overrides_default_port(make):
     ],
 )
 def test_backend_listener_and_csrf_origins_share_port(
-    make, tmp_path, target, lan_ip, bind, origin_hosts, port
-):
+    make: Callable[..., subprocess.CompletedProcess[str]],
+    tmp_path: Path,
+    target: str,
+    lan_ip: str | None,
+    bind: str,
+    origin_hosts: str | None,
+    port: str | None,
+) -> None:
+    """The backend listener and the CSRF origins share one port.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+        tmp_path: Temporary directory that holds the stand-in tools.
+        target: Make target the test runs.
+        lan_ip: LAN address the stand-in reports, or None when it is unset.
+        bind: Address the backend must listen on.
+        origin_hosts: Hosts the recipe must add to the CSRF trusted origins, or None to
+        skip that check.
+        port: Port given to the recipe, or None for the default.
+    """
     _stub(
         tmp_path / "bin",
         "uv",
@@ -166,7 +214,14 @@ def test_backend_listener_and_csrf_origins_share_port(
     assert f"CSRF_TRUSTED_ORIGINS={expected}" in result.stdout
 
 
-def test_doctor_validates_a_synthetic_https_api_whatever_the_shell_holds(make):
+def test_doctor_validates_a_synthetic_https_api_whatever_the_shell_holds(
+    make: Callable[..., subprocess.CompletedProcess[str]],
+) -> None:
+    """Doctor validates a synthetic HTTPS API whatever the shell holds.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+    """
     # `make check` must work on a fresh clone, and a development URL exported by the
     # caller would be refused by the same guard once the opt-in is switched off.
     result = make(
@@ -185,7 +240,14 @@ def test_doctor_validates_a_synthetic_https_api_whatever_the_shell_holds(make):
     assert "EXPO_PUBLIC_API_URL=https://staging.example.test/hv/" in override.stdout
 
 
-def test_missing_node_stops_with_an_actionable_message(make):
+def test_missing_node_stops_with_an_actionable_message(
+    make: Callable[..., subprocess.CompletedProcess[str]],
+) -> None:
+    """A missing Node stops the recipe with an actionable message.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+    """
     # `nvm use --silent` exits 3 without a word when the pinned version is absent.
     result = make("mobile-test", nvm_status=3)
 
@@ -194,7 +256,15 @@ def test_missing_node_stops_with_an_actionable_message(make):
     assert "corepack" not in result.stdout
 
 
-def test_missing_nvm_stops_with_an_actionable_message(make, tmp_path):
+def test_missing_nvm_stops_with_an_actionable_message(
+    make: Callable[..., subprocess.CompletedProcess[str]], tmp_path: Path
+) -> None:
+    """A missing nvm stops the recipe with an actionable message.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+        tmp_path: Temporary directory that holds the stand-in tools.
+    """
     result = make("mobile-test", NVM_DIR=str(tmp_path / "absent"))
 
     assert "nvm not found" in result.stderr and "NVM_DIR" in result.stderr
@@ -202,7 +272,15 @@ def test_missing_nvm_stops_with_an_actionable_message(make, tmp_path):
     assert "corepack" not in result.stdout
 
 
-def test_editor_javascript_runs_on_the_pinned_node(make, tmp_path):
+def test_editor_javascript_runs_on_the_pinned_node(
+    make: Callable[..., subprocess.CompletedProcess[str]], tmp_path: Path
+) -> None:
+    """Editor JavaScript runs on the pinned Node.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+        tmp_path: Temporary directory that holds the stand-in tools.
+    """
     result = make("backend-test-editor")
 
     assert result.returncode == 0, result.stderr
@@ -212,7 +290,14 @@ def test_editor_javascript_runs_on_the_pinned_node(make, tmp_path):
     assert (tmp_path / "nvm.log").read_text() == f"use --silent {NODE_VERSION}\n"
 
 
-def test_lan_ip_follows_the_default_route_not_the_first_interface(make):
+def test_lan_ip_follows_the_default_route_not_the_first_interface(
+    make: Callable[..., subprocess.CompletedProcess[str]],
+) -> None:
+    """The LAN IP follows the default route, not the first interface.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+    """
     result = make("lan-ip")
 
     assert result.returncode == 0, result.stderr
@@ -221,8 +306,15 @@ def test_lan_ip_follows_the_default_route_not_the_first_interface(make):
 
 @pytest.mark.parametrize("tunnel", ["utun3", "ppp0"])
 def test_lan_ip_skips_a_vpn_default_route_for_the_first_en_interface(
-    make, tmp_path, tunnel
-):
+    make: Callable[..., subprocess.CompletedProcess[str]], tmp_path: Path, tunnel: str
+) -> None:
+    """The LAN IP skips a VPN default route for the first en interface.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+        tmp_path: Temporary directory that holds the stand-in tools.
+        tunnel: Name of the VPN tunnel interface that is listed first.
+    """
     # A full-tunnel VPN takes the default route, and its address is not reachable
     # from a phone on the LAN.
     _stub(tmp_path / "bin", "route", f"echo '  interface: {tunnel}'")
@@ -256,8 +348,21 @@ def test_lan_ip_skips_a_vpn_default_route_for_the_first_en_interface(
     ],
 )
 def test_lan_ip_behind_a_vpn_prefers_en0_and_skips_link_local_addresses(
-    make, tmp_path, names, addresses, expected
-):
+    make: Callable[..., subprocess.CompletedProcess[str]],
+    tmp_path: Path,
+    names: str,
+    addresses: dict[str, str],
+    expected: str,
+) -> None:
+    """Behind a VPN, the LAN IP prefers en0 and skips link-local addresses.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+        tmp_path: Temporary directory that holds the stand-in tools.
+        names: Interface names that ifconfig lists, in order.
+        addresses: Address held by each interface that has one.
+        expected: LAN address the recipe must pick.
+    """
     _stub(tmp_path / "bin", "route", "echo '  interface: utun3'")
     _stub(tmp_path / "bin", "ifconfig", f'echo "{names}"')
     cases = "\n".join(f'"getifaddr {n}") echo {a};;' for n, a in addresses.items())
@@ -270,8 +375,14 @@ def test_lan_ip_behind_a_vpn_prefers_en0_and_skips_link_local_addresses(
 
 
 def test_lan_ip_fails_clearly_when_a_vpn_route_leaves_only_link_local_addresses(
-    make, tmp_path
-):
+    make: Callable[..., subprocess.CompletedProcess[str]], tmp_path: Path
+) -> None:
+    """The LAN IP fails clearly when a VPN route leaves only link-local addresses.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+        tmp_path: Temporary directory that holds the stand-in tools.
+    """
     _stub(tmp_path / "bin", "route", "echo '  interface: utun3'")
     _stub(tmp_path / "bin", "ifconfig", 'echo "lo0 utun3 en0"')
     _stub(
@@ -287,7 +398,15 @@ def test_lan_ip_fails_clearly_when_a_vpn_route_leaves_only_link_local_addresses(
     assert "Error 1" in result.stderr
 
 
-def test_lan_ip_fails_clearly_when_a_vpn_route_leaves_no_en_address(make, tmp_path):
+def test_lan_ip_fails_clearly_when_a_vpn_route_leaves_no_en_address(
+    make: Callable[..., subprocess.CompletedProcess[str]], tmp_path: Path
+) -> None:
+    """The LAN IP fails clearly when a VPN route leaves no en address.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+        tmp_path: Temporary directory that holds the stand-in tools.
+    """
     _stub(tmp_path / "bin", "route", "echo '  interface: utun3'")
     _stub(
         tmp_path / "bin",
@@ -304,8 +423,17 @@ def test_lan_ip_fails_clearly_when_a_vpn_route_leaves_no_en_address(make, tmp_pa
 
 @pytest.mark.parametrize("broken_tool", ["route", "ipconfig"])
 def test_lan_ip_fails_clearly_without_a_default_route_address(
-    make, tmp_path, broken_tool
-):
+    make: Callable[..., subprocess.CompletedProcess[str]],
+    tmp_path: Path,
+    broken_tool: str,
+) -> None:
+    """The LAN IP fails clearly without a default route address.
+
+    Args:
+        make: Runner that executes make with stand-in tools first on PATH.
+        tmp_path: Temporary directory that holds the stand-in tools.
+        broken_tool: Network tool that fails in this case.
+    """
     _stub(tmp_path / "bin", broken_tool, "exit 1")
 
     result = make("lan-ip")
@@ -315,7 +443,8 @@ def test_lan_ip_fails_clearly_without_a_default_route_address(
     assert "Error 1" in result.stderr
 
 
-def test_backend_gates_are_locked_and_check_formatting():
+def test_backend_gates_are_locked_and_check_formatting() -> None:
+    """Backend gates are locked and check formatting."""
     # CI runs the same commands; `-n` prints the expansion without running anything.
     result = subprocess.run(
         ["make", "--no-print-directory", "-n", "backend-install", "backend-lint"],

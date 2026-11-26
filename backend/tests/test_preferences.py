@@ -7,9 +7,12 @@ column they write.
 
 import re
 from pathlib import Path
+from xml.etree.ElementTree import Element
 
 import pytest
 from django.conf import settings
+from django.contrib.auth.models import AbstractUser
+from django.http import HttpResponse
 from django.test import Client
 from django.urls import reverse
 
@@ -23,19 +26,39 @@ HV = NS["hv"]
 RESTRICTED = {f"{{{HV}}}{name}" for name in ("doc", "navigator", "screen", "body")}
 
 
-def url(**query):
-    """Build the preference href the switcher markup uses."""
+def url(**query: str) -> str:
+    """Build the preference href the switcher markup uses.
+
+    Args:
+        **query: Query parameters of the href.
+
+    Returns:
+        The path with the query string appended.
+    """
     trailer = "&".join(f"{key}={value}" for key, value in query.items())
     return f"{reverse('todo:preferences')}{'?' if trailer else ''}{trailer}"
 
 
-def post(client, **query):
-    """POST the preference endpoint with a valid CSRF token."""
+def post(client: Client, **query: str) -> HttpResponse:
+    """POST the preference endpoint with a valid CSRF token.
+
+    Args:
+        client: Client that reads the settings screen and posts.
+        **query: Query parameters of the endpoint.
+
+    Returns:
+        The response to the preference POST.
+    """
     token = token_from(client.get(reverse("todo:settings")))
     return client.post(url(**query), {"csrfmiddlewaretoken": token})
 
 
-def test_a_get_is_rejected_with_405_and_an_allow_header(user):
+def test_a_get_is_rejected_with_405_and_an_allow_header(user: AbstractUser) -> None:
+    """A GET is rejected with 405 and an Allow header.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     client = Client()
     client.force_login(user)
 
@@ -45,14 +68,22 @@ def test_a_get_is_rejected_with_405_and_an_allow_header(user):
     assert response.headers["Allow"] == "POST"
 
 
-def test_an_anonymous_caller_gets_401_in_the_fragment_shape():
+def test_an_anonymous_caller_gets_401_in_the_fragment_shape() -> None:
+    """An anonymous caller gets 401 in the fragment shape."""
     response = Client().post(url(theme="dark"))
 
     root = assert_hxml(response, status=401)
     assert not {node.tag for node in root.iter()} & RESTRICTED
 
 
-def test_posting_dark_creates_a_profile_for_a_user_who_had_none(user):
+def test_posting_dark_creates_a_profile_for_a_user_who_had_none(
+    user: AbstractUser,
+) -> None:
+    """Posting dark creates a profile for a user who had none.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     client = csrf_client()
     client.force_login(user)
 
@@ -61,7 +92,14 @@ def test_posting_dark_creates_a_profile_for_a_user_who_had_none(user):
     assert Profile.objects.get(user=user).theme == "dark"
 
 
-def test_posting_the_same_value_twice_writes_absolute_state_not_a_toggle(user):
+def test_posting_the_same_value_twice_writes_absolute_state_not_a_toggle(
+    user: AbstractUser,
+) -> None:
+    """Posting the same value twice writes absolute state, not a toggle.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     # The switcher carries the TARGET value in its href, so a double tap, a retry
     # after a dropped response, or two queued behaviors all land on the same state.
     client = csrf_client()
@@ -74,7 +112,12 @@ def test_posting_the_same_value_twice_writes_absolute_state_not_a_toggle(user):
     assert Profile.objects.filter(user=user).count() == 1
 
 
-def test_writing_one_preference_leaves_the_other_untouched(user):
+def test_writing_one_preference_leaves_the_other_untouched(user: AbstractUser) -> None:
+    """Writing one preference leaves the other untouched.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     # The three preferences share one row, which is exactly why every field
     # defaults to blank: writing a theme must not state a language on the user's
     # behalf and flip a Spanish phone to English.
@@ -90,7 +133,15 @@ def test_writing_one_preference_leaves_the_other_untouched(user):
     "query",
     [{"theme": "neon"}, {"language": "zz"}, {}, {"theme": "dark", "language": "es"}],
 )
-def test_an_unaccepted_body_is_refused_in_the_callers_shape(query, user):
+def test_an_unaccepted_body_is_refused_in_the_callers_shape(
+    query: dict[str, str], user: AbstractUser
+) -> None:
+    """An unaccepted body is refused in the caller's shape.
+
+    Args:
+        query: Query parameters of the request that must be refused.
+        user: Signed-in user who owns the profile.
+    """
     client = csrf_client()
     client.force_login(user)
 
@@ -100,7 +151,14 @@ def test_an_unaccepted_body_is_refused_in_the_callers_shape(query, user):
     assert not Profile.objects.filter(user=user).exists()
 
 
-def test_the_confirmation_arrives_in_the_language_that_was_just_selected(user):
+def test_the_confirmation_arrives_in_the_language_that_was_just_selected(
+    user: AbstractUser,
+) -> None:
+    """The confirmation arrives in the language that was just selected.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     # The middleware resolved the language BEFORE the write, so without an explicit
     # activate the snackbar comes back in the old language while the screen behind
     # it repaints in the new one. Half-right output is harder to notice than
@@ -114,7 +172,14 @@ def test_the_confirmation_arrives_in_the_language_that_was_just_selected(user):
     assert message == "Idioma actualizado."
 
 
-def test_the_transition_is_a_bare_single_root_view_that_declares_no_style(user):
+def test_the_transition_is_a_bare_single_root_view_that_declares_no_style(
+    user: AbstractUser,
+) -> None:
+    """The transition is a bare, single-root view that declares no style.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     # It lands on two different screens, and `replace` does not rebuild
     # stylesheets, so it may not name a style id that only one of them declares.
     client = csrf_client()
@@ -128,8 +193,13 @@ def test_the_transition_is_a_bare_single_root_view_that_declares_no_style(user):
 
 
 def test_the_transition_repaints_the_screen_without_pointing_a_reload_at_the_navigator(
-    user,
-):
+    user: AbstractUser,
+) -> None:
+    """The transition repaints the screen without pointing a reload at the navigator.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     client = csrf_client()
     client.force_login(user)
 
@@ -149,8 +219,13 @@ def test_the_transition_repaints_the_screen_without_pointing_a_reload_at_the_nav
 
 
 def test_the_theme_survives_a_session_lapse_so_the_login_screen_is_not_a_white_flash(
-    user,
-):
+    user: AbstractUser,
+) -> None:
+    """The theme survives a session lapse, so the login screen is not a white flash.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     # The login and session-expired screens render ANONYMOUSLY and have no profile
     # to read. Without the cookie a dark-mode user whose session lapses at night is
     # handed a full-brightness white screen. A LAPSE and not an explicit sign-out:
@@ -169,8 +244,14 @@ def test_the_theme_survives_a_session_lapse_so_the_login_screen_is_not_a_white_f
 
 
 def test_signing_out_clears_the_mirrors_so_the_next_account_does_not_inherit_them(
-    user, other_user
-):
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """Signing out clears the mirrors, so the next account does not inherit them.
+
+    Args:
+        user: Signed-in user who owns the profile.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     # The cookies mirror ONE device-holder's choice, and an explicit sign-out hands
     # the device over. A blank profile overrides neither channel, so without this the
     # next account inherits the language from LocaleMiddleware's cookie and the
@@ -204,11 +285,19 @@ def test_signing_out_clears_the_mirrors_so_the_next_account_does_not_inherit_the
 HOSTS = ["todo:dashboard"]
 
 
-def switcher(user, host, **headers):
+def switcher(user: AbstractUser, host: str, **headers: str) -> Element:
     """Return the document that hosts the shared preference switcher.
 
     The dashboard hosts it inside the side menu, which is its own endpoint, so the
     route is not simply reverse(host).
+
+    Args:
+        user: Signed-in user whose menu is requested.
+        host: Route name of the screen that hosts the switcher.
+        **headers: Request headers the client sends.
+
+    Returns:
+        The parsed document of the side menu.
     """
     client = Client()
     client.force_login(user)
@@ -216,22 +305,44 @@ def switcher(user, host, **headers):
     return assert_hxml(client.get(reverse("todo:menu"), headers=headers))
 
 
-def toggle_of(root):
+def toggle_of(root: Element) -> Element | None:
     """Return the appearance row, found by the style id nothing else carries.
 
     Not by id, because these three triggers deliberately have none: see
     test_no_preference_trigger_carries_an_id_that_android_would_speak.
+
+    Args:
+        root: Parsed side menu document.
+
+    Returns:
+        The appearance row, or None when it is missing.
     """
     return root.find(".//hv:view[@style='pref-toggle-row']", NS)
 
 
-def option_of(root, language):
-    """Return one language chip, found by the href that names its own target."""
+def option_of(root: Element, language: str) -> Element | None:
+    """Return one language chip, found by the href that names its own target.
+
+    Args:
+        root: Parsed side menu document.
+        language: Language code the chip selects.
+
+    Returns:
+        The language chip, or None when it is missing.
+    """
     return root.find(f".//hv:view[@href='{url(language=language)}']", NS)
 
 
 @pytest.mark.parametrize("host", HOSTS)
-def test_no_preference_trigger_carries_an_id_that_android_would_speak(host, user):
+def test_no_preference_trigger_carries_an_id_that_android_would_speak(
+    host: str, user: AbstractUser
+) -> None:
+    """No preference trigger carries an ID that Android would speak.
+
+    Args:
+        host: Route name of the screen that hosts the switcher.
+        user: Signed-in user who owns the profile.
+    """
     # HyperRef applies createTestProps to its own TouchableOpacity
     # (hyper-ref.tsx:299 and 343) and createTestPropsFromId returns
     # {accessibilityLabel: id} on every non-iOS platform (services/index.ts:81-84).
@@ -249,8 +360,14 @@ def test_no_preference_trigger_carries_an_id_that_android_would_speak(host, user
 
 @pytest.mark.parametrize("host", HOSTS)
 def test_the_drawer_switcher_offers_every_shipped_language_and_marks_the_current_one(
-    host, user
-):
+    host: str, user: AbstractUser
+) -> None:
+    """The drawer switcher offers every shipped language and marks the current one.
+
+    Args:
+        host: Route name of the screen that hosts the switcher.
+        user: Signed-in user who owns the profile.
+    """
     root = switcher(user, host)
 
     for value in ("en", "es"):
@@ -279,7 +396,7 @@ SWITCHER_CONDITIONAL_IDS = frozenset(
 )
 
 
-def switcher_style_ids(user):
+def switcher_style_ids(user: AbstractUser) -> set[str]:
     """Return every style id the shared switcher references, read from its markup.
 
     Both palettes are rendered because pref-toggle-track-on is only emitted while
@@ -315,8 +432,16 @@ def switcher_style_ids(user):
     [(Profile.Theme.LIGHT, "dark"), (Profile.Theme.DARK, "light")],
 )
 def test_the_appearance_control_is_one_toggle_that_posts_the_other_theme(
-    host, stored, opposite, user
-):
+    host: str, stored: Profile.Theme, opposite: str, user: AbstractUser
+) -> None:
+    """The appearance control is one toggle that posts the other theme.
+
+    Args:
+        host: Route name of the screen that hosts the switcher.
+        stored: Theme stored in the profile.
+        opposite: Theme the toggle must post.
+        user: Signed-in user who owns the profile.
+    """
     # A real <switch> can never post from inside a <form>: HvSwitch clones the
     # element before triggering, the clone has no parentNode, getFormData walks up
     # to nothing and hyperview.tsx posts a null body -- no CSRF token, so Django
@@ -349,8 +474,16 @@ def test_the_appearance_control_is_one_toggle_that_posts_the_other_theme(
     ("stored", "state"), [(Profile.Theme.LIGHT, "off"), (Profile.Theme.DARK, "on")]
 )
 def test_the_toggle_says_its_own_state_because_no_string_can_reach_accessibilitystate(
-    host, stored, state, user
-):
+    host: str, stored: Profile.Theme, state: str, user: AbstractUser
+) -> None:
+    """The toggle says its own state because no string can reach accessibilityState.
+
+    Args:
+        host: Route name of the screen that hosts the switcher.
+        stored: Theme stored in the profile.
+        state: State the toggle must announce.
+        user: Signed-in user who owns the profile.
+    """
     # accessibilityState is NOT reachable from HXML: createProps copies attributes
     # verbatim and coerces only numberOfLines, adjustsFontSizeToFit,
     # allowFontScaling, multiline, selectable, maxFontSizeMultiplier and
@@ -382,8 +515,15 @@ FLAGS = {"en": "\U0001f1ec\U0001f1e7", "es": "\U0001f1ea\U0001f1f8"}
 @pytest.mark.parametrize("host", HOSTS)
 @pytest.mark.parametrize("language", sorted(FLAGS))
 def test_a_language_option_wears_a_flag_that_no_screen_reader_ever_announces(
-    host, language, user
-):
+    host: str, language: str, user: AbstractUser
+) -> None:
+    """A language option wears a flag that no screen reader ever announces.
+
+    Args:
+        host: Route name of the screen that hosts the switcher.
+        language: Language code under test.
+        user: Signed-in user who owns the profile.
+    """
     # The accessible outer text names the language and state. Nested text is
     # inline, with role none to prevent an inherited button run on iOS. The
     # Android hiding prop is a string enum; unsupported boolean strings are gone.
@@ -418,7 +558,7 @@ INCLUDE = re.compile(r'{%\s*include\s+"([^"]+)"')
 ROOT_TAG = re.compile(r"<([A-Za-z][-\w]*)\b[^>]*>")
 
 
-def _sources():
+def _sources() -> dict[str, str]:
     """Return every shipped template keyed by the name an {% include %} would use."""
     return {
         path.relative_to(TEMPLATES).as_posix(): path.read_text()
@@ -426,7 +566,7 @@ def _sources():
     }
 
 
-def _root_id(source):
+def _root_id(source: str) -> str | None:
     """Return the id of a fragment's single root element, or None."""
     match = ROOT_TAG.search(source)
     if match is None:
@@ -435,7 +575,7 @@ def _root_id(source):
     return attribute.group(1) if attribute else None
 
 
-def hosts_of(name, sources=None):
+def hosts_of(name: str, sources: dict[str, str] | None = None) -> set[str]:
     """Return every screens/*.xml this template's markup can be rendered inside.
 
     Derived from the markup rather than remembered by hand, along the two ways a
@@ -444,6 +584,13 @@ def hosts_of(name, sources=None):
     copy of the switcher a DASHBOARD fragment: side_menu.xml is served from its
     own endpoint, but its root id is the slot fragments/side_menu_host.xml
     declares, and only screens/dashboard.xml includes that.
+
+    Args:
+        name: Name of the template whose hosts are wanted.
+        sources: Template sources by name, or None to read the shipped ones.
+
+    Returns:
+        Names of the screen templates that can render the template.
     """
     sources = sources or _sources()
     includers = {}
@@ -474,8 +621,13 @@ SWITCHER = "partials/preference_switcher.xml"
 
 
 def test_the_preference_switcher_declares_its_styles_on_every_screen_that_can_host_it(
-    user,
-):
+    user: AbstractUser,
+) -> None:
+    """The preference switcher declares its styles on every screen that can host it.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     # Replaces the old "the two hand-duplicated copies serialise identically"
     # guard, which goes vacuous the moment there is one host. Rule 2: `replace`
     # does not rebuild stylesheets, so a fragment may only name ids its host
@@ -503,7 +655,12 @@ def test_the_preference_switcher_declares_its_styles_on_every_screen_that_can_ho
         assert wanted <= declared, sorted(wanted - declared)
 
 
-def test_appearance_and_language_live_only_in_the_side_menu(user):
+def test_appearance_and_language_live_only_in_the_side_menu(user: AbstractUser) -> None:
+    """Appearance and language live only in the side menu.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     # The owner decision this change implements: Settings became one real form
     # with one Save, and a control that commits on tap cannot share a screen with
     # unsaved input. The switcher reloads its host document (session-changed), so
@@ -539,7 +696,7 @@ def test_appearance_and_language_live_only_in_the_side_menu(user):
 # --- defect: a preference tap used to discard unsaved profile edits -----------
 
 
-def _profile_post(client, body, **query):
+def _profile_post(client: Client, body: dict[str, str], **query: str) -> HttpResponse:
     """POST the preference endpoint with a whole settings-form body attached.
 
     Every field the form declares is always present, because that is what
@@ -551,14 +708,21 @@ def _profile_post(client, body, **query):
     return client.post(url(**query), {**payload, "csrfmiddlewaretoken": token})
 
 
-def _field_value(root, name):
+def _field_value(root: Element, name: str) -> str:
     """Return the rendered value of one settings text-field."""
     node = root.find(f".//hv:text-field[@name='{name}']", NS)
     assert node is not None, name
     return node.attrib.get("value", "")
 
 
-def test_the_drawer_posts_no_profile_at_all_and_still_flips_the_theme(user):
+def test_the_drawer_posts_no_profile_at_all_and_still_flips_the_theme(
+    user: AbstractUser,
+) -> None:
+    """The drawer posts no profile at all and still flips the theme.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     # The side menu has no profile fields, so its body is the CSRF token alone.
     # The endpoint must not read that as "clear my profile".
     user.first_name = "Ada"
@@ -573,7 +737,14 @@ def test_the_drawer_posts_no_profile_at_all_and_still_flips_the_theme(user):
     assert Profile.objects.get(user=user).theme == "dark"
 
 
-def test_the_preference_endpoint_never_writes_a_profile_it_was_handed(user):
+def test_the_preference_endpoint_never_writes_a_profile_it_was_handed(
+    user: AbstractUser,
+) -> None:
+    """The preference endpoint never writes a profile it was handed.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     # Was test_an_invalid_edit_still_applies_the_preference_and_drops_only_the_bad
     # _field, which pinned _save_profile_riding_along: a Settings-hosted tap shared
     # settings-form with the name and email fields, so getFormData posted them here
@@ -604,8 +775,13 @@ def test_the_preference_endpoint_never_writes_a_profile_it_was_handed(user):
 
 
 def test_the_header_names_the_palette_the_write_just_stored_not_the_one_it_replaced(
-    user,
-):
+    user: AbstractUser,
+) -> None:
+    """The header names the palette the write just stored, not the one it replaced.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     # ThemeHeaderMiddleware calls the same theme() the context processor does, and
     # that reads request.user.profile. ProfileLanguageMiddleware already walked
     # that reverse one-to-one on the way in, so the instance is holding the row as
@@ -626,12 +802,12 @@ def test_the_header_names_the_palette_the_write_just_stored_not_the_one_it_repla
     assert Profile.objects.get(user=user).theme == "dark"
 
 
-def _parents(root):
+def _parents(root: Element) -> dict[Element, Element]:
     """Return a child -> parent map, which ElementTree does not keep."""
     return {child: parent for parent in root.iter() for child in parent}
 
 
-def _closest_form(root, node):
+def _closest_form(root: Element, node: Element | None) -> Element | None:
     """Return the <form> ancestor whose data a control inside it would post."""
     parents = _parents(root)
     while node is not None:
@@ -641,7 +817,14 @@ def _closest_form(root, node):
     return None
 
 
-def test_the_drawer_gives_the_shared_switcher_a_form_of_its_own(user):
+def test_the_drawer_gives_the_shared_switcher_a_form_of_its_own(
+    user: AbstractUser,
+) -> None:
+    """The drawer gives the shared switcher a form of its own.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     # The partial no longer carries its own <form>, so every host owes one. A
     # preference control with no form ancestor posts a null body and Django
     # rejects it at the CSRF check, which is exactly the failure a <switch> has.
@@ -659,8 +842,13 @@ def test_the_drawer_gives_the_shared_switcher_a_form_of_its_own(user):
 
 
 def test_the_drawer_gives_the_switcher_a_wrapper_that_does_not_claim_half_the_panel(
-    user,
-):
+    user: AbstractUser,
+) -> None:
+    """The drawer gives the switcher a wrapper that does not claim half the panel.
+
+    Args:
+        user: Signed-in user who owns the profile.
+    """
     # Yoga expands `flex: 1` to grow 1 / shrink 1 / basis 0, so two flex="1"
     # siblings split the panel evenly whatever they hold. When this block reused
     # side-menu-links the four nav rows and the switcher each took half: a dead gap

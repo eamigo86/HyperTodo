@@ -6,6 +6,9 @@ from xml.etree import ElementTree as ET
 
 import pytest
 from dj_hyperview import validate_hyperview_schema
+from django.contrib.auth.models import AbstractUser
+from django.http import HttpResponse
+from django.test import Client
 
 from tests.test_realtime_changes import FEATURE, module
 from tests.test_session_contract import _confirm, _headers
@@ -18,7 +21,19 @@ NS = {
 }
 
 
-def get(client, url, *, v2=True):
+def get(
+    client: Client, url: str, *, v2: bool = True
+) -> tuple[HttpResponse, ET.Element]:
+    """Request a screen with the changes feature headers and parse the answer.
+
+    Args:
+        client: Client that requests the screen.
+        url: Path of the screen requested.
+        v2: Whether the request negotiates the v2 changes feature.
+
+    Returns:
+        The response and its parsed document.
+    """
     binding, _ = _confirm(client, True)
     headers = {**_headers(binding), "X-HyperTodo-Request-ID": "gate-prefix-1"}
     if v2:
@@ -38,7 +53,17 @@ def get(client, url, *, v2=True):
         ("/hv/settings/", "form"),
     ],
 )
-def test_v2_modes_are_negotiated_and_keep_legacy_metadata(client, user, url, mode):
+def test_v2_modes_are_negotiated_and_keep_legacy_metadata(
+    client: Client, user: AbstractUser, url: str, mode: str
+) -> None:
+    """V2 modes are negotiated and keep the legacy metadata.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        url: Path of the screen requested.
+        mode: Realtime mode the screen must declare.
+    """
     client.force_login(user)
     response, root = get(client, url)
     assert response.status_code == 200
@@ -55,8 +80,15 @@ def test_v2_modes_are_negotiated_and_keep_legacy_metadata(client, user, url, mod
 
 
 def test_task_form_entity_and_each_select_option_have_opaque_precision(
-    client, user, other_user
-):
+    client: Client, user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """The task form entity and each select option have opaque precision.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     client.force_login(user)
     one = Category.objects.create(user=user, name="One")
     two = Category.objects.create(user=user, name="Two")
@@ -93,11 +125,27 @@ def test_task_form_entity_and_each_select_option_have_opaque_precision(
     )
 
 
-def response_text(root):
+def response_text(root: ET.Element) -> str:
+    """Serialize a parsed document back to text.
+
+    Args:
+        root: Parsed document.
+
+    Returns:
+        The document serialized as text.
+    """
     return ET.tostring(root, encoding="unicode")
 
 
-def test_category_edit_has_only_own_category_and_profile_dependencies(client, user):
+def test_category_edit_has_only_own_category_and_profile_dependencies(
+    client: Client, user: AbstractUser
+) -> None:
+    """A category edit has only its own category and profile dependencies.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
     category = Category.objects.create(user=user, name="Current")
     Category.objects.create(user=user, name="Other")
@@ -114,8 +162,21 @@ def test_category_edit_has_only_own_category_and_profile_dependencies(client, us
     "endpoint,resource", [("tasks", "tasks"), ("categories", "categories")]
 )
 def test_prefix_two_is_complete_document_with_markers_and_only_next_page(
-    client, user, other_user, endpoint, resource
-):
+    client: Client,
+    user: AbstractUser,
+    other_user: AbstractUser,
+    endpoint: str,
+    resource: str,
+) -> None:
+    """A prefix of two is a complete document with markers and only the next page.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+        endpoint: Name of the list endpoint requested.
+        resource: Name of the resource the endpoint lists.
+    """
     client.force_login(user)
     if endpoint == "tasks":
         category = Category.objects.create(user=user, name="Current category chip")
@@ -160,8 +221,17 @@ def test_prefix_two_is_complete_document_with_markers_and_only_next_page(
     "count,pages,items", [(0, ["1"], 1), (3, ["1"], 3), (21, ["1", "2"], 21)]
 )
 def test_prefix_clamps_deleted_tail_without_false_markers(
-    client, user, count, pages, items
-):
+    client: Client, user: AbstractUser, count: int, pages: list[str], items: int
+) -> None:
+    """A prefix clamps a deleted tail without false markers.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        count: Number of tasks created before the request.
+        pages: Page markers the list must carry, in order.
+        items: Number of rows the list must hold.
+    """
     client.force_login(user)
     Task.objects.bulk_create([Task(user=user, title=f"T{n}") for n in range(count)])
     response, root = get(client, "/hv/tasks/?through_page=3")
@@ -187,19 +257,44 @@ def test_prefix_clamps_deleted_tail_without_false_markers(
         "through_page=1&through_page=2",
     ],
 )
-def test_invalid_or_ambiguous_prefix_is_rejected(client, user, query):
+def test_invalid_or_ambiguous_prefix_is_rejected(
+    client: Client, user: AbstractUser, query: str
+) -> None:
+    """An invalid or ambiguous prefix is rejected.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        query: Query string the endpoint must reject.
+    """
     client.force_login(user)
     response, _ = get(client, "/hv/tasks/?" + query)
     assert response.status_code == 400
 
 
-def test_prefix_requires_negotiation_not_a_new_legacy_pagination_semantic(client, user):
+def test_prefix_requires_negotiation_not_a_new_legacy_pagination_semantic(
+    client: Client, user: AbstractUser
+) -> None:
+    """A prefix requires negotiation, not a new legacy pagination semantic.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
     response, _ = get(client, "/hv/tasks/?through_page=2", v2=False)
     assert response.status_code == 400
 
 
-def test_prefix_maximum_is_400_rows_not_silent_truncation(client, user):
+def test_prefix_maximum_is_400_rows_not_silent_truncation(
+    client: Client, user: AbstractUser
+) -> None:
+    """The prefix maximum is 400 rows, not a silent truncation.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+    """
     client.force_login(user)
     Task.objects.bulk_create([Task(user=user, title=f"T{n}") for n in range(401)])
     response, root = get(client, "/hv/tasks/?through_page=20")
@@ -215,8 +310,16 @@ def test_prefix_maximum_is_400_rows_not_silent_truncation(client, user):
     "editing,v2", [(False, True), (True, True), (False, False), (True, False)]
 )
 def test_422_panel_preserves_current_category_precision_and_draft(
-    client, user, editing, v2
-):
+    client: Client, user: AbstractUser, editing: bool, v2: bool
+) -> None:
+    """A 422 panel preserves the current category precision and the draft.
+
+    Args:
+        client: Client that requests the screens under test.
+        user: Signed-in user who owns the data in this test.
+        editing: Whether the panel edits an existing category.
+        v2: Whether the request negotiates the v2 changes feature.
+    """
     client.force_login(user)
     category = Category.objects.create(user=user, name="Own category")
     task = Task.objects.create(user=user, title="Original", category=category)

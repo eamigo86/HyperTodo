@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 from django.conf import settings
+from django.contrib.auth.models import AbstractUser
+from django.http import HttpResponse
 from django.test import Client
 from django.urls import reverse
 
@@ -16,13 +18,21 @@ pytestmark = pytest.mark.django_db
 LOCALE = Path(settings.BASE_DIR) / "locale/es/LC_MESSAGES"
 
 
-def body(response):
-    """Return the decoded body of an HXML response."""
+def body(response: HttpResponse) -> str:
+    """Return the decoded body of an HXML response.
+
+    Args:
+        response: HXML response whose body is read.
+
+    Returns:
+        The response body as text.
+    """
     assert_hxml(response)
     return response.content.decode()
 
 
-def test_every_offered_language_is_one_django_can_actually_activate():
+def test_every_offered_language_is_one_django_can_actually_activate() -> None:
+    """Every offered language is one Django can actually activate."""
     # Two independent lists of the shipped locales. Adding FRENCH to Profile.Language
     # alone is a silent no-op: the endpoint accepts "fr" and says "Language updated.",
     # but ProfileLanguageMiddleware only activates what is in settings.LANGUAGES, so
@@ -30,7 +40,14 @@ def test_every_offered_language_is_one_django_can_actually_activate():
     assert set(Profile.Language.values) == set(dict(settings.LANGUAGES))
 
 
-def test_a_stored_preference_beats_the_accept_language_header(user):
+def test_a_stored_preference_beats_the_accept_language_header(
+    user: AbstractUser,
+) -> None:
+    """A stored preference beats the Accept-Language header.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The whole point of storing it. Django 6.1's get_language_from_request
     # resolves cookie -> Accept-Language -> LANGUAGE_CODE and has no channel for a
     # per-account preference, so without the override middleware the header wins.
@@ -43,7 +60,14 @@ def test_a_stored_preference_beats_the_accept_language_header(user):
     )
 
 
-def test_an_account_with_no_stated_preference_follows_the_header(user):
+def test_an_account_with_no_stated_preference_follows_the_header(
+    user: AbstractUser,
+) -> None:
+    """An account with no stated preference follows the header.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client = Client()
     client.force_login(user)
 
@@ -55,7 +79,14 @@ def test_an_account_with_no_stated_preference_follows_the_header(user):
     )
 
 
-def test_the_current_language_on_the_request_is_the_one_that_was_activated(user):
+def test_the_current_language_on_the_request_is_the_one_that_was_activated(
+    user: AbstractUser,
+) -> None:
+    """The current language on the request is the one that was activated.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # LocaleMiddleware set request.LANGUAGE_CODE from the header before the
     # override ran. Leaving it stale renders the WRONG option as current while
     # every other string on the screen is right, which is the hardest kind of bug
@@ -78,7 +109,14 @@ def test_the_current_language_on_the_request_is_the_one_that_was_activated(user)
     assert "preference-option-current" in current[0].attrib["style"].split()
 
 
-def test_the_clear_time_button_is_named_for_screen_readers_in_the_active_language(user):
+def test_the_clear_time_button_is_named_for_screen_readers_in_the_active_language(
+    user: AbstractUser,
+) -> None:
+    """The clear time button is named for screen readers in the active language.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The visible word stays short; the spoken name says what is cleared.
     Profile.objects.create(user=user, language=Profile.Language.SPANISH)
     client = Client()
@@ -94,7 +132,10 @@ def test_the_clear_time_button_is_named_for_screen_readers_in_the_active_languag
     assert picker.attrib["clear-a11y-label"] == "Borrar hora límite"
 
 
-def test_the_compiled_catalog_agrees_with_its_source_and_carries_no_fuzzy_entry():
+def test_the_compiled_catalog_agrees_with_its_source_and_carries_no_fuzzy_entry() -> (
+    None
+):
+    """The compiled catalog agrees with its source and carries no fuzzy entry."""
     # The .mo is committed so no gate needs msgfmt. The price of a committed
     # binary is staleness, and this is what stops it: gettext SKIPS entries marked
     # fuzzy at runtime and hands back the msgid, so a .po that reads fully
@@ -109,7 +150,7 @@ def test_the_compiled_catalog_agrees_with_its_source_and_carries_no_fuzzy_entry(
         assert entries.get(msgid) == msgstr, msgid
 
 
-def _po_entries(source):
+def _po_entries(source: str) -> dict[str, str]:
     """Parse msgid/msgstr pairs out of a .po without a gettext toolchain."""
     entries, msgid, msgstr, target = {}, None, None, None
     for line in source.splitlines() + [""]:
@@ -132,7 +173,7 @@ def _po_entries(source):
     return {k: v for k, v in entries.items() if v}
 
 
-def _unquote(raw):
+def _unquote(raw: str) -> str:
     """Decode one quoted .po string fragment.
 
     Hand-rolled rather than via unicode_escape, which round-trips through
@@ -143,7 +184,8 @@ def _unquote(raw):
     return body.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
 
 
-def test_every_marked_string_has_a_non_empty_spanish_translation():
+def test_every_marked_string_has_a_non_empty_spanish_translation() -> None:
+    """Every marked string has a non-empty Spanish translation."""
     # The guard against a half-finished catalog. A missing msgstr makes gettext
     # return the msgid, so the app renders English with every gate green.
     translated = _po_entries((LOCALE / "django.po").read_text())
@@ -168,7 +210,12 @@ def test_every_marked_string_has_a_non_empty_spanish_translation():
 DEVICE_REJECTED = "This device is no longer recognised. Sign in to enable it again."
 
 
-def test_a_translated_error_is_shown_once_and_not_twice(user):
+def test_a_translated_error_is_shown_once_and_not_twice(user: AbstractUser) -> None:
+    """A translated error is shown once and not twice.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # A rejected device token renders its refusal into the login panel's error card.
     # A msgstr that concatenates two copies of the sentence ships a paragraph where
     # the design has one line, and every gate stays green because no test had ever
@@ -186,7 +233,14 @@ def test_a_translated_error_is_shown_once_and_not_twice(user):
     assert shown.count("dispositivo") == 1, shown
 
 
-def test_a_plural_string_is_translated_for_every_count_and_not_only_for_one(user):
+def test_a_plural_string_is_translated_for_every_count_and_not_only_for_one(
+    user: AbstractUser,
+) -> None:
+    """A plural string is translated for every count and not only for one.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The catalog header shipped `nplurals=3` while every entry supplies two forms,
     # so gettext resolved n=2 to index 2, missed, and fell back to the ENGLISH
     # plural. Only n == 1 was ever right. Nothing else here would notice: the .po
@@ -204,7 +258,8 @@ def test_a_plural_string_is_translated_for_every_count_and_not_only_for_one(user
     assert "2 tareas" in body(client.get(reverse("todo:categories")))
 
 
-def test_no_translation_is_wildly_longer_than_the_string_it_translates():
+def test_no_translation_is_wildly_longer_than_the_string_it_translates() -> None:
+    """No translation is wildly longer than the string it translates."""
     # Spanish runs about 1.2-1.3x the length of English and tops out at 1.55x in
     # this catalog. Anything near double a sentence-length msgid is not a
     # translation, it is a paste that ran twice. The 30-character floor is what

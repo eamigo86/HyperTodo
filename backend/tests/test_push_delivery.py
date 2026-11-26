@@ -1,10 +1,13 @@
 """Transactional Task alerts and bounded Expo delivery; no external requests."""
 
 from datetime import timedelta
+from typing import Never, Self
 from urllib.error import URLError
+from urllib.request import Request
 from uuid import uuid4
 
 import pytest
+from django.contrib.auth.models import AbstractUser
 from django.db import transaction
 from django.test import Client, override_settings
 from django.utils import timezone
@@ -16,22 +19,63 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 class FakeTransport:
-    def __init__(self, *, ticket=None, receipt=None):
+    """Expo transport stand-in that records what it is asked and answers fixed data.
+
+    Args:
+        ticket: Ticket every send answers with; an accepted ticket when omitted.
+        receipt: Receipt every poll answers with; an accepted receipt when omitted.
+    """
+
+    def __init__(
+        self,
+        *,
+        ticket: dict[str, object] | None = None,
+        receipt: dict[str, object] | None = None,
+    ) -> None:
+        """Store the answers and start with no recorded calls."""
         self.ticket = ticket or {"status": "ok", "id": "ticket-1"}
         self.receipt = receipt or {"status": "ok"}
         self.sent = []
         self.polled = []
 
-    def send(self, token, data):
+    def send(self, token: str, data: dict[str, object]) -> dict[str, object]:
+        """Record the message and answer with the configured ticket.
+
+        Args:
+            token: Expo push token that receives the message.
+            data: Payload of the message.
+
+        Returns:
+            The configured ticket.
+        """
         self.sent.append((token, data))
         return self.ticket
 
-    def get_receipt(self, ticket_id):
+    def get_receipt(self, ticket_id: str) -> dict[str, object]:
+        """Record the ticket and answer with the configured receipt.
+
+        Args:
+            ticket_id: Identifier of the ticket whose receipt is read.
+
+        Returns:
+            The configured receipt.
+        """
         self.polled.append(ticket_id)
         return self.receipt
 
 
-def registered(user, token="ExpoPushToken[test_one]"):
+def registered(
+    user: AbstractUser, token: str = "ExpoPushToken[test_one]"
+) -> tuple[Client, PushDevice]:
+    """Sign a user in and register one push device for the session.
+
+    Args:
+        user: User who registers the device.
+        token: Expo push token of the device.
+
+    Returns:
+        The signed-in client and the registered device.
+    """
     client = Client()
     client.force_login(user)
     device = PushDevice.objects.create(
@@ -45,7 +89,14 @@ def registered(user, token="ExpoPushToken[test_one]"):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_task_update_outbox_is_transactional_and_ignores_create_noop_raw(user):
+def test_task_update_outbox_is_transactional_and_ignores_create_noop_raw(
+    user: AbstractUser,
+) -> None:
+    """A task update outbox row is transactional and skips create, no-op and raw saves.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     from todo.realtime_config import get_realtime_config
 
     assert get_realtime_config() is None  # Push remains independent of Redis/SSE.
@@ -68,7 +119,12 @@ def test_task_update_outbox_is_transactional_and_ignores_create_noop_raw(user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_send_receipt_and_generic_payload(user):
+def test_send_receipt_and_generic_payload(user: AbstractUser) -> None:
+    """A message is sent with a generic payload and its receipt is polled.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     _, device = registered(user)
     task = Task.objects.create(user=user, title="Secret title", notes="Private notes")
     task.title = "Changed secret"
@@ -95,7 +151,15 @@ def test_send_receipt_and_generic_payload(user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_stale_owner_session_and_registration_never_send(user, other_user):
+def test_stale_owner_session_and_registration_never_send(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A stale owner session or registration never sends.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+        other_user: Second user whose device must receive nothing.
+    """
     client, device = registered(user)
     task = Task.objects.create(user=user, title="First")
     task.title = "Second"
@@ -114,7 +178,14 @@ def test_stale_owner_session_and_registration_never_send(user, other_user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_invalid_ticket_revokes_only_matching_registration_version(user):
+def test_invalid_ticket_revokes_only_matching_registration_version(
+    user: AbstractUser,
+) -> None:
+    """An invalid ticket revokes only the matching registration version.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     _, device = registered(user)
     task = Task.objects.create(user=user, title="First")
     task.title = "Second"
@@ -127,7 +198,12 @@ def test_invalid_ticket_revokes_only_matching_registration_version(user):
     assert PushDelivery.objects.get().status == PushDelivery.Status.DROPPED
 
 
-def test_disabled_setting_produces_no_outbox_or_transport(user):
+def test_disabled_setting_produces_no_outbox_or_transport(user: AbstractUser) -> None:
+    """A disabled setting produces no outbox row and no transport.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     _, device = registered(user)
     task = Task.objects.create(user=user, title="First")
     task.title = "Second"
@@ -140,7 +216,12 @@ def test_disabled_setting_produces_no_outbox_or_transport(user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_raw_save_and_queryset_update_do_not_emit_alerts(user):
+def test_raw_save_and_queryset_update_do_not_emit_alerts(user: AbstractUser) -> None:
+    """Raw saves and queryset updates do not emit alerts.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     registered(user)
     task = Task.objects.create(user=user, title="First")
     task.title = "Raw fixture"
@@ -150,7 +231,14 @@ def test_raw_save_and_queryset_update_do_not_emit_alerts(user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_changed_password_expired_session_and_token_rotation_drop_pending(user):
+def test_changed_password_expired_session_and_token_rotation_drop_pending(
+    user: AbstractUser,
+) -> None:
+    """A password change, an expired session and a token rotation drop pending sends.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     client, device = registered(user)
     task = Task.objects.create(user=user, title="First")
     task.title = "Second"
@@ -167,14 +255,19 @@ def test_changed_password_expired_session_and_token_rotation_drop_pending(user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_late_invalid_ticket_cannot_delete_rotated_token(user):
+def test_late_invalid_ticket_cannot_delete_rotated_token(user: AbstractUser) -> None:
+    """A late invalid ticket cannot delete a rotated token.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     _, device = registered(user)
     task = Task.objects.create(user=user, title="First")
     task.title = "Second"
     task.save(update_fields=("title",))
 
     class RotatingTransport(FakeTransport):
-        def send(self, token, data):
+        def send(self, token: str, data: dict[str, object]) -> dict[str, object]:
             self.sent.append((token, data))
             PushDevice.objects.filter(pk=device.pk).update(
                 expo_token="ExpoPushToken[new_token]", registration_version=uuid4()
@@ -188,14 +281,19 @@ def test_late_invalid_ticket_cannot_delete_rotated_token(user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_transient_failure_retries_with_bounds(user):
+def test_transient_failure_retries_with_bounds(user: AbstractUser) -> None:
+    """A transient failure retries within bounds.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     registered(user)
     task = Task.objects.create(user=user, title="First")
     task.title = "Second"
     task.save(update_fields=("title",))
 
     class Unavailable(FakeTransport):
-        def send(self, token, data):
+        def send(self, token: str, data: dict[str, object]) -> Never:
             from todo.push_delivery import RetryablePushError
 
             raise RetryablePushError
@@ -215,7 +313,14 @@ def test_transient_failure_retries_with_bounds(user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_receipt_invalid_token_revokes_and_missing_receipt_retries(user):
+def test_receipt_invalid_token_revokes_and_missing_receipt_retries(
+    user: AbstractUser,
+) -> None:
+    """An invalid receipt token revokes the registration, and a missing receipt retries.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     _, device = registered(user)
     task = Task.objects.create(user=user, title="First")
     task.title = "Second"
@@ -234,8 +339,18 @@ def test_receipt_invalid_token_revokes_and_missing_receipt_retries(user):
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
 def test_command_defaults_to_preview_and_requires_explicit_send(
-    user, monkeypatch, capsys
-):
+    user: AbstractUser,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The command previews by default and requires an explicit send.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+        monkeypatch: Patches the dispatch function that the command calls.
+        test needs.
+        capsys: Captures what the command prints.
+    """
     from django.core.management import call_command
 
     registered(user)
@@ -254,7 +369,15 @@ def test_command_defaults_to_preview_and_requires_explicit_send(
     assert calls == [{"limit": 3}]
 
 
-def test_expo_transport_uses_fixed_https_endpoint_and_bounded_body(monkeypatch):
+def test_expo_transport_uses_fixed_https_endpoint_and_bounded_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Expo transport uses a fixed HTTPS endpoint and a bounded body.
+
+    Args:
+        monkeypatch: Patches the opener that the Expo transport builds.
+        test needs.
+    """
     from todo.push_delivery import ExpoTransport, PermanentPushError
 
     seen = []
@@ -262,18 +385,18 @@ def test_expo_transport_uses_fixed_https_endpoint_and_bounded_body(monkeypatch):
     class Response:
         status = 200
 
-        def __enter__(self):
+        def __enter__(self) -> Self:
             return self
 
-        def __exit__(self, *args):
+        def __exit__(self, *args: object) -> None:
             pass
 
-        def read(self, amount):
+        def read(self, amount: int) -> bytes:
             seen.append(amount)
             return b'{"data":{"status":"ok","id":"ticket"}}'
 
     class Opener:
-        def open(self, request, *, timeout):
+        def open(self, request: Request, *, timeout: int) -> Response:
             seen.append((request.full_url, timeout))
             return Response()
 
@@ -284,7 +407,7 @@ def test_expo_transport_uses_fixed_https_endpoint_and_bounded_body(monkeypatch):
     assert seen == [("https://exp.host/--/api/v2/push/send", 5), 65_537]
 
     class Oversized(Response):
-        def read(self, amount):
+        def read(self, amount: int) -> bytes:
             return b"x" * amount
 
     monkeypatch.setattr(
@@ -296,7 +419,12 @@ def test_expo_transport_uses_fixed_https_endpoint_and_bounded_body(monkeypatch):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_parallel_workers_claim_distinct_rows_on_sqlite(user):
+def test_parallel_workers_claim_distinct_rows_on_sqlite(user: AbstractUser) -> None:
+    """Parallel workers claim distinct rows on SQLite.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
 
@@ -308,7 +436,7 @@ def test_parallel_workers_claim_distinct_rows_on_sqlite(user):
     barrier = Barrier(2)
 
     class ParallelTransport(FakeTransport):
-        def send(self, token, data):
+        def send(self, token: str, data: dict[str, object]) -> dict[str, object]:
             barrier.wait(timeout=5)
             return super().send(token, data)
 
@@ -324,7 +452,14 @@ def test_parallel_workers_claim_distinct_rows_on_sqlite(user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_expired_session_and_preexisting_rotation_drop_without_send(user):
+def test_expired_session_and_preexisting_rotation_drop_without_send(
+    user: AbstractUser,
+) -> None:
+    """An expired session and a pre-existing rotation drop without a send.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     from django.contrib.sessions.models import Session
 
     _, device = registered(user)
@@ -350,7 +485,14 @@ def test_expired_session_and_preexisting_rotation_drop_without_send(user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_missing_receipt_is_retryable_not_claimed_as_delivery(user):
+def test_missing_receipt_is_retryable_not_claimed_as_delivery(
+    user: AbstractUser,
+) -> None:
+    """A missing receipt is retryable and not claimed as delivery.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     from todo.push_delivery import RetryablePushError
 
     registered(user)
@@ -359,7 +501,7 @@ def test_missing_receipt_is_retryable_not_claimed_as_delivery(user):
     task.save(update_fields=("title",))
 
     class MissingReceipt(FakeTransport):
-        def get_receipt(self, ticket_id):
+        def get_receipt(self, ticket_id: str) -> Never:
             self.polled.append(ticket_id)
             raise RetryablePushError
 
@@ -376,7 +518,8 @@ def test_missing_receipt_is_retryable_not_claimed_as_delivery(user):
     assert transport.polled == ["ticket-1"]
 
 
-def test_send_command_refuses_disabled_configuration():
+def test_send_command_refuses_disabled_configuration() -> None:
+    """The send command refuses a disabled configuration."""
     from django.core.management import call_command
     from django.core.management.base import CommandError
 
@@ -385,7 +528,12 @@ def test_send_command_refuses_disabled_configuration():
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_dispatch_prunes_terminal_rows_after_seven_days(user):
+def test_dispatch_prunes_terminal_rows_after_seven_days(user: AbstractUser) -> None:
+    """Dispatch prunes terminal rows after seven days.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     registered(user)
     task = Task.objects.create(user=user, title="First")
     task.title = "Second"
@@ -400,13 +548,22 @@ def test_dispatch_prunes_terminal_rows_after_seven_days(user):
 
 
 @pytest.mark.parametrize("status", [429, 503])
-def test_expo_rate_and_server_errors_are_retryable(monkeypatch, status):
+def test_expo_rate_and_server_errors_are_retryable(
+    monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    """Expo rate-limit and server errors are retryable.
+
+    Args:
+        monkeypatch: Patches the opener that the Expo transport builds.
+        test needs.
+        status: HTTP status the stand-in Expo endpoint answers with.
+    """
     from urllib.error import HTTPError
 
     from todo.push_delivery import ExpoTransport, RetryablePushError
 
     class Opener:
-        def open(self, request, *, timeout):
+        def open(self, request: Request, *, timeout: int) -> Never:
             raise HTTPError(request.full_url, status, "unavailable", None, None)
 
     monkeypatch.setattr("todo.push_delivery.build_opener", lambda *_: Opener())
@@ -415,7 +572,14 @@ def test_expo_rate_and_server_errors_are_retryable(monkeypatch, status):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_receipt_rate_limit_requeues_a_new_send_not_the_failed_ticket(user):
+def test_receipt_rate_limit_requeues_a_new_send_not_the_failed_ticket(
+    user: AbstractUser,
+) -> None:
+    """A receipt rate limit requeues a new send, not the failed ticket.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     registered(user)
     task = Task.objects.create(user=user, title="Before")
     task.title = "After"
@@ -439,7 +603,12 @@ def test_receipt_rate_limit_requeues_a_new_send_not_the_failed_ticket(user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_expired_fifth_lease_drops_without_sixth_send(user):
+def test_expired_fifth_lease_drops_without_sixth_send(user: AbstractUser) -> None:
+    """An expired fifth lease drops without a sixth send.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     registered(user)
     task = Task.objects.create(user=user, title="Before")
     task.title = "After"
@@ -462,7 +631,8 @@ def test_expired_fifth_lease_drops_without_sixth_send(user):
     PUSH_NOTIFICATIONS_ENABLED=True,
     SESSION_ENGINE="django.contrib.sessions.backends.cache",
 )
-def test_push_requires_database_sessions_even_without_sse():
+def test_push_requires_database_sessions_even_without_sse() -> None:
+    """Push requires database sessions even without SSE."""
     from django.core.checks import run_checks
     from django.core.exceptions import ImproperlyConfigured
 
@@ -476,7 +646,16 @@ def test_push_requires_database_sessions_even_without_sse():
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_default_watch_reaches_receipt_maturity_and_stops_cleanly(user, monkeypatch):
+def test_default_watch_reaches_receipt_maturity_and_stops_cleanly(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The default watch reaches receipt maturity and stops cleanly.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+        monkeypatch: Patches the clock, the sleep and the dispatch cycle of the command.
+        test needs.
+    """
     from django.core.management import call_command
 
     from todo.management.commands import dispatch_push
@@ -495,7 +674,7 @@ def test_default_watch_reaches_receipt_maturity_and_stops_cleanly(user, monkeypa
     )
     cycles = []
 
-    def one_cycle(**kwargs):
+    def one_cycle(**kwargs: int) -> int:
         cycles.append(1)
         if len(cycles) > 32:
             raise KeyboardInterrupt
@@ -509,7 +688,14 @@ def test_default_watch_reaches_receipt_maturity_and_stops_cleanly(user, monkeypa
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_receipt_rate_limit_still_respects_total_attempt_budget(user):
+def test_receipt_rate_limit_still_respects_total_attempt_budget(
+    user: AbstractUser,
+) -> None:
+    """A receipt rate limit still respects the total attempt budget.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     registered(user)
     task = Task.objects.create(user=user, title="Before")
     task.title = "After"
@@ -530,7 +716,12 @@ def test_receipt_rate_limit_still_respects_total_attempt_budget(user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_aged_delivery_is_retired_without_transport(user):
+def test_aged_delivery_is_retired_without_transport(user: AbstractUser) -> None:
+    """An aged delivery is retired without a transport.
+
+    Args:
+        user: User who owns the registered device and the tasks.
+    """
     registered(user)
     task = Task.objects.create(user=user, title="Before")
     task.title = "After"
@@ -543,7 +734,15 @@ def test_aged_delivery_is_retired_without_transport(user):
 
 
 @override_settings(PUSH_NOTIFICATIONS_ENABLED=True)
-def test_explicit_bounded_watch_cycles_do_not_wait_after_last_batch(monkeypatch):
+def test_explicit_bounded_watch_cycles_do_not_wait_after_last_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit bounded watch cycles do not wait after the last batch.
+
+    Args:
+        monkeypatch: Patches the dispatch function and the sleep of the command.
+        test needs.
+    """
     from django.core.management import call_command
 
     from todo.management.commands import dispatch_push
@@ -564,18 +763,26 @@ def test_explicit_bounded_watch_cycles_do_not_wait_after_last_batch(monkeypatch)
     [(429, "retry"), (503, "retry"), (400, "permanent")],
 )
 def test_expo_non_200_response_is_classified_without_following_redirect(
-    monkeypatch, status, error_type
-):
+    monkeypatch: pytest.MonkeyPatch, status: int, error_type: str
+) -> None:
+    """A non-200 Expo response is classified without following a redirect.
+
+    Args:
+        monkeypatch: Patches the opener that the Expo transport builds.
+        test needs.
+        status: HTTP status the stand-in Expo endpoint answers with.
+        error_type: Kind of push error the status must become.
+    """
     from todo.push_delivery import ExpoTransport, PermanentPushError, RetryablePushError
 
     class Response:
-        def __enter__(self):
+        def __enter__(self) -> Self:
             return self
 
-        def __exit__(self, *args):
+        def __exit__(self, *args: object) -> None:
             return None
 
-        def read(self, amount):
+        def read(self, amount: int) -> Never:
             raise AssertionError("error response body must not be trusted")
 
     response = Response()
@@ -591,10 +798,19 @@ def test_expo_non_200_response_is_classified_without_following_redirect(
 
 
 @pytest.mark.parametrize("error", [TimeoutError(), OSError(), URLError("offline")])
-def test_expo_network_failure_is_retryable(monkeypatch, error):
+def test_expo_network_failure_is_retryable(
+    monkeypatch: pytest.MonkeyPatch, error: OSError
+) -> None:
+    """An Expo network failure is retryable.
+
+    Args:
+        monkeypatch: Patches the opener that the Expo transport builds.
+        test needs.
+        error: Network failure the opener raises.
+    """
     from todo.push_delivery import ExpoTransport, RetryablePushError
 
-    def fail(*args, **kwargs):
+    def fail(*args: object, **kwargs: object) -> Never:
         raise error
 
     monkeypatch.setattr(
@@ -606,19 +822,28 @@ def test_expo_network_failure_is_retryable(monkeypatch, error):
 
 
 @pytest.mark.parametrize("body", [b"not-json", b"[]", b'{"data":null}'])
-def test_expo_invalid_ticket_response_is_permanent(monkeypatch, body):
+def test_expo_invalid_ticket_response_is_permanent(
+    monkeypatch: pytest.MonkeyPatch, body: bytes
+) -> None:
+    """An invalid Expo ticket response is permanent.
+
+    Args:
+        monkeypatch: Patches the opener that the Expo transport builds.
+        test needs.
+        body: Body the stand-in Expo endpoint returns.
+    """
     from todo.push_delivery import ExpoTransport, PermanentPushError
 
     class Response:
         status = 200
 
-        def __enter__(self):
+        def __enter__(self) -> Self:
             return self
 
-        def __exit__(self, *args):
+        def __exit__(self, *args: object) -> None:
             return None
 
-        def read(self, amount):
+        def read(self, amount: int) -> bytes:
             return body
 
     monkeypatch.setattr(
@@ -629,19 +854,25 @@ def test_expo_invalid_ticket_response_is_permanent(monkeypatch, body):
         ExpoTransport().send("ExpoPushToken[safe]", {"kind": "tasks"})
 
 
-def test_expo_missing_receipt_is_retryable(monkeypatch):
+def test_expo_missing_receipt_is_retryable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing Expo receipt is retryable.
+
+    Args:
+        monkeypatch: Patches the opener that the Expo transport builds.
+        test needs.
+    """
     from todo.push_delivery import ExpoTransport, RetryablePushError
 
     class Response:
         status = 200
 
-        def __enter__(self):
+        def __enter__(self) -> Self:
             return self
 
-        def __exit__(self, *args):
+        def __exit__(self, *args: object) -> None:
             return None
 
-        def read(self, amount):
+        def read(self, amount: int) -> bytes:
             return b'{"data":{}}'
 
     monkeypatch.setattr(

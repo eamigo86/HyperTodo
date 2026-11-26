@@ -2,16 +2,18 @@
 
 import importlib
 from datetime import UTC, date, datetime, time, timedelta
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
 from django.apps import apps
+from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
+from pytest_django.fixtures import Settings
 
 from todo.forms import TaskForm
 from todo.models import Category, Task
@@ -20,8 +22,14 @@ pytestmark = pytest.mark.django_db
 
 
 def test_category_has_uuid_palette_and_user_scoped_case_insensitive_name(
-    user, other_user
-):
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A category has a UUID, a palette and a user-scoped, case-insensitive name.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     category = Category.objects.create(
         user=user, name="Work", color=Category.Color.LAVENDER
     )
@@ -32,7 +40,14 @@ def test_category_has_uuid_palette_and_user_scoped_case_insensitive_name(
         Category.objects.create(user=user, name="work", color=Category.Color.PINK)
 
 
-def test_task_defaults_to_active_and_category_deletion_keeps_task(user):
+def test_task_defaults_to_active_and_category_deletion_keeps_task(
+    user: AbstractUser,
+) -> None:
+    """A task defaults to active and category deletion keeps the task.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     category = Category.objects.create(
         user=user, name="Home", color=Category.Color.YELLOW
     )
@@ -44,14 +59,27 @@ def test_task_defaults_to_active_and_category_deletion_keeps_task(user):
     assert task.category is None
 
 
-def test_task_completion_property(user):
+def test_task_completion_property(user: AbstractUser) -> None:
+    """A task reports itself as completed once it has a completion time.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = Task.objects.create(
         user=user, title="Ship release", completed_at=timezone.now()
     )
     assert task.is_completed is True
 
 
-def test_task_rejects_category_owned_by_another_user(user, other_user):
+def test_task_rejects_category_owned_by_another_user(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A task rejects a category owned by another user.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     category = Category.objects.create(
         user=other_user, name="Private", color=Category.Color.GREEN
     )
@@ -60,7 +88,12 @@ def test_task_rejects_category_owned_by_another_user(user, other_user):
         task.clean()
 
 
-def test_a_user_without_a_profile_row_resolves_to_none(user):
+def test_a_user_without_a_profile_row_resolves_to_none(user: AbstractUser) -> None:
+    """A user without a profile row resolves to None.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # The whole preference stack leans on this: RelatedObjectDoesNotExist inherits
     # from AttributeError, so getattr swallows it and every pre-migration account
     # falls through to the defaults instead of raising on the dashboard.
@@ -71,7 +104,12 @@ def test_a_user_without_a_profile_row_resolves_to_none(user):
     assert getattr(AnonymousUser(), "profile", None) is None
 
 
-def test_a_new_profile_states_no_preference_at_all(user):
+def test_a_new_profile_states_no_preference_at_all(user: AbstractUser) -> None:
+    """A new profile states no preference at all.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Three preferences share ONE row, so a non-empty default on any field would be
     # written the moment a sibling field is set. A Spanish phone that switches to
     # dark mode must not silently acquire language="en".
@@ -83,7 +121,12 @@ def test_a_new_profile_states_no_preference_at_all(user):
     assert profile.avatar.name in ("", None)
 
 
-def test_one_user_cannot_hold_two_profiles(user):
+def test_one_user_cannot_hold_two_profiles(user: AbstractUser) -> None:
+    """One user cannot hold two profiles.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     from todo.models import Profile
 
     Profile.objects.create(user=user)
@@ -91,46 +134,86 @@ def test_one_user_cannot_hold_two_profiles(user):
         Profile.objects.create(user=user)
 
 
-def test_a_profile_names_the_user_it_belongs_to(user):
+def test_a_profile_names_the_user_it_belongs_to(user: AbstractUser) -> None:
+    """A profile names the user it belongs to.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     from todo.models import Profile
 
     assert str(Profile.objects.create(user=user)) == f"Preferences for {user}"
 
 
-def test_a_new_task_has_a_timed_deadline_unless_told_otherwise(user):
+def test_a_new_task_has_a_timed_deadline_unless_told_otherwise(
+    user: AbstractUser,
+) -> None:
+    """A new task has a timed deadline unless told otherwise.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     assert Task.objects.create(user=user, title="Call").due_all_day is False
 
 
 # --- all-day data migration ---------------------------------------------------
 
 
-def local(day, at):
-    """Return an aware datetime on a local calendar day."""
+def local(day: date, at: time) -> datetime:
+    """Return an aware datetime on a local calendar day.
+
+    Args:
+        day: Local calendar day.
+        at: Time of day on that day.
+
+    Returns:
+        The aware datetime at that time of day.
+    """
     return timezone.make_aware(datetime.combine(day, at))
 
 
-def wall_clock(value):
-    """Return the local wall-clock reading of a stored deadline."""
+def wall_clock(value: datetime) -> datetime:
+    """Return the local wall-clock reading of a stored deadline.
+
+    Args:
+        value: Stored aware deadline.
+
+    Returns:
+        The local time with no zone attached.
+    """
     return timezone.localtime(value).replace(tzinfo=None)
 
 
-def migration():
+def migration() -> ModuleType:
+    """Import the data migration that marks all-day deadlines.
+
+    Returns:
+        The migration module.
+    """
     return importlib.import_module("todo.migrations.0007_mark_all_day_deadlines")
 
 
-def run_forwards():
+def run_forwards() -> None:
+    """Run the forwards step of the all-day migration."""
     migration().mark_midnight_deadlines_all_day(
         apps, SimpleNamespace(connection=connection)
     )
 
 
-def run_backwards():
+def run_backwards() -> None:
+    """Run the backwards step of the all-day migration."""
     migration().restore_midnight_deadlines(apps, SimpleNamespace(connection=connection))
 
 
 def test_the_migration_turns_deadlines_at_local_midnight_into_all_day_ones(
-    user, other_user
-):
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """The migration turns deadlines at local midnight into all-day ones.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     midnight = Task.objects.create(
         user=user, title="Rent", due_at=local(date(2026, 9, 6), time.min)
     )
@@ -160,7 +243,12 @@ def test_the_migration_turns_deadlines_at_local_midnight_into_all_day_ones(
     assert undated.due_at is None
 
 
-def test_the_migration_keeps_the_day_when_the_clocks_change(user):
+def test_the_migration_keeps_the_day_when_the_clocks_change(user: AbstractUser) -> None:
+    """The migration keeps the day when the clocks change.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # New York springs forward on 2026-03-08, so that local day is 23 hours long. A
     # deadline moved by a fixed 24 hours would land an hour into the NEXT day.
     spring = Task.objects.create(
@@ -178,7 +266,12 @@ def test_the_migration_keeps_the_day_when_the_clocks_change(user):
     assert wall_clock(autumn.due_at) == datetime.combine(date(2026, 11, 1), time.max)
 
 
-def test_the_migration_can_run_twice(user):
+def test_the_migration_can_run_twice(user: AbstractUser) -> None:
+    """The migration can run twice.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = Task.objects.create(
         user=user, title="Rent", due_at=local(date(2026, 9, 6), time.min)
     )
@@ -190,7 +283,15 @@ def test_the_migration_can_run_twice(user):
     assert Task.objects.get(pk=task.pk).due_at == first
 
 
-def test_the_migration_reads_tasks_in_primary_key_chunks(user, monkeypatch):
+def test_the_migration_reads_tasks_in_primary_key_chunks(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The migration reads tasks in primary-key chunks.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the chunk size of the migration.
+    """
     monkeypatch.setattr(migration(), "CHUNK", 2)
     tasks = [
         Task.objects.create(
@@ -214,7 +315,14 @@ def test_the_migration_reads_tasks_in_primary_key_chunks(user, monkeypatch):
     assert all("LIMIT 2" in sql for sql in reads)
 
 
-def test_reversing_the_migration_restores_the_start_of_the_day(user):
+def test_reversing_the_migration_restores_the_start_of_the_day(
+    user: AbstractUser,
+) -> None:
+    """Reversing the migration restores the start of the day.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     task = Task.objects.create(
         user=user,
         title="Rent",
@@ -242,8 +350,14 @@ def test_reversing_the_migration_restores_the_start_of_the_day(user):
 
 
 def test_reversing_keeps_the_flag_where_a_clock_change_swallows_midnight(
-    user, settings
-):
+    user: AbstractUser, settings: Settings
+) -> None:
+    """Reversing keeps the flag where a clock change swallows midnight.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        settings: Django settings overridden by this test.
+    """
     # Cairo goes from 00:00 straight to 01:00 on 2026-04-24, so that day has no start.
     # Rebuilt at 00:00 the deadline reads 01:00, the forward migration (which only
     # moves rows at midnight) never picks it up again, and the flag was lost for good.
@@ -278,7 +392,14 @@ def test_reversing_keeps_the_flag_where_a_clock_change_swallows_midnight(
     assert wall_clock(gap.due_at) == datetime.combine(date(2026, 4, 24), time.max)
 
 
-def test_running_forwards_again_after_reversing_gives_back_the_same_rows(user):
+def test_running_forwards_again_after_reversing_gives_back_the_same_rows(
+    user: AbstractUser,
+) -> None:
+    """Running forwards again after reversing gives back the same rows.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # 0007 -> 0006 -> 0007 has to be exact, for the rows the migration moved and for
     # those the task form stored itself (the last instant of the day, already flagged).
     Task.objects.create(
@@ -298,7 +419,7 @@ def test_running_forwards_again_after_reversing_gives_back_the_same_rows(user):
     )
     Task.objects.create(user=user, title="Someday")
 
-    def rows():
+    def rows() -> list[tuple[object, ...]]:
         return list(
             Task.objects.order_by("pk").values_list("pk", "due_at", "due_all_day")
         )
@@ -315,7 +436,14 @@ def test_running_forwards_again_after_reversing_gives_back_the_same_rows(user):
 # --- deadlines at the ends of the calendar ---------------------------------------
 
 
-def test_a_deadline_too_close_to_year_9999_stays_timed_instead_of_aborting(user):
+def test_a_deadline_too_close_to_year_9999_stays_timed_instead_of_aborting(
+    user: AbstractUser,
+) -> None:
+    """A deadline too close to year 9999 stays timed instead of aborting.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # 9999-12-31 00:00 in New York is a legal stored value, but the last instant of
     # that day is in year 10000 once converted to UTC. The update raised OverflowError,
     # so the whole migration rolled back and `migrate` stayed at 0006.
@@ -336,8 +464,13 @@ def test_a_deadline_too_close_to_year_9999_stays_timed_instead_of_aborting(user)
 
 
 def test_a_deadline_at_the_first_instant_of_year_1_stays_timed_instead_of_aborting(
-    user,
-):
+    user: AbstractUser,
+) -> None:
+    """A deadline at the first instant of year 1 stays timed instead of aborting.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # SQLite converts every row to local time to test its time of day, and the first
     # instant of year 1 has no reading west of Greenwich: that query failed with a
     # DataError before a single row was moved.
@@ -350,7 +483,12 @@ def test_a_deadline_at_the_first_instant_of_year_1_stays_timed_instead_of_aborti
     assert (task.due_all_day, task.due_at) == (False, first)
 
 
-def test_the_year_9999_bound_is_exact(user):
+def test_the_year_9999_bound_is_exact(user: AbstractUser) -> None:
+    """The year-9999 bound is exact.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # Midnight on the last day of 9998 still has a UTC end of day; midnight on the
     # first day of 9999 is where the migration stops converting.
     inside = Task.objects.create(
@@ -369,7 +507,14 @@ def test_the_year_9999_bound_is_exact(user):
     assert outside.due_all_day is False
 
 
-def test_reversing_skips_a_row_it_cannot_read_in_local_time_as_well(user):
+def test_reversing_skips_a_row_it_cannot_read_in_local_time_as_well(
+    user: AbstractUser,
+) -> None:
+    """Reversing skips a row it cannot read in local time as well.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     # An all-day flag set by hand on a row at the very start of the calendar, through
     # the Admin, must not abort the way back: it has no local reading west of Greenwich.
     first = datetime(1, 1, 1, tzinfo=UTC)
@@ -381,7 +526,8 @@ def test_reversing_skips_a_row_it_cannot_read_in_local_time_as_well(user):
     assert task.due_at == first
 
 
-def test_the_migration_reverses_with_the_real_restore_function():
+def test_the_migration_reverses_with_the_real_restore_function() -> None:
+    """The migration reverses with the real restore function."""
     operation = migration().Migration.operations[0]
 
     assert operation.code is migration().mark_midnight_deadlines_all_day
@@ -390,7 +536,14 @@ def test_the_migration_reverses_with_the_real_restore_function():
 
 
 @pytest.mark.django_db(transaction=True)
-def test_migrate_converts_forwards_and_restores_backwards_the_way_it_really_runs(user):
+def test_migrate_converts_forwards_and_restores_backwards_the_way_it_really_runs(
+    user: AbstractUser,
+) -> None:
+    """Migrate converts forwards and restores backwards the way it really runs.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     before = ("todo", "0006_task_due_all_day")
     after = ("todo", "0007_mark_all_day_deadlines")
     legacy = Task.objects.create(
@@ -407,13 +560,13 @@ def test_migrate_converts_forwards_and_restores_backwards_the_way_it_really_runs
     )
     untouched = forever.due_at
 
-    def migrate_to(target):
+    def migrate_to(target: tuple[str, str]) -> None:
         MigrationExecutor(connection).migrate([target])
         legacy.refresh_from_db()
         from_form.refresh_from_db()
         forever.refresh_from_db()
 
-    def state():
+    def state() -> list[tuple[bool, datetime | None]]:
         return [
             (task.due_all_day, task.due_at) for task in (legacy, from_form, forever)
         ]
@@ -445,8 +598,14 @@ def test_migrate_converts_forwards_and_restores_backwards_the_way_it_really_runs
 
 
 def test_reversing_keeps_the_flag_where_the_start_would_fall_below_year_1(
-    user, settings
-):
+    user: AbstractUser, settings: Settings
+) -> None:
+    """Reversing keeps the flag where the start would fall below year 1.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        settings: Django settings overridden by this test.
+    """
     # The end of 0001-01-01 in New York is 0001-01-02 04:56 UTC, so the row is read,
     # but its day starts at 0001-01-01 04:56 UTC: below what the forward migration
     # reads. Unflagged there, the row would never be flagged again.
@@ -488,8 +647,16 @@ def test_reversing_keeps_the_flag_where_the_start_would_fall_below_year_1(
     ],
 )
 def test_the_migration_ends_a_clock_change_day_where_the_task_form_does(
-    user, settings, zone, day
-):
+    user: AbstractUser, settings: Settings, zone: str, day: date
+) -> None:
+    """The migration ends a clock-change day where the task form does.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        settings: Django settings overridden by this test.
+        zone: Time zone the deadline is evaluated in.
+        day: Calendar day with a clock change.
+    """
     # Night of a repeated 23:xx hour (or a skipped one in Nuuk): the first reading of
     # 23:59:59 is an hour early, and the one a skipped hour leaves is an hour late.
     settings.TIME_ZONE = zone

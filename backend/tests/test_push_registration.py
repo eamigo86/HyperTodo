@@ -1,11 +1,14 @@
 """Push registration is bound to the authenticated cookie session, not JSON identity."""
 
 import json
+from typing import Never, Self
 from uuid import UUID, uuid4
 
 import pytest
 from django.conf import settings
+from django.contrib.auth.models import AbstractUser
 from django.contrib.sessions.models import Session
+from django.http import HttpResponse
 from django.test import Client
 from django.utils import timezone
 
@@ -19,14 +22,14 @@ EXPECTED = "X-HyperTodo-Expected-Session"
 TOKEN = "ExpoPushToken[fixture_one]"
 
 
-def _headers(binding, csrf=None):
+def _headers(binding: str, csrf: str | None = None) -> dict[str, str]:
     headers = {CONTRACT: "realtime-v1", EXPECTED: binding}
     if csrf is not None:
         headers["X-CSRFToken"] = csrf
     return headers
 
 
-def _bootstrap(user=None):
+def _bootstrap(user: AbstractUser | None = None) -> tuple[Client, str, HttpResponse]:
     client = Client(enforce_csrf_checks=True)
     if user is not None:
         client.force_login(user)
@@ -36,7 +39,14 @@ def _bootstrap(user=None):
     return client, binding, response
 
 
-def _register(client, binding, csrf, installation=None, token=TOKEN, **extra):
+def _register(
+    client: Client,
+    binding: str,
+    csrf: str | None,
+    installation: UUID | None = None,
+    token: str = TOKEN,
+    **extra: object,
+) -> HttpResponse:
     payload = {
         "installationId": str(installation or uuid4()),
         "expoPushToken": token,
@@ -50,7 +60,12 @@ def _register(client, binding, csrf, installation=None, token=TOKEN, **extra):
     )
 
 
-def test_bootstrap_requires_modern_authenticated_session(user):
+def test_bootstrap_requires_modern_authenticated_session(user: AbstractUser) -> None:
+    """Bootstrap requires a modern authenticated session.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     _, _, anonymous = _bootstrap()
     assert anonymous.status_code == 401
     assert "csrfToken" not in anonymous.content.decode()
@@ -65,7 +80,14 @@ def test_bootstrap_requires_modern_authenticated_session(user):
     assert binding == bootstrap["X-HyperTodo-Session-Binding"]
 
 
-def test_registration_rejects_missing_csrf_and_stale_binding(user):
+def test_registration_rejects_missing_csrf_and_stale_binding(
+    user: AbstractUser,
+) -> None:
+    """Registration rejects a missing CSRF token and a stale binding.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, binding, bootstrap = _bootstrap(user)
     assert bootstrap.status_code == 200
     missing_csrf = _register(client, binding, None)
@@ -75,7 +97,14 @@ def test_registration_rejects_missing_csrf_and_stale_binding(user):
     assert not PushDevice.objects.exists()
 
 
-def test_registration_rotates_same_installation_and_never_returns_token(user):
+def test_registration_rotates_same_installation_and_never_returns_token(
+    user: AbstractUser,
+) -> None:
+    """Registration rotates the same installation and never returns the token.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, binding, bootstrap = _bootstrap(user)
     installation = uuid4()
     first = _register(
@@ -106,7 +135,15 @@ def test_registration_rotates_same_installation_and_never_returns_token(user):
     assert device.expo_token == "ExponentPushToken[fixture_two]"
 
 
-def test_client_cannot_claim_user_or_send_malformed_registration(user, other_user):
+def test_client_cannot_claim_user_or_send_malformed_registration(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A client cannot claim a user or send a malformed registration.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     client, binding, bootstrap = _bootstrap(user)
     csrf = bootstrap.json()["csrfToken"]
     assert _register(client, binding, csrf, userId=other_user.pk).status_code == 400
@@ -119,7 +156,15 @@ def test_client_cannot_claim_user_or_send_malformed_registration(user, other_use
     assert not PushDevice.objects.exists()
 
 
-def test_new_account_claiming_same_installation_revokes_prior_owner(user, other_user):
+def test_new_account_claiming_same_installation_revokes_prior_owner(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """A new account claiming the same installation revokes the prior owner.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     first, first_binding, first_bootstrap = _bootstrap(user)
     installation = uuid4()
     assert (
@@ -161,7 +206,14 @@ def test_new_account_claiming_same_installation_revokes_prior_owner(user, other_
     assert PushDevice.objects.get().user == other_user
 
 
-def test_revoke_is_scoped_to_current_session_and_logout_cascades(user):
+def test_revoke_is_scoped_to_current_session_and_logout_cascades(
+    user: AbstractUser,
+) -> None:
+    """Revoke is scoped to the current session, and logout cascades.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     first, binding, bootstrap = _bootstrap(user)
     installation = uuid4()
     csrf = bootstrap.json()["csrfToken"]
@@ -194,7 +246,12 @@ def test_revoke_is_scoped_to_current_session_and_logout_cascades(user):
     assert not PushDevice.objects.exists()
 
 
-def test_deleted_session_leaves_no_registration(user):
+def test_deleted_session_leaves_no_registration(user: AbstractUser) -> None:
+    """A deleted session leaves no registration.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, binding, bootstrap = _bootstrap(user)
     csrf = bootstrap.json()["csrfToken"]
     assert _register(client, binding, csrf).status_code == 201
@@ -205,7 +262,16 @@ def test_deleted_session_leaves_no_registration(user):
     assert not PushDevice.objects.exists()
 
 
-def test_registration_closes_when_session_invalidates_inside_request(user, monkeypatch):
+def test_registration_closes_when_session_invalidates_inside_request(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Registration closes when the session is invalidated inside the request.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the session identity check so it fails inside the request.
+        request.
+    """
     client, binding, bootstrap = _bootstrap(user)
     monkeypatch.setattr("todo.push_registration.fresh_identity", lambda _key: None)
     response = _register(client, binding, bootstrap.json()["csrfToken"])
@@ -213,7 +279,12 @@ def test_registration_closes_when_session_invalidates_inside_request(user, monke
     assert not PushDevice.objects.exists()
 
 
-def test_device_limit_and_token_transfer_are_bounded(user):
+def test_device_limit_and_token_transfer_are_bounded(user: AbstractUser) -> None:
+    """The device limit and token transfer are bounded.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, binding, bootstrap = _bootstrap(user)
     csrf = bootstrap.json()["csrfToken"]
     for index in range(10):
@@ -229,7 +300,12 @@ def test_device_limit_and_token_transfer_are_bounded(user):
     assert PushDevice.objects.count() == 10
 
 
-def test_token_transfer_requires_revoking_old_installation(user):
+def test_token_transfer_requires_revoking_old_installation(user: AbstractUser) -> None:
+    """A token transfer requires revoking the old installation.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, binding, bootstrap = _bootstrap(user)
     csrf = bootstrap.json()["csrfToken"]
     assert _register(client, binding, csrf).status_code == 201
@@ -237,7 +313,12 @@ def test_token_transfer_requires_revoking_old_installation(user):
     assert PushDevice.objects.count() == 1
 
 
-def test_invalid_body_and_method_do_not_write(user):
+def test_invalid_body_and_method_do_not_write(user: AbstractUser) -> None:
+    """An invalid body or method does not write.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, binding, bootstrap = _bootstrap(user)
     csrf = bootstrap.json()["csrfToken"]
     assert client.put(PATH, headers=_headers(binding, csrf)).status_code == 405
@@ -251,7 +332,12 @@ def test_invalid_body_and_method_do_not_write(user):
     assert not PushDevice.objects.exists()
 
 
-def test_stale_revision_cannot_rotate_or_revoke_new_token(user):
+def test_stale_revision_cannot_rotate_or_revoke_new_token(user: AbstractUser) -> None:
+    """A stale revision cannot rotate or revoke the new token.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, binding, bootstrap = _bootstrap(user)
     csrf = bootstrap.json()["csrfToken"]
     installation = uuid4()
@@ -291,7 +377,12 @@ def test_stale_revision_cannot_rotate_or_revoke_new_token(user):
     assert PushDevice.objects.get().registration_version == UUID(new_version)
 
 
-def test_same_account_login_rotation_can_reregister(user):
+def test_same_account_login_rotation_can_reregister(user: AbstractUser) -> None:
+    """A same-account login rotation can re-register.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, binding, bootstrap = _bootstrap(user)
     installation = uuid4()
     assert (
@@ -320,7 +411,15 @@ def test_same_account_login_rotation_can_reregister(user):
     assert PushDevice.objects.get().session_id == client.session.session_key
 
 
-def test_expired_old_session_token_can_be_reclaimed_after_reinstall(user, other_user):
+def test_expired_old_session_token_can_be_reclaimed_after_reinstall(
+    user: AbstractUser, other_user: AbstractUser
+) -> None:
+    """An expired old-session token can be reclaimed after a reinstall.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        other_user: Second user whose data must stay isolated from the first.
+    """
     first, binding, bootstrap = _bootstrap(user)
     assert _register(first, binding, bootstrap.json()["csrfToken"]).status_code == 201
     old_key = first.session.session_key
@@ -335,7 +434,12 @@ def test_expired_old_session_token_can_be_reclaimed_after_reinstall(user, other_
     assert PushDevice.objects.get().user == other_user
 
 
-def test_bootstrap_can_recover_current_session_revision(user):
+def test_bootstrap_can_recover_current_session_revision(user: AbstractUser) -> None:
+    """Bootstrap can recover the current session revision.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     client, binding, bootstrap = _bootstrap(user)
     installation = uuid4()
     created = _register(client, binding, bootstrap.json()["csrfToken"], installation)
@@ -356,7 +460,14 @@ def test_bootstrap_can_recover_current_session_revision(user):
     )
 
 
-def test_password_change_prunes_ten_old_sessions_before_new_device(user):
+def test_password_change_prunes_ten_old_sessions_before_new_device(
+    user: AbstractUser,
+) -> None:
+    """A password change prunes ten old sessions before the new device.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+    """
     old_clients = []
     for index in range(10):
         old_client, binding, bootstrap = _bootstrap(user)
@@ -382,14 +493,23 @@ def test_password_change_prunes_ten_old_sessions_before_new_device(user):
     assert PushDevice.objects.get().session_id == current.session.session_key
 
 
-def test_deleted_user_between_middleware_and_registration_is_closed(user, monkeypatch):
+def test_deleted_user_between_middleware_and_registration_is_closed(
+    user: AbstractUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A user deleted between the middleware and the registration is closed.
+
+    Args:
+        user: Signed-in user who owns the data in this test.
+        monkeypatch: Patches the user model lookup so it finds a deleted user.
+        request.
+    """
     client, binding, bootstrap = _bootstrap(user)
 
     class DeletedManager:
-        def select_for_update(self):
+        def select_for_update(self) -> Self:
             return self
 
-        def get(self, **_kwargs):
+        def get(self, **_kwargs: object) -> Never:
             raise type(user).DoesNotExist
 
     class DeletedUser:
